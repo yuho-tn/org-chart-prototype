@@ -1,9 +1,9 @@
 import { create } from "zustand";
-import type { AppState, LogEntry, OrgNode } from "../lib/types";
+import type { AppState, LogEntry, OrgNode, PersonRole, DeptCategory } from "../lib/types";
 import { seedData } from "../lib/seed";
 import { descendantsOf, wouldCreateCycle } from "../lib/layout";
 
-const STORAGE_KEY = "org-chart-prototype:v1";
+const STORAGE_KEY = "org-chart-prototype:v2";
 const LOG_LIMIT = 10;
 const HISTORY_LIMIT = 50;
 
@@ -16,10 +16,13 @@ type Store = AppState & {
   future: Snapshot[];
   dirty: boolean;
 
-  addDepartment: (parentId: string | null) => void;
-  addPerson: (parentId: string | null) => void;
+  addDepartment: (parentId: string | null, opts?: { category?: DeptCategory; colorIndex?: number }) => void;
+  addPerson: (parentId: string | null, opts?: { roleLabel?: PersonRole }) => void;
   deleteNode: (id: string, strategy?: DeleteWithChildrenStrategy) => void;
   rename: (id: string, name: string) => void;
+  setRole: (id: string, roleLabel: PersonRole) => void;
+  setCategory: (id: string, category: DeptCategory) => void;
+  setColor: (id: string, colorIndex: number) => void;
   reparent: (nodeId: string, newParentId: string | null) => { ok: boolean; reason?: string };
   setSelected: (id: string | null) => void;
   setToast: (toast: AppState["toast"]) => void;
@@ -47,6 +50,19 @@ function snapshot(state: Pick<AppState, "nodes">): Snapshot {
   return { nodes: state.nodes.map((n) => ({ ...n })) };
 }
 
+/** Person nodes always belong to a department; if a non-dept target is given, walk up to the nearest dept. */
+function nearestDeptAncestor(nodes: OrgNode[], parentId: string | null): string | null {
+  let cur = parentId;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  while (cur) {
+    const node = byId.get(cur);
+    if (!node) return null;
+    if (node.kind === "department") return node.id;
+    cur = node.parentId;
+  }
+  return null;
+}
+
 export const useOrgStore = create<Store>((set, get) => ({
   nodes: seedData(),
   selectedId: null,
@@ -56,37 +72,56 @@ export const useOrgStore = create<Store>((set, get) => ({
   future: [],
   dirty: false,
 
-  addDepartment: (parentId) => {
+  addDepartment: (parentId, opts) => {
     const state = get();
     const id = uid("d");
+    const parent = parentId ? state.nodes.find((n) => n.id === parentId) : null;
+    // Default category: nest one level down from parent
+    const inferred: DeptCategory = (() => {
+      if (opts?.category) return opts.category;
+      if (!parent) return "DIV";
+      if (parent.category === "ROOT") return "DIV";
+      if (parent.category === "DIV") return "TM";
+      if (parent.category === "TM") return "Unit";
+      return "DEPT";
+    })();
+    const colorIndex =
+      opts?.colorIndex ??
+      (parent?.colorIndex !== undefined && parent.category !== "ROOT"
+        ? parent.colorIndex
+        : (state.nodes.filter((n) => n.kind === "department" && n.parentId === parentId).length) % 8);
     const newNode: OrgNode = {
       id,
       kind: "department",
       name: "新規部署",
       parentId,
-      x: 0,
-      y: 0,
+      category: inferred,
+      colorIndex,
     };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(state.log, makeLog("add", `部署「${newNode.name}」を追加`)),
+      log: pushLog(state.log, makeLog("add", `部署「${newNode.name}」を追加（${inferred}）`)),
       dirty: true,
     });
   },
 
-  addPerson: (parentId) => {
+  addPerson: (parentId, opts) => {
     const state = get();
+    const deptId = nearestDeptAncestor(state.nodes, parentId);
+    if (!deptId) {
+      set({ toast: { kind: "error", message: "人員は部署の中にのみ追加できます" } });
+      return;
+    }
     const id = uid("p");
     const newNode: OrgNode = {
       id,
       kind: "person",
       name: "新規メンバー",
-      parentId,
-      x: 0,
-      y: 0,
+      parentId: deptId,
+      roleLabel: opts?.roleLabel ?? null,
     };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
@@ -138,22 +173,85 @@ export const useOrgStore = create<Store>((set, get) => ({
     });
   },
 
+  setRole: (id, roleLabel) => {
+    const state = get();
+    const target = state.nodes.find((n) => n.id === id);
+    if (!target || target.kind !== "person") return;
+    if (target.roleLabel === roleLabel) return;
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, roleLabel } : n)),
+      log: pushLog(state.log, makeLog("role", `「${target.name}」の役職を ${roleLabel ?? "メンバー"} に変更`)),
+      dirty: true,
+    });
+  },
+
+  setCategory: (id, category) => {
+    const state = get();
+    const target = state.nodes.find((n) => n.id === id);
+    if (!target || target.kind !== "department") return;
+    if (target.category === category) return;
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, category } : n)),
+      log: pushLog(state.log, makeLog("rename", `「${target.name}」の種別を ${category} に変更`)),
+      dirty: true,
+    });
+  },
+
+  setColor: (id, colorIndex) => {
+    const state = get();
+    const target = state.nodes.find((n) => n.id === id);
+    if (!target || target.kind !== "department") return;
+    if (target.colorIndex === colorIndex) return;
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, colorIndex } : n)),
+      dirty: true,
+    });
+  },
+
   reparent: (nodeId, newParentId) => {
     const state = get();
     const node = state.nodes.find((n) => n.id === nodeId);
     if (!node) return { ok: false, reason: "対象ノードが見つかりません" };
-    if (node.parentId === newParentId) return { ok: false, reason: "既に同じ親です" };
-    if (wouldCreateCycle(state.nodes, nodeId, newParentId)) {
+
+    let resolvedParentId: string | null = newParentId;
+
+    if (node.kind === "person") {
+      // Persons can only belong to departments. Walk up to nearest dept ancestor.
+      resolvedParentId = nearestDeptAncestor(state.nodes, newParentId);
+      if (newParentId !== null && resolvedParentId === null) {
+        return { ok: false, reason: "人員は部署の中にのみ配置できます" };
+      }
+    } else {
+      // Departments can be parented by departments or be root.
+      if (newParentId !== null) {
+        const target = state.nodes.find((n) => n.id === newParentId);
+        if (!target) return { ok: false, reason: "ドロップ先が見つかりません" };
+        if (target.kind === "person") {
+          return { ok: false, reason: "部署を人員の下に置くことはできません" };
+        }
+      }
+    }
+
+    if (node.parentId === resolvedParentId) return { ok: false, reason: "既に同じ親です" };
+    if (wouldCreateCycle(state.nodes, nodeId, resolvedParentId)) {
       return { ok: false, reason: "循環参照になるため移動できません" };
     }
-    const newParent = newParentId ? state.nodes.find((n) => n.id === newParentId) : null;
+    const newParent = resolvedParentId ? state.nodes.find((n) => n.id === resolvedParentId) : null;
     const detail = newParent
       ? `「${node.name}」を「${newParent.name}」配下に移動`
       : `「${node.name}」をルートへ移動`;
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
-      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, parentId: newParentId } : n)),
+      nodes: state.nodes.map((n) =>
+        n.id === nodeId ? { ...n, parentId: resolvedParentId } : n,
+      ),
       log: pushLog(state.log, makeLog("move", detail)),
       dirty: true,
     });
@@ -208,7 +306,7 @@ export const useOrgStore = create<Store>((set, get) => ({
         log: pushLog(state.log, makeLog("save", "localStorageに保存しました")),
         toast: { kind: "info", message: "保存しました" },
       });
-    } catch (e) {
+    } catch {
       set({ toast: { kind: "error", message: "保存に失敗しました" } });
     }
   },
