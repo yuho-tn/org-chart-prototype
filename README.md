@@ -1,73 +1,65 @@
-# React + TypeScript + Vite
+# OrgChart Studio
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+組織図「管理」ツールのUI/UX検証用プロトタイプ。
+ドラッグ＆ドロップでの親子関係の組み替え、部署／人員ノードの追加・削除、Undo/Reset/保存などの操作の「使いやすさ」を検証することを目的としている。
 
-Currently, two official plugins are available:
+- **Stack**: React + TypeScript + Vite + React Flow + Zustand
+- **状態管理に Zustand を選んだ理由**: 履歴スタック・ノード/エッジ・選択状態など状態が局所的で、Redux Toolkit のボイラープレートを掛けるほどではない MVP スコープのため。
+- **永続化**: メモリ＋ localStorage（明示保存ボタン押下時のみ）
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 起動方法
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev    # http://localhost:5173/
+npm run build  # 本番ビルド
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 主要UIの構成
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| 領域 | 役割 |
+|---|---|
+| 上部バー | 編集状態バッジ（編集中／保存済）、Undo / Redo、リセット、保存 |
+| 左サイドバー | ＋部署／＋人員ボタン、フィットビュー |
+| メイン | React Flow キャンバス（部署=青枠、人員=丸アバター、上→下方向のエッジ） |
+| 右インスペクタ | 選択ノードの種別バッジ／名前編集／所属パンくず／削除ボタン |
+| 下部 | 操作ログ（直近10件、`hh:mm:ss [action] 詳細`） |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## キーボードショートカット
+
+- `Cmd/Ctrl + Z` — Undo
+- `Cmd/Ctrl + Shift + Z` または `Cmd/Ctrl + Y` — Redo
+- `Cmd/Ctrl + S` — 保存（localStorage）
+
+## 操作手順（クイックツアー）
+
+1. 起動すると初期データ（部署2 / 人員5）が自動レイアウトで表示される
+2. 任意のノードをクリック → 右インスペクタで名前を編集（Enter または blur で確定）
+3. 左サイドバーの **＋部署** / **＋人員** で、選択中ノードの直下にノードを追加
+4. ノードをドラッグ → 別の親候補上にホバー（緑＝OK／赤＝循環で不可）→ ドロップで親子関係を変更
+5. 空白部分にドロップするとルート（最上位）に移動
+6. 削除はインスペクタの「このノードを削除」。子持ち部署は3択モーダル（a) まとめて削除 / b) 子をルートへ / c) キャンセル）
+7. ミスったら **Undo**、初期化したいときは **リセット**、確定したいときは **保存**
+8. 下部の操作ログで「何が起きたか」をいつでも確認
+
+## 検証観点チェックリスト（10項目）
+
+> プロトタイプの目的は「直感的に組み替えられるか」「誤操作に対する安心感」の検証。
+
+- [ ] 1. 初期表示で組織のツリー構造が一目で把握できるか（階層が縦方向に明確か）
+- [ ] 2. 「＋部署」「＋人員」ボタンが、文脈（選択中ノード）から追加先を予測できる UI になっているか
+- [ ] 3. ノードのドラッグ中、ドロップ可能な親候補が視覚的に十分に強調されているか（緑ハイライトが伝わるか）
+- [ ] 4. 循環を作るドロップが、トースト＋赤ハイライトで「なぜ不可か」明示できているか
+- [ ] 5. 「人員 → 人員」のドロップで上司関係に変わることが直感的に伝わるか
+- [ ] 6. 子持ちの部署を削除しようとしたとき、3択モーダルの選択肢の意図が誤解なく伝わるか
+- [ ] 7. インスペクタの名前編集で、誤って Enter 連打しても破壊的な変化が起きないか
+- [ ] 8. 「編集中（未保存）」バッジで、保存前であることを常に確認できるか
+- [ ] 9. Undo / Redo が「直前のひとつだけ」ではなく十分な深さまで戻れることが体感できるか（最大50ステップ）
+- [ ] 10. 操作ログが「自分が何をしたか」を時系列で振り返れる粒度になっているか
+
+## 既知のスコープ外
+
+- 認証 / 権限 / マルチユーザー
+- Excel取り込み・サーバ同期
+- 複数親（マトリクス組織）— MVPは1親のみ
+- レイアウトの永続化（保存対象は `nodes` のみ。再読み込み時は自動レイアウト）
