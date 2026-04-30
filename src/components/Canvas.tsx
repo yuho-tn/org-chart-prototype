@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -15,6 +15,8 @@ import { DepartmentNode, type DeptNodeData } from "./DepartmentNode";
 import { ExecutiveNode, type ExecNodeData } from "./ExecutiveNode";
 import { isInExecutiveBand, layoutAll, wouldCreateCycle } from "../lib/layout";
 import { setDragKind } from "../lib/dndState";
+import { useDndStore } from "../store/useDndStore";
+import { DragStatus } from "./DragStatus";
 import type { OrgNode } from "../lib/types";
 
 const nodeTypes = { department: DepartmentNode, executive: ExecutiveNode };
@@ -135,11 +137,21 @@ export function Canvas() {
 
   const onPaneClick = useCallback(() => setSelected(null), [setSelected]);
 
-  const onNodeDragStart: NodeMouseHandler = useCallback((_, node) => {
-    if (node.type !== "department") return;
-    setDrag({ draggingId: node.id, hoverId: null });
-    setDragKind("dept");
-  }, []);
+  const onNodeDragStart: NodeMouseHandler = useCallback(
+    (_, node) => {
+      if (node.type !== "department") return;
+      setDrag({ draggingId: node.id, hoverId: null });
+      setDragKind("dept");
+      const meta = nodes.find((n) => n.id === node.id);
+      useDndStore.getState().startDrag({
+        id: node.id,
+        kind: "dept",
+        label: meta?.name ?? node.id,
+        source: "tree",
+      });
+    },
+    [nodes],
+  );
 
   const onNodeDrag: NodeMouseHandler = useCallback(
     (event, node) => {
@@ -171,9 +183,19 @@ export function Canvas() {
       }
       if (bestId !== dragRef.current.hoverId) {
         setDrag({ draggingId: node.id, hoverId: bestId });
+        if (bestId === null) {
+          useDndStore.getState().setHover(null);
+        } else {
+          const cycle = wouldCreateCycle(nodes, node.id, bestId);
+          const target = laidOutDepts.find((d) => d.id === bestId);
+          useDndStore.getState().setHover(
+            target?.name ?? bestId,
+            cycle ? "invalid" : "valid",
+          );
+        }
       }
     },
-    [laidOutDepts, reactFlow],
+    [laidOutDepts, nodes, reactFlow],
   );
 
   const onNodeDragStop: NodeMouseHandler = useCallback(
@@ -182,6 +204,7 @@ export function Canvas() {
       const { hoverId } = dragRef.current;
       setDrag({ draggingId: null, hoverId: null });
       setDragKind(null);
+      useDndStore.getState().endDrag();
       if (hoverId === null) {
         const result = reparent(node.id, null);
         if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
@@ -203,7 +226,33 @@ export function Canvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [laidOutDepts.length, laidOutExecs.length]);
 
+  // Tray-originated dept drops anywhere on the canvas pane → place at root.
+  const onPaneDragOver = useCallback((e: ReactDragEvent) => {
+    if (e.dataTransfer.types.includes("application/x-dept-id")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    }
+  }, []);
+
+  const onPaneDrop = useCallback(
+    (e: ReactDragEvent) => {
+      const deptId = e.dataTransfer.getData("application/x-dept-id");
+      if (!deptId) return;
+      e.preventDefault();
+      const result = reparent(deptId, null);
+      if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
+        setToast({ kind: "error", message: result.reason });
+      }
+    },
+    [reparent, setToast],
+  );
+
   return (
+    <div
+      style={{ width: "100%", height: "100%" }}
+      onDragOver={onPaneDragOver}
+      onDrop={onPaneDrop}
+    >
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
@@ -219,6 +268,7 @@ export function Canvas() {
       onNodeDragStop={onNodeDragStop}
       nodesConnectable={false}
       edgesFocusable={false}
+      nodeDragThreshold={6}
       proOptions={{ hideAttribution: true }}
       defaultEdgeOptions={{ type: "smoothstep", style: { strokeWidth: 1.5 } }}
     >
@@ -226,5 +276,7 @@ export function Canvas() {
       <MiniMap pannable zoomable />
       <Controls showInteractive={false} />
     </ReactFlow>
+    <DragStatus />
+    </div>
   );
 }
