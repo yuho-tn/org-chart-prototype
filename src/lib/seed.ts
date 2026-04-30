@@ -24,6 +24,13 @@ export function seedData(): OrgNode[] {
   out.push(dept("d-root", "OrgChart Inc.", null, "ROOT", 0));
   out.push(person("p-ceo", "山田 太郎", "d-root", "CEO"));
 
+  // Executives (DIVを横断するポジション。rendered in the executive band.)
+  out.push({ id: "p-coo", kind: "person", name: "鈴木 健", parentId: "d-root", roleLabel: "COO", isExecutive: true });
+  out.push({ id: "p-cfo", kind: "person", name: "佐藤 真奈美", parentId: "d-root", roleLabel: "CFO", isExecutive: true });
+  out.push({ id: "p-cto", kind: "person", name: "田中 翔", parentId: "d-root", roleLabel: "CTO", isExecutive: true });
+  out.push({ id: "p-cmo", kind: "person", name: "高橋 由紀", parentId: "d-root", roleLabel: "CMO", isExecutive: true });
+  out.push({ id: "p-chro", kind: "person", name: "井上 玲奈", parentId: "d-root", roleLabel: "CHRO", isExecutive: true });
+
   // AI TM
   out.push(dept("d-ai", "AI TM", "d-root", "TM", 5));
   out.push(person("p-ai-tm", "高谷 一起", "d-ai", "TM"));

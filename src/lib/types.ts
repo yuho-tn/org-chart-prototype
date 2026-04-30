@@ -6,7 +6,28 @@ export type DeptCategory = "ROOT" | "DIV" | "TM" | "Unit" | "DEPT";
  * Role label shown in a person chip's "leader" strip when present.
  * Null/undefined means a regular member.
  */
-export type PersonRole = "CEO" | "DM" | "TM" | "UL" | "CTL" | "TL" | null;
+export type PersonRole =
+  | "CEO"
+  | "COO"
+  | "CFO"
+  | "CTO"
+  | "CMO"
+  | "CHRO"
+  | "DM"
+  | "TM"
+  | "UL"
+  | "CTL"
+  | "TL"
+  | null;
+
+/** Roles that mark a person as an executive (役員) by default. */
+export const EXECUTIVE_ROLES: ReadonlyArray<NonNullable<PersonRole>> = [
+  "COO",
+  "CFO",
+  "CTO",
+  "CMO",
+  "CHRO",
+];
 
 export type OrgNode = {
   id: string;
@@ -19,6 +40,8 @@ export type OrgNode = {
   colorIndex?: number;
   /** person-only: leader role; null/absent means regular member */
   roleLabel?: PersonRole;
+  /** person-only: when true, render in the executive band (parent=ROOT) or with an exec badge inside a dept card */
+  isExecutive?: boolean;
 };
 
 export type LogEntry = {

@@ -9,6 +9,11 @@ export const CARD_PAD_BOTTOM = 10;
 export const CARD_GAP_X = 28;
 export const CARD_GAP_Y = 56;
 
+export const EXEC_CARD_W = 144;
+export const EXEC_CARD_H = 52;
+export const EXEC_GAP_X = 12;
+export const EXEC_BAND_PAD_Y = 32;
+
 export type DeptSize = { w: number; h: number };
 
 export type LaidOutDept = OrgNode & {
@@ -16,6 +21,19 @@ export type LaidOutDept = OrgNode & {
   y: number;
   width: number;
   height: number;
+};
+
+export type LaidOutExec = OrgNode & {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type LayoutResult = {
+  depts: LaidOutDept[];
+  execs: LaidOutExec[];
+  byId: Map<string, LaidOutDept | LaidOutExec>;
 };
 
 export function deptHeight(persons: { roleLabel?: OrgNode["roleLabel"] }[]): number {
@@ -30,20 +48,24 @@ export function deptHeight(persons: { roleLabel?: OrgNode["roleLabel"] }[]): num
   );
 }
 
-/**
- * Tidy top-down layout for the department tree. Persons are rendered inside
- * their parent's card and do not receive coordinates here.
- */
-export function layoutDepartments(nodes: OrgNode[]): {
-  depts: LaidOutDept[];
-  byId: Map<string, LaidOutDept>;
-} {
+/** Returns `true` if the person should render in the executive band rather than inside a dept card. */
+export function isInExecutiveBand(node: OrgNode, byId: Map<string, OrgNode>): boolean {
+  if (node.kind !== "person" || !node.isExecutive) return false;
+  if (!node.parentId) return true;
+  const parent = byId.get(node.parentId);
+  return parent?.kind === "department" && parent.category === "ROOT";
+}
+
+export function layoutAll(nodes: OrgNode[]): LayoutResult {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
   const depts = nodes.filter((n) => n.kind === "department");
   const persons = nodes.filter((n) => n.kind === "person");
 
+  // Persons that should render *inside* a dept card (everyone except band-execs).
   const personsOfDept = new Map<string, OrgNode[]>();
   for (const p of persons) {
     if (!p.parentId) continue;
+    if (isInExecutiveBand(p, byId)) continue;
     const arr = personsOfDept.get(p.parentId) ?? [];
     arr.push(p);
     personsOfDept.set(p.parentId, arr);
@@ -62,7 +84,7 @@ export function layoutDepartments(nodes: OrgNode[]): {
     sizes.set(d.id, { w: CARD_W, h: deptHeight(ps) });
   }
 
-  // Depth of each dept (root depts at depth 0)
+  // Depth of each dept
   const depth = new Map<string, number>();
   function dfsDepth(id: string, dep: number) {
     depth.set(id, dep);
@@ -70,22 +92,30 @@ export function layoutDepartments(nodes: OrgNode[]): {
   }
   for (const r of childDepts.get(null) ?? []) dfsDepth(r.id, 0);
 
-  // Row baseline y per depth (cumulative max heights)
   const rowMaxH = new Map<number, number>();
   for (const d of depts) {
     const dep = depth.get(d.id) ?? 0;
     const h = sizes.get(d.id)!.h;
     rowMaxH.set(dep, Math.max(rowMaxH.get(dep) ?? 0, h));
   }
+
+  // Determine if there is an executive band. The band lives between depth 0
+  // (ROOT row) and depth 1 (DIV row). It pushes every depth >= 1 downward.
+  const bandExecs = persons.filter((p) => isInExecutiveBand(p, byId));
+  const hasBand = bandExecs.length > 0;
+  const bandHeight = hasBand ? EXEC_CARD_H + EXEC_BAND_PAD_Y * 2 : 0;
+
   const yAt = new Map<number, number>();
   const maxDepth = Math.max(0, ...rowMaxH.keys());
   let cumY = 0;
   for (let d = 0; d <= maxDepth; d++) {
     yAt.set(d, cumY);
-    cumY += (rowMaxH.get(d) ?? 0) + CARD_GAP_Y;
+    const rowH = rowMaxH.get(d) ?? 0;
+    cumY += rowH + CARD_GAP_Y;
+    if (d === 0 && hasBand) cumY += bandHeight;
   }
 
-  // Subtree width
+  // Subtree widths
   const widthCache = new Map<string, number>();
   function subtreeWidth(id: string): number {
     if (widthCache.has(id)) return widthCache.get(id)!;
@@ -132,7 +162,36 @@ export function layoutDepartments(nodes: OrgNode[]): {
     cursor += w + CARD_GAP_X;
   }
 
-  return { depts: [...out.values()], byId: out };
+  // Compute executive band positions: a horizontal row centered across the
+  // canvas width, sitting between the ROOT row and the DIV row.
+  const execs: LaidOutExec[] = [];
+  if (hasBand) {
+    const totalW = bandExecs.length * EXEC_CARD_W + (bandExecs.length - 1) * EXEC_GAP_X;
+    // Center horizontally across the union of all root subtree widths.
+    const roots = childDepts.get(null) ?? [];
+    const totalRootsW = roots.reduce(
+      (acc, r, i) => acc + subtreeWidth(r.id) + (i > 0 ? CARD_GAP_X : 0),
+      0,
+    );
+    const baseLeft = (totalRootsW - totalW) / 2;
+    const rootMaxH = rowMaxH.get(0) ?? 0;
+    const bandY = (yAt.get(0) ?? 0) + rootMaxH + EXEC_BAND_PAD_Y;
+    bandExecs.forEach((p, i) => {
+      execs.push({
+        ...p,
+        x: baseLeft + i * (EXEC_CARD_W + EXEC_GAP_X),
+        y: bandY,
+        width: EXEC_CARD_W,
+        height: EXEC_CARD_H,
+      });
+    });
+  }
+
+  const merged = new Map<string, LaidOutDept | LaidOutExec>();
+  for (const [k, v] of out) merged.set(k, v);
+  for (const e of execs) merged.set(e.id, e);
+
+  return { depts: [...out.values()], execs, byId: merged };
 }
 
 /** Returns true if making `targetId` the parent of `nodeId` would create a cycle. */
