@@ -41,6 +41,16 @@ export const ROOT_COLOR: ColorSlot = {
   border: "#0b1220",
 };
 
+/** Distinct gold/amber theme for the Exe (executive) department, between ROOT and DIV. */
+export const EXE_COLOR: ColorSlot = {
+  header: "#a16207",
+  headerText: "#fffbeb",
+  leaderStrip: "#fef3c7",
+  leaderText: "#713f12",
+  body: "#fffbeb",
+  border: "#eab308",
+};
+
 /** Resolve a color slot from the palette index, defaulting to slot 0. */
 export function colorAt(idx: number | undefined | null): ColorSlot {
   if (idx === undefined || idx === null) return PALETTE[0];

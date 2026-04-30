@@ -2,7 +2,8 @@ import type { DragEvent } from "react";
 import { Handle, Position } from "reactflow";
 import type { NodeProps } from "reactflow";
 import { useOrgStore } from "../store/useOrgStore";
-import { colorAt, ROOT_COLOR } from "../lib/palette";
+import { colorAt, ROOT_COLOR, EXE_COLOR } from "../lib/palette";
+import { setDragKind } from "../lib/dndState";
 import type { DeptCategory, PersonRole } from "../lib/types";
 
 export type DeptNodeData = {
@@ -10,6 +11,7 @@ export type DeptNodeData = {
   category: DeptCategory;
   colorIndex: number;
   selected: boolean;
+  isBeingDragged: boolean;
   dropState: "none" | "valid" | "invalid";
   leaders: {
     id: string;
@@ -27,6 +29,8 @@ function categoryLabel(cat: DeptCategory): string {
   switch (cat) {
     case "ROOT":
       return "ORG";
+    case "Exe":
+      return "EXE";
     case "DIV":
       return "DIV";
     case "TM":
@@ -44,12 +48,14 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   const setToast = useOrgStore((s) => s.setToast);
 
   const isRoot = data.category === "ROOT";
-  const color = isRoot ? ROOT_COLOR : colorAt(data.colorIndex);
+  const isExe = data.category === "Exe";
+  const color = isRoot ? ROOT_COLOR : isExe ? EXE_COLOR : colorAt(data.colorIndex);
 
   const cls = [
     "dept-card",
     `dept-card--${data.category.toLowerCase()}`,
     data.selected ? "is-selected" : "",
+    data.isBeingDragged ? "is-being-dragged" : "",
     data.dropState === "valid" ? "is-drop-valid" : "",
     data.dropState === "invalid" ? "is-drop-invalid" : "",
   ]
@@ -82,6 +88,13 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   function startChipDrag(e: DragEvent, personId: string) {
     e.dataTransfer.setData(PERSON_MIME, personId);
     e.dataTransfer.effectAllowed = "move";
+    e.currentTarget.classList.add("is-being-dragged");
+    setDragKind("person");
+  }
+
+  function endChipDrag(e: DragEvent) {
+    e.currentTarget.classList.remove("is-being-dragged");
+    setDragKind(null);
   }
 
   function selectChip(e: React.MouseEvent, personId: string) {
@@ -113,6 +126,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
             style={{ background: color.leaderStrip, color: color.leaderText }}
             draggable
             onDragStart={(e) => startChipDrag(e, p.id)}
+            onDragEnd={endChipDrag}
             onClick={(e) => selectChip(e, p.id)}
             onMouseDown={(e) => e.stopPropagation()}
             title={`${p.roleLabel ?? ""}：${p.name}${p.isExecutive ? "（役員）" : ""}`}
@@ -131,6 +145,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
             className={`chip chip--member nodrag ${p.selected ? "is-selected" : ""}`}
             draggable
             onDragStart={(e) => startChipDrag(e, p.id)}
+            onDragEnd={endChipDrag}
             onClick={(e) => selectChip(e, p.id)}
             onMouseDown={(e) => e.stopPropagation()}
             title={p.name}

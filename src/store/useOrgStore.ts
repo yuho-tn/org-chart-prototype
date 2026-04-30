@@ -89,8 +89,9 @@ export const useOrgStore = create<Store>((set, get) => ({
     // Default category: nest one level down from parent
     const inferred: DeptCategory = (() => {
       if (opts?.category) return opts.category;
-      if (!parent) return "DIV";
-      if (parent.category === "ROOT") return "DIV";
+      if (!parent) return "Exe";
+      if (parent.category === "ROOT") return "Exe";
+      if (parent.category === "Exe") return "DIV";
       if (parent.category === "DIV") return "TM";
       if (parent.category === "TM") return "Unit";
       return "DEPT";

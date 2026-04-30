@@ -1,6 +1,6 @@
 export type NodeKind = "department" | "person";
 
-export type DeptCategory = "ROOT" | "DIV" | "TM" | "Unit" | "DEPT";
+export type DeptCategory = "ROOT" | "Exe" | "DIV" | "TM" | "Unit" | "DEPT";
 
 /**
  * Role label shown in a person chip's "leader" strip when present.

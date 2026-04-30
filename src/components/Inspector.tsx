@@ -4,7 +4,7 @@ import { descendantsOf } from "../lib/layout";
 import type { DeptCategory, OrgNode, PersonRole } from "../lib/types";
 import { PALETTE } from "../lib/palette";
 
-const CATEGORIES: DeptCategory[] = ["ROOT", "DIV", "TM", "Unit", "DEPT"];
+const CATEGORIES: DeptCategory[] = ["ROOT", "Exe", "DIV", "TM", "Unit", "DEPT"];
 const ROLES: { value: PersonRole; label: string }[] = [
   { value: null, label: "メンバー（役職なし）" },
   { value: "CEO", label: "CEO（最高経営責任者）" },
