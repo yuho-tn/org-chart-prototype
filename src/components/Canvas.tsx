@@ -12,10 +12,11 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import { useOrgStore } from "../store/useOrgStore";
 import { DepartmentNode, type DeptNodeData } from "./DepartmentNode";
-import { layoutDepartments, wouldCreateCycle } from "../lib/layout";
+import { ExecutiveNode, type ExecNodeData } from "./ExecutiveNode";
+import { isInExecutiveBand, layoutAll, wouldCreateCycle } from "../lib/layout";
 import type { OrgNode } from "../lib/types";
 
-const nodeTypes = { department: DepartmentNode };
+const nodeTypes = { department: DepartmentNode, executive: ExecutiveNode };
 
 function buildDeptEdges(nodes: OrgNode[]): Edge[] {
   return nodes
@@ -45,15 +46,17 @@ export function Canvas() {
   const dragRef = useRef(drag);
   dragRef.current = drag;
 
-  const { depts: laidOutDepts, byId: laidOutById } = useMemo(
-    () => layoutDepartments(nodes),
-    [nodes],
-  );
+  const layout = useMemo(() => layoutAll(nodes), [nodes]);
+  const { depts: laidOutDepts, execs: laidOutExecs } = layout;
 
   const personsByParent = useMemo(() => {
+    const byId = new Map(nodes.map((n) => [n.id, n]));
     const map = new Map<string, OrgNode[]>();
     for (const n of nodes) {
       if (n.kind !== "person" || !n.parentId) continue;
+      // Skip persons that render in the executive band (they're rendered as
+      // standalone RF nodes, not as chips in the parent dept's card).
+      if (isInExecutiveBand(n, byId)) continue;
       const arr = map.get(n.parentId) ?? [];
       arr.push(n);
       map.set(n.parentId, arr);
@@ -61,51 +64,66 @@ export function Canvas() {
     return map;
   }, [nodes]);
 
-  const rfNodes: Node<DeptNodeData>[] = useMemo(
-    () =>
-      laidOutDepts.map((d) => {
-        const isDragging = drag.draggingId === d.id;
-        const isHover = drag.hoverId === d.id;
-        let dropState: "none" | "valid" | "invalid" = "none";
-        if (isHover && drag.draggingId && drag.draggingId !== d.id) {
-          const cycle = wouldCreateCycle(nodes, drag.draggingId, d.id);
-          dropState = cycle ? "invalid" : "valid";
-        }
+  const rfNodes: Node<DeptNodeData | ExecNodeData>[] = useMemo(() => {
+    const dnodes: Node<DeptNodeData>[] = laidOutDepts.map((d) => {
+      const isDragging = drag.draggingId === d.id;
+      const isHover = drag.hoverId === d.id;
+      let dropState: "none" | "valid" | "invalid" = "none";
+      if (isHover && drag.draggingId && drag.draggingId !== d.id) {
+        const cycle = wouldCreateCycle(nodes, drag.draggingId, d.id);
+        dropState = cycle ? "invalid" : "valid";
+      }
 
-        const persons = personsByParent.get(d.id) ?? [];
-        const leaders = persons
-          .filter((p) => !!p.roleLabel)
-          .map((p) => ({
-            id: p.id,
-            name: p.name,
-            roleLabel: p.roleLabel ?? null,
-            selected: selectedId === p.id,
-          }));
-        const members = persons
-          .filter((p) => !p.roleLabel)
-          .map((p) => ({ id: p.id, name: p.name, selected: selectedId === p.id }));
+      const persons = personsByParent.get(d.id) ?? [];
+      const leaders = persons
+        .filter((p) => !!p.roleLabel)
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          roleLabel: p.roleLabel ?? null,
+          selected: selectedId === p.id,
+          isExecutive: !!p.isExecutive,
+        }));
+      const members = persons
+        .filter((p) => !p.roleLabel)
+        .map((p) => ({ id: p.id, name: p.name, selected: selectedId === p.id }));
 
-        return {
-          id: d.id,
-          type: "department",
-          position: { x: d.x, y: d.y },
-          style: { width: d.width, height: d.height },
-          data: {
-            name: d.name,
-            category: d.category ?? "DEPT",
-            colorIndex: d.colorIndex ?? 0,
-            selected: selectedId === d.id,
-            dropState,
-            leaders,
-            members,
-          },
-          draggable: true,
-          selectable: true,
-          dragging: isDragging,
-        };
-      }),
-    [laidOutDepts, nodes, selectedId, drag, personsByParent],
-  );
+      return {
+        id: d.id,
+        type: "department",
+        position: { x: d.x, y: d.y },
+        style: { width: d.width, height: d.height },
+        data: {
+          name: d.name,
+          category: d.category ?? "DEPT",
+          colorIndex: d.colorIndex ?? 0,
+          selected: selectedId === d.id,
+          dropState,
+          leaders,
+          members,
+        },
+        draggable: true,
+        selectable: true,
+        dragging: isDragging,
+      };
+    });
+
+    const enodes: Node<ExecNodeData>[] = laidOutExecs.map((e) => ({
+      id: e.id,
+      type: "executive",
+      position: { x: e.x, y: e.y },
+      style: { width: e.width, height: e.height },
+      data: {
+        name: e.name,
+        role: e.roleLabel ?? null,
+        selected: selectedId === e.id,
+      },
+      draggable: false,
+      selectable: true,
+    }));
+
+    return [...dnodes, ...enodes];
+  }, [laidOutDepts, laidOutExecs, nodes, selectedId, drag, personsByParent]);
 
   const rfEdges = useMemo(() => buildDeptEdges(nodes), [nodes]);
 
@@ -117,11 +135,13 @@ export function Canvas() {
   const onPaneClick = useCallback(() => setSelected(null), [setSelected]);
 
   const onNodeDragStart: NodeMouseHandler = useCallback((_, node) => {
+    if (node.type !== "department") return;
     setDrag({ draggingId: node.id, hoverId: null });
   }, []);
 
   const onNodeDrag: NodeMouseHandler = useCallback(
     (event, node) => {
+      if (node.type !== "department") return;
       const native = event as unknown as MouseEvent;
       const rect = (native.target as HTMLElement | null)
         ?.closest(".react-flow")
@@ -156,6 +176,7 @@ export function Canvas() {
 
   const onNodeDragStop: NodeMouseHandler = useCallback(
     (_, node) => {
+      if (node.type !== "department") return;
       const { hoverId } = dragRef.current;
       setDrag({ draggingId: null, hoverId: null });
       if (hoverId === null) {
@@ -166,10 +187,8 @@ export function Canvas() {
         return;
       }
       const result = reparent(node.id, hoverId);
-      if (!result.ok) {
-        if (result.reason && result.reason !== "既に同じ親です") {
-          setToast({ kind: "error", message: result.reason });
-        }
+      if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
+        setToast({ kind: "error", message: result.reason });
       }
     },
     [reparent, setToast],
@@ -178,9 +197,8 @@ export function Canvas() {
   const fitOnceRef = useRef<ReactFlowInstance | null>(null);
   useEffect(() => {
     fitOnceRef.current?.fitView({ padding: 0.2, duration: 200 });
-    // suppress: refit only on count change of depts to avoid loops
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [laidOutById.size]);
+  }, [laidOutDepts.length, laidOutExecs.length]);
 
   return (
     <ReactFlow

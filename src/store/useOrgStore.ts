@@ -22,9 +22,11 @@ type Store = AppState & {
 
   addDepartment: (parentId: string | null, opts?: { category?: DeptCategory; colorIndex?: number }) => void;
   addPerson: (parentId: string | null, opts?: { roleLabel?: PersonRole }) => void;
+  addExecutive: (role: NonNullable<PersonRole>) => void;
   deleteNode: (id: string, strategy?: DeleteWithChildrenStrategy) => void;
   rename: (id: string, name: string) => void;
   setRole: (id: string, roleLabel: PersonRole) => void;
+  setExecutive: (id: string, isExecutive: boolean) => void;
   setCategory: (id: string, category: DeptCategory) => void;
   setColor: (id: string, colorIndex: number) => void;
   reparent: (nodeId: string, newParentId: string | null) => { ok: boolean; reason?: string };
@@ -137,6 +139,65 @@ export const useOrgStore = create<Store>((set, get) => ({
       nodes: [...state.nodes, newNode],
       selectedId: id,
       log: pushLog(state.log, makeLog("add", `人員「${newNode.name}」を追加`)),
+      dirty: true,
+    });
+  },
+
+  addExecutive: (role) => {
+    const state = get();
+    const root = state.nodes.find((n) => n.kind === "department" && n.category === "ROOT");
+    if (!root) {
+      set({ toast: { kind: "error", message: "ROOT部署が見つかりません" } });
+      return;
+    }
+    const id = uid("p");
+    const newNode: OrgNode = {
+      id,
+      kind: "person",
+      name: "新規役員",
+      parentId: root.id,
+      roleLabel: role,
+      isExecutive: true,
+    };
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: [...state.nodes, newNode],
+      selectedId: id,
+      log: pushLog(state.log, makeLog("add", `役員「${newNode.name}」（${role}）を追加`)),
+      dirty: true,
+    });
+  },
+
+  setExecutive: (id, isExecutive) => {
+    const state = get();
+    const target = state.nodes.find((n) => n.id === id);
+    if (!target || target.kind !== "person") return;
+    if (!!target.isExecutive === isExecutive) return;
+    let nextParentId = target.parentId;
+    // When toggling ON and parent is a non-root dept, also relocate to ROOT so
+    // the person appears in the executive band by default. The user can
+    // re-drop them onto a dept afterward.
+    if (isExecutive) {
+      const byId = new Map(state.nodes.map((n) => [n.id, n]));
+      const parent = target.parentId ? byId.get(target.parentId) : null;
+      if (parent?.kind !== "department" || parent.category !== "ROOT") {
+        const root = state.nodes.find(
+          (n) => n.kind === "department" && n.category === "ROOT",
+        );
+        if (root) nextParentId = root.id;
+      }
+    }
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: state.nodes.map((n) =>
+        n.id === id ? { ...n, isExecutive, parentId: nextParentId } : n,
+      ),
+      log: pushLog(
+        state.log,
+        makeLog("role", `「${target.name}」を${isExecutive ? "役員" : "通常メンバー"}に変更`),
+      ),
       dirty: true,
     });
   },

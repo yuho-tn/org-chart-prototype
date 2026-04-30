@@ -11,7 +11,13 @@ export type DeptNodeData = {
   colorIndex: number;
   selected: boolean;
   dropState: "none" | "valid" | "invalid";
-  leaders: { id: string; name: string; roleLabel: PersonRole; selected: boolean }[];
+  leaders: {
+    id: string;
+    name: string;
+    roleLabel: PersonRole;
+    selected: boolean;
+    isExecutive: boolean;
+  }[];
   members: { id: string; name: string; selected: boolean }[];
 };
 
@@ -103,16 +109,17 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
         {data.leaders.map((p) => (
           <div
             key={p.id}
-            className={`chip chip--leader nodrag ${p.selected ? "is-selected" : ""}`}
+            className={`chip chip--leader nodrag ${p.selected ? "is-selected" : ""} ${p.isExecutive ? "chip--exec" : ""}`}
             style={{ background: color.leaderStrip, color: color.leaderText }}
             draggable
             onDragStart={(e) => startChipDrag(e, p.id)}
             onClick={(e) => selectChip(e, p.id)}
             onMouseDown={(e) => e.stopPropagation()}
-            title={`${p.roleLabel ?? ""}：${p.name}`}
+            title={`${p.roleLabel ?? ""}：${p.name}${p.isExecutive ? "（役員）" : ""}`}
           >
             <span className="chip__role">{p.roleLabel}</span>
             <span className="chip__name">{p.name}</span>
+            {p.isExecutive && <span className="chip__badge">役員</span>}
           </div>
         ))}
         {data.members.length > 0 && data.leaders.length > 0 && (
