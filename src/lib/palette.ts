@@ -1,0 +1,48 @@
+export type ColorSlot = {
+  /** Header background (the dark colored bar at top of a card) */
+  header: string;
+  /** Header text color */
+  headerText: string;
+  /** Leader strip background (lighter than header) */
+  leaderStrip: string;
+  /** Leader strip text */
+  leaderText: string;
+  /** Card body background (member chip area) */
+  body: string;
+  /** Card border */
+  border: string;
+};
+
+export const PALETTE: ColorSlot[] = [
+  // 0: blue
+  { header: "#1e40af", headerText: "#fff", leaderStrip: "#dbeafe", leaderText: "#1e3a8a", body: "#eff6ff", border: "#3b82f6" },
+  // 1: pink
+  { header: "#be185d", headerText: "#fff", leaderStrip: "#fbcfe8", leaderText: "#9d174d", body: "#fdf2f8", border: "#ec4899" },
+  // 2: orange
+  { header: "#c2410c", headerText: "#fff", leaderStrip: "#fed7aa", leaderText: "#7c2d12", body: "#fff7ed", border: "#f97316" },
+  // 3: green
+  { header: "#15803d", headerText: "#fff", leaderStrip: "#bbf7d0", leaderText: "#14532d", body: "#f0fdf4", border: "#22c55e" },
+  // 4: purple
+  { header: "#7e22ce", headerText: "#fff", leaderStrip: "#e9d5ff", leaderText: "#581c87", body: "#faf5ff", border: "#a855f7" },
+  // 5: teal
+  { header: "#0f766e", headerText: "#fff", leaderStrip: "#99f6e4", leaderText: "#134e4a", body: "#f0fdfa", border: "#14b8a6" },
+  // 6: rose
+  { header: "#be123c", headerText: "#fff", leaderStrip: "#fecdd3", leaderText: "#881337", body: "#fff1f2", border: "#f43f5e" },
+  // 7: indigo
+  { header: "#4338ca", headerText: "#fff", leaderStrip: "#c7d2fe", leaderText: "#312e81", body: "#eef2ff", border: "#6366f1" },
+];
+
+export const ROOT_COLOR: ColorSlot = {
+  header: "#0b1220",
+  headerText: "#fff",
+  leaderStrip: "#1f2937",
+  leaderText: "#f9fafb",
+  body: "#111827",
+  border: "#0b1220",
+};
+
+/** Resolve a color slot from the palette index, defaulting to slot 0. */
+export function colorAt(idx: number | undefined | null): ColorSlot {
+  if (idx === undefined || idx === null) return PALETTE[0];
+  return PALETTE[((idx % PALETTE.length) + PALETTE.length) % PALETTE.length];
+}
