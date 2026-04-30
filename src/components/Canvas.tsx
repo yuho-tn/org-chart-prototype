@@ -11,26 +11,21 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useOrgStore } from "../store/useOrgStore";
-import { DepartmentNode } from "./DepartmentNode";
-import { PersonNode } from "./PersonNode";
-import { layout, wouldCreateCycle } from "../lib/layout";
+import { DepartmentNode, type DeptNodeData } from "./DepartmentNode";
+import { layoutDepartments, wouldCreateCycle } from "../lib/layout";
 import type { OrgNode } from "../lib/types";
 
-const nodeTypes = { department: DepartmentNode, person: PersonNode };
+const nodeTypes = { department: DepartmentNode };
 
-function buildEdges(nodes: OrgNode[]): Edge[] {
+function buildDeptEdges(nodes: OrgNode[]): Edge[] {
   return nodes
-    .filter((n) => n.parentId)
+    .filter((n) => n.kind === "department" && n.parentId)
     .map((n) => ({
       id: `e-${n.parentId}-${n.id}`,
       source: n.parentId!,
       target: n.id,
       type: "smoothstep",
     }));
-}
-
-function memberCount(nodes: OrgNode[], deptId: string): number {
-  return nodes.filter((n) => n.parentId === deptId).length;
 }
 
 type DragState = {
@@ -50,37 +45,69 @@ export function Canvas() {
   const dragRef = useRef(drag);
   dragRef.current = drag;
 
-  const laidOut = useMemo(() => layout(nodes), [nodes]);
+  const { depts: laidOutDepts, byId: laidOutById } = useMemo(
+    () => layoutDepartments(nodes),
+    [nodes],
+  );
 
-  const rfNodes: Node[] = useMemo(
+  const personsByParent = useMemo(() => {
+    const map = new Map<string, OrgNode[]>();
+    for (const n of nodes) {
+      if (n.kind !== "person" || !n.parentId) continue;
+      const arr = map.get(n.parentId) ?? [];
+      arr.push(n);
+      map.set(n.parentId, arr);
+    }
+    return map;
+  }, [nodes]);
+
+  const rfNodes: Node<DeptNodeData>[] = useMemo(
     () =>
-      laidOut.map((n) => {
-        const isDragging = drag.draggingId === n.id;
-        const isHover = drag.hoverId === n.id;
+      laidOutDepts.map((d) => {
+        const isDragging = drag.draggingId === d.id;
+        const isHover = drag.hoverId === d.id;
         let dropState: "none" | "valid" | "invalid" = "none";
-        if (isHover && drag.draggingId && drag.draggingId !== n.id) {
-          const cycle = wouldCreateCycle(nodes, drag.draggingId, n.id);
+        if (isHover && drag.draggingId && drag.draggingId !== d.id) {
+          const cycle = wouldCreateCycle(nodes, drag.draggingId, d.id);
           dropState = cycle ? "invalid" : "valid";
         }
+
+        const persons = personsByParent.get(d.id) ?? [];
+        const leaders = persons
+          .filter((p) => !!p.roleLabel)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            roleLabel: p.roleLabel ?? null,
+            selected: selectedId === p.id,
+          }));
+        const members = persons
+          .filter((p) => !p.roleLabel)
+          .map((p) => ({ id: p.id, name: p.name, selected: selectedId === p.id }));
+
         return {
-          id: n.id,
-          type: n.kind,
-          position: { x: n.x, y: n.y },
+          id: d.id,
+          type: "department",
+          position: { x: d.x, y: d.y },
+          style: { width: d.width, height: d.height },
           data: {
-            name: n.name,
-            selected: selectedId === n.id,
+            name: d.name,
+            category: d.category ?? "DEPT",
+            colorIndex: d.colorIndex ?? 0,
+            selected: selectedId === d.id,
             dropState,
-            memberCount: n.kind === "department" ? memberCount(nodes, n.id) : 0,
+            leaders,
+            members,
           },
           draggable: true,
           selectable: true,
           dragging: isDragging,
-        } as Node;
+        };
       }),
-    [laidOut, nodes, selectedId, drag],
+    [laidOutDepts, nodes, selectedId, drag, personsByParent],
   );
 
-  const rfEdges = useMemo(() => buildEdges(nodes), [nodes]);
+  const rfEdges = useMemo(() => buildDeptEdges(nodes), [nodes]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => setSelected(node.id),
@@ -106,19 +133,17 @@ export function Canvas() {
       });
       let bestId: string | null = null;
       let bestDist = Infinity;
-      const NODE_W = 200;
-      const NODE_H = 80;
-      for (const n of laidOut) {
-        if (n.id === node.id) continue;
-        const cx = n.x + NODE_W / 2;
-        const cy = n.y + NODE_H / 2;
+      for (const d of laidOutDepts) {
+        if (d.id === node.id) continue;
+        const cx = d.x + d.width / 2;
+        const cy = d.y + d.height / 2;
         const dx = point.x - cx;
         const dy = point.y - cy;
-        if (Math.abs(dx) < NODE_W / 2 && Math.abs(dy) < NODE_H / 2) {
-          const d = dx * dx + dy * dy;
-          if (d < bestDist) {
-            bestDist = d;
-            bestId = n.id;
+        if (Math.abs(dx) < d.width / 2 && Math.abs(dy) < d.height / 2) {
+          const dist = dx * dx + dy * dy;
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestId = d.id;
           }
         }
       }
@@ -126,7 +151,7 @@ export function Canvas() {
         setDrag({ draggingId: node.id, hoverId: bestId });
       }
     },
-    [laidOut, reactFlow],
+    [laidOutDepts, reactFlow],
   );
 
   const onNodeDragStop: NodeMouseHandler = useCallback(
@@ -134,7 +159,6 @@ export function Canvas() {
       const { hoverId } = dragRef.current;
       setDrag({ draggingId: null, hoverId: null });
       if (hoverId === null) {
-        // dropped on empty space → make root
         const result = reparent(node.id, null);
         if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
           setToast({ kind: "error", message: result.reason });
@@ -154,7 +178,9 @@ export function Canvas() {
   const fitOnceRef = useRef<ReactFlowInstance | null>(null);
   useEffect(() => {
     fitOnceRef.current?.fitView({ padding: 0.2, duration: 200 });
-  }, [nodes.length]);
+    // suppress: refit only on count change of depts to avoid loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [laidOutById.size]);
 
   return (
     <ReactFlow
@@ -173,8 +199,9 @@ export function Canvas() {
       nodesConnectable={false}
       edgesFocusable={false}
       proOptions={{ hideAttribution: true }}
+      defaultEdgeOptions={{ type: "smoothstep", style: { strokeWidth: 1.5 } }}
     >
-      <Background gap={24} />
+      <Background gap={28} color="#e2e8f0" />
       <MiniMap pannable zoomable />
       <Controls showInteractive={false} />
     </ReactFlow>
