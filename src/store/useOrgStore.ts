@@ -15,6 +15,10 @@ type Store = AppState & {
   past: Snapshot[];
   future: Snapshot[];
   dirty: boolean;
+  /** id of the server-side version currently displayed (null when seed/local-only) */
+  currentVersionId: string | null;
+  /** label shown next to the dirty/saved badge */
+  currentVersionLabel: string | null;
 
   addDepartment: (parentId: string | null, opts?: { category?: DeptCategory; colorIndex?: number }) => void;
   addPerson: (parentId: string | null, opts?: { roleLabel?: PersonRole }) => void;
@@ -30,8 +34,10 @@ type Store = AppState & {
   undo: () => void;
   redo: () => void;
   reset: () => void;
-  save: () => void;
+  saveDraft: () => void;
   loadFromStorage: () => void;
+  replaceNodes: (nodes: OrgNode[], meta?: { versionId?: string; versionLabel?: string }) => void;
+  markClean: (meta?: { versionId?: string; versionLabel?: string }) => void;
 };
 
 function uid(prefix: string): string {
@@ -71,6 +77,8 @@ export const useOrgStore = create<Store>((set, get) => ({
   past: [],
   future: [],
   dirty: false,
+  currentVersionId: null,
+  currentVersionLabel: null,
 
   addDepartment: (parentId, opts) => {
     const state = get();
@@ -292,23 +300,53 @@ export const useOrgStore = create<Store>((set, get) => ({
       future: [],
       nodes: seedData(),
       selectedId: null,
+      currentVersionId: null,
+      currentVersionLabel: null,
       log: pushLog(state.log, makeLog("reset", "初期データへリセット")),
       dirty: true,
     });
   },
 
-  save: () => {
+  saveDraft: () => {
     const state = get();
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes: state.nodes }));
-      set({
-        dirty: false,
-        log: pushLog(state.log, makeLog("save", "localStorageに保存しました")),
-        toast: { kind: "info", message: "保存しました" },
-      });
     } catch {
-      set({ toast: { kind: "error", message: "保存に失敗しました" } });
+      // ignore quota errors
     }
+  },
+
+  replaceNodes: (nodes, meta) => {
+    const state = get();
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: nodes.map((n) => ({ ...n })),
+      selectedId: null,
+      currentVersionId: meta?.versionId ?? null,
+      currentVersionLabel: meta?.versionLabel ?? null,
+      dirty: false,
+      log: pushLog(
+        state.log,
+        makeLog(
+          "reset",
+          meta?.versionLabel
+            ? `バージョン「${meta.versionLabel}」を読み込みました`
+            : "ノードを置き換えました",
+        ),
+      ),
+    });
+  },
+
+  markClean: (meta) => {
+    set({
+      dirty: false,
+      currentVersionId: meta?.versionId ?? get().currentVersionId,
+      currentVersionLabel: meta?.versionLabel ?? get().currentVersionLabel,
+      log: meta?.versionLabel
+        ? pushLog(get().log, makeLog("save", `バージョン「${meta.versionLabel}」を保存`))
+        : get().log,
+    });
   },
 
   loadFromStorage: () => {
