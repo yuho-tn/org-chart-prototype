@@ -1,7 +1,19 @@
 import { useEffect, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { descendantsOf } from "../lib/layout";
-import type { OrgNode } from "../lib/types";
+import type { DeptCategory, OrgNode, PersonRole } from "../lib/types";
+import { PALETTE } from "../lib/palette";
+
+const CATEGORIES: DeptCategory[] = ["ROOT", "DIV", "TM", "Unit", "DEPT"];
+const ROLES: { value: PersonRole; label: string }[] = [
+  { value: null, label: "メンバー（役職なし）" },
+  { value: "CEO", label: "CEO（経営）" },
+  { value: "DM", label: "DM（DIVマネージャー）" },
+  { value: "TM", label: "TM（チームマネージャー）" },
+  { value: "UL", label: "UL（ユニットリーダー）" },
+  { value: "CTL", label: "CTL（副リーダー）" },
+  { value: "TL", label: "TL（チームリーダー）" },
+];
 
 function breadcrumb(nodes: OrgNode[], node: OrgNode): string {
   const parts: string[] = [];
@@ -17,6 +29,9 @@ export function Inspector() {
   const nodes = useOrgStore((s) => s.nodes);
   const selectedId = useOrgStore((s) => s.selectedId);
   const rename = useOrgStore((s) => s.rename);
+  const setRole = useOrgStore((s) => s.setRole);
+  const setCategory = useOrgStore((s) => s.setCategory);
+  const setColor = useOrgStore((s) => s.setColor);
   const deleteNode = useOrgStore((s) => s.deleteNode);
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
@@ -30,7 +45,7 @@ export function Inspector() {
   if (!selected) {
     return (
       <aside className="inspector inspector--empty">
-        <p>ノードを選択すると詳細が表示されます。</p>
+        <p>ノード（部署カードまたは人員チップ）を選択すると詳細が表示されます。</p>
       </aside>
     );
   }
@@ -43,20 +58,11 @@ export function Inspector() {
     }
   }
 
-  function handleDeleteClick() {
-    if (selected!.kind === "department" && descCount > 0) {
-      setConfirmOpen(true);
-    } else {
-      // person delete or empty department: still confirm
-      setConfirmOpen(true);
-    }
-  }
-
   return (
     <>
       <aside className="inspector">
         <div className={`badge badge--${selected.kind}`}>
-          {selected.kind === "department" ? "部署" : "人員"}
+          {selected.kind === "department" ? `部署 / ${selected.category ?? "DEPT"}` : "人員"}
         </div>
         <label className="field">
           <span className="field__label">名前</span>
@@ -66,21 +72,77 @@ export function Inspector() {
             onChange={(e) => setName(e.target.value)}
             onBlur={commitRename}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                (e.target as HTMLInputElement).blur();
-              }
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             }}
           />
         </label>
+
+        {selected.kind === "department" && (
+          <>
+            <label className="field">
+              <span className="field__label">種別</span>
+              <select
+                className="field__input"
+                value={selected.category ?? "DEPT"}
+                onChange={(e) => setCategory(selected.id, e.target.value as DeptCategory)}
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="field">
+              <span className="field__label">カラー</span>
+              <div className="color-grid">
+                {PALETTE.map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className={`color-swatch ${selected.colorIndex === i ? "is-active" : ""}`}
+                    style={{ background: c.header, borderColor: c.border }}
+                    onClick={() => setColor(selected.id, i)}
+                    aria-label={`色 ${i + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {selected.kind === "person" && (
+          <label className="field">
+            <span className="field__label">役職</span>
+            <select
+              className="field__input"
+              value={selected.roleLabel ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                setRole(selected.id, (v === "" ? null : (v as PersonRole)));
+              }}
+            >
+              {ROLES.map((r) => (
+                <option key={r.label} value={r.value ?? ""}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <div className="field">
           <span className="field__label">所属</span>
           <span className="field__value">{breadcrumb(nodes, selected)}</span>
         </div>
-        <div className="field">
-          <span className="field__label">配下</span>
-          <span className="field__value">{descCount}件</span>
-        </div>
-        <button className="btn btn--danger" onClick={handleDeleteClick}>
+        {selected.kind === "department" && (
+          <div className="field">
+            <span className="field__label">配下</span>
+            <span className="field__value">{descCount}件</span>
+          </div>
+        )}
+
+        <button className="btn btn--danger" onClick={() => setConfirmOpen(true)}>
           このノードを削除
         </button>
       </aside>
@@ -117,12 +179,12 @@ function DeleteModal({
   onCascade: () => void;
   onPromote: () => void;
 }) {
-  const hasChildren = descCount > 0;
+  const showThreeWay = target.kind === "department" && descCount > 0;
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3 className="modal__title">削除の確認</h3>
-        {hasChildren ? (
+        {showThreeWay ? (
           <>
             <p className="modal__body">
               <strong>{target.name}</strong> には配下 {descCount} 件があります。どのように処理しますか？
