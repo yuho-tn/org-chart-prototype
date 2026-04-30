@@ -14,6 +14,7 @@ import { useOrgStore } from "../store/useOrgStore";
 import { DepartmentNode, type DeptNodeData } from "./DepartmentNode";
 import { ExecutiveNode, type ExecNodeData } from "./ExecutiveNode";
 import { isInExecutiveBand, layoutAll, wouldCreateCycle } from "../lib/layout";
+import { setDragKind } from "../lib/dndState";
 import type { OrgNode } from "../lib/types";
 
 const nodeTypes = { department: DepartmentNode, executive: ExecutiveNode };
@@ -98,13 +99,13 @@ export function Canvas() {
           category: d.category ?? "DEPT",
           colorIndex: d.colorIndex ?? 0,
           selected: selectedId === d.id,
+          isBeingDragged: isDragging,
           dropState,
           leaders,
           members,
         },
         draggable: true,
         selectable: true,
-        dragging: isDragging,
       };
     });
 
@@ -137,6 +138,7 @@ export function Canvas() {
   const onNodeDragStart: NodeMouseHandler = useCallback((_, node) => {
     if (node.type !== "department") return;
     setDrag({ draggingId: node.id, hoverId: null });
+    setDragKind("dept");
   }, []);
 
   const onNodeDrag: NodeMouseHandler = useCallback(
@@ -179,6 +181,7 @@ export function Canvas() {
       if (node.type !== "department") return;
       const { hoverId } = dragRef.current;
       setDrag({ draggingId: null, hoverId: null });
+      setDragKind(null);
       if (hoverId === null) {
         const result = reparent(node.id, null);
         if (!result.ok && result.reason && result.reason !== "既に同じ親です") {

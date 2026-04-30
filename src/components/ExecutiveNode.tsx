@@ -2,6 +2,7 @@ import type { DragEvent } from "react";
 import { Handle, Position } from "reactflow";
 import type { NodeProps } from "reactflow";
 import { useOrgStore } from "../store/useOrgStore";
+import { setDragKind } from "../lib/dndState";
 import type { PersonRole } from "../lib/types";
 
 export type ExecNodeData = {
@@ -18,6 +19,13 @@ export function ExecutiveNode({ id, data }: NodeProps<ExecNodeData>) {
   function startDrag(e: DragEvent) {
     e.dataTransfer.setData(PERSON_MIME, id);
     e.dataTransfer.effectAllowed = "move";
+    e.currentTarget.classList.add("is-being-dragged");
+    setDragKind("person");
+  }
+
+  function endDrag(e: DragEvent) {
+    e.currentTarget.classList.remove("is-being-dragged");
+    setDragKind(null);
   }
 
   function selectClick(e: React.MouseEvent) {
@@ -30,6 +38,7 @@ export function ExecutiveNode({ id, data }: NodeProps<ExecNodeData>) {
       className={`exec-card nodrag ${data.selected ? "is-selected" : ""}`}
       draggable
       onDragStart={startDrag}
+      onDragEnd={endDrag}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={selectClick}
       title={`${data.role}：${data.name}`}

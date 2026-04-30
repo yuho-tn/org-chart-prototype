@@ -569,16 +569,66 @@ select.field__input {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.4);
 }
 
+/* The dept currently being dragged appears lifted/translucent */
+.dept-card.is-being-dragged {
+  opacity: 0.55;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.25);
+  cursor: grabbing;
+}
+
+/* While *any* drag is in progress, all dept cards subtly indicate they
+ * are candidate drop targets with a thin dashed outline. */
+body.is-dragging-person .dept-card,
+body.is-dragging-dept .dept-card:not(.is-being-dragged) {
+  outline: 2px dashed rgba(37, 99, 235, 0.35);
+  outline-offset: 4px;
+  transition: outline-color 0.12s, box-shadow 0.12s;
+}
+
+/* Hovered drop target — strong feedback */
 .dept-card.is-drop-valid {
-  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.45);
+  outline: 3px solid var(--ok) !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 8px rgba(22, 163, 74, 0.18);
+  animation: drop-pulse-ok 0.9s ease-in-out infinite;
 }
 
 .dept-card.is-drop-invalid {
-  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.45);
+  outline: 3px solid var(--danger) !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 8px rgba(220, 38, 38, 0.18);
 }
 
 .dept-card.is-chip-drop-over {
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.45);
+  outline: 3px solid var(--primary) !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.2);
+  animation: drop-pulse-blue 0.9s ease-in-out infinite;
+}
+
+@keyframes drop-pulse-ok {
+  0%,
+  100% {
+    box-shadow: 0 0 0 6px rgba(22, 163, 74, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(22, 163, 74, 0.08);
+  }
+}
+@keyframes drop-pulse-blue {
+  0%,
+  100% {
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(37, 99, 235, 0.08);
+  }
+}
+
+/* Global cursor: when any drag is happening, force grabbing everywhere */
+body.is-dragging,
+body.is-dragging * {
+  cursor: grabbing !important;
 }
 
 .dept-card--root {
@@ -756,6 +806,20 @@ select.field__input {
 
 .chip.is-selected {
   box-shadow: 0 0 0 2px var(--primary);
+}
+
+/* The chip / exec pill that started an HTML5 drag stays in the DOM but visually
+ * "lifts off" — opacity and slight scale to convey grabbing the actual element. */
+.chip.is-being-dragged {
+  opacity: 0.35;
+  transform: scale(0.96);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.18);
+}
+
+.exec-card.is-being-dragged {
+  opacity: 0.45;
+  transform: scale(0.94);
+  box-shadow: 0 10px 20px rgba(234, 88, 12, 0.35);
 }
 
 .chip--exec {
