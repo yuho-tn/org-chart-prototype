@@ -57,9 +57,11 @@ export function isInExecutiveBand(node: OrgNode, byId: Map<string, OrgNode>): bo
 }
 
 export function layoutAll(nodes: OrgNode[]): LayoutResult {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const depts = nodes.filter((n) => n.kind === "department");
-  const persons = nodes.filter((n) => n.kind === "person");
+  // Unplaced nodes live in the tray and never appear on the canvas.
+  const placed = nodes.filter((n) => !n.isUnplaced);
+  const byId = new Map(placed.map((n) => [n.id, n]));
+  const depts = placed.filter((n) => n.kind === "department");
+  const persons = placed.filter((n) => n.kind === "person");
 
   // Persons that should render *inside* a dept card (everyone except band-execs).
   const personsOfDept = new Map<string, OrgNode[]>();

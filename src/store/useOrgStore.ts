@@ -85,88 +85,88 @@ export const useOrgStore = create<Store>((set, get) => ({
   addDepartment: (parentId, opts) => {
     const state = get();
     const id = uid("d");
-    const parent = parentId ? state.nodes.find((n) => n.id === parentId) : null;
-    // Default category: nest one level down from parent
+    // New nodes always land in the tray (isUnplaced=true). The user drags
+    // them onto the canvas to commit a parent. parentId here is treated as a
+    // *hint* for the default category and color when they eventually drop.
+    const hintParent = parentId ? state.nodes.find((n) => n.id === parentId) : null;
     const inferred: DeptCategory = (() => {
       if (opts?.category) return opts.category;
-      if (!parent) return "Exe";
-      if (parent.category === "ROOT") return "Exe";
-      if (parent.category === "Exe") return "DIV";
-      if (parent.category === "DIV") return "TM";
-      if (parent.category === "TM") return "Unit";
+      if (!hintParent) return "DIV";
+      if (hintParent.category === "ROOT") return "Exe";
+      if (hintParent.category === "Exe") return "DIV";
+      if (hintParent.category === "DIV") return "TM";
+      if (hintParent.category === "TM") return "Unit";
       return "DEPT";
     })();
     const colorIndex =
       opts?.colorIndex ??
-      (parent?.colorIndex !== undefined && parent.category !== "ROOT"
-        ? parent.colorIndex
-        : (state.nodes.filter((n) => n.kind === "department" && n.parentId === parentId).length) % 8);
+      (hintParent?.colorIndex !== undefined && hintParent.category !== "ROOT"
+        ? hintParent.colorIndex
+        : state.nodes.filter((n) => n.kind === "department").length % 8);
     const newNode: OrgNode = {
       id,
       kind: "department",
       name: "新規部署",
-      parentId,
+      parentId: null,
       category: inferred,
       colorIndex,
+      isUnplaced: true,
     };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(state.log, makeLog("add", `部署「${newNode.name}」を追加（${inferred}）`)),
+      log: pushLog(state.log, makeLog("add", `部署「${newNode.name}」（${inferred}）を未配置で追加`)),
       dirty: true,
+      toast: { kind: "info", message: "未配置エリアに追加しました。ドラッグで配置先を指定してください" },
     });
   },
 
   addPerson: (parentId, opts) => {
     const state = get();
-    const deptId = nearestDeptAncestor(state.nodes, parentId);
-    if (!deptId) {
-      set({ toast: { kind: "error", message: "人員は部署の中にのみ追加できます" } });
-      return;
-    }
     const id = uid("p");
     const newNode: OrgNode = {
       id,
       kind: "person",
       name: "新規メンバー",
-      parentId: deptId,
+      parentId: null,
       roleLabel: opts?.roleLabel ?? null,
+      isUnplaced: true,
     };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(state.log, makeLog("add", `人員「${newNode.name}」を追加`)),
+      log: pushLog(state.log, makeLog("add", `人員「${newNode.name}」を未配置で追加`)),
       dirty: true,
+      toast: { kind: "info", message: "未配置エリアに追加しました。ドラッグで配置先の部署を指定してください" },
     });
+    // touch parentId to silence unused warning in dev
+    void parentId;
   },
 
   addExecutive: (role) => {
     const state = get();
-    const root = state.nodes.find((n) => n.kind === "department" && n.category === "ROOT");
-    if (!root) {
-      set({ toast: { kind: "error", message: "ROOT部署が見つかりません" } });
-      return;
-    }
     const id = uid("p");
     const newNode: OrgNode = {
       id,
       kind: "person",
       name: "新規役員",
-      parentId: root.id,
+      parentId: null,
       roleLabel: role,
       isExecutive: true,
+      isUnplaced: true,
     };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(state.log, makeLog("add", `役員「${newNode.name}」（${role}）を追加`)),
+      log: pushLog(state.log, makeLog("add", `役員「${newNode.name}」（${role}）を未配置で追加`)),
       dirty: true,
+      toast: { kind: "info", message: "未配置エリアに追加しました。Exe部署にドラッグして配置してください" },
     });
   },
 
@@ -308,19 +308,28 @@ export const useOrgStore = create<Store>((set, get) => ({
       }
     }
 
-    if (node.parentId === resolvedParentId) return { ok: false, reason: "既に同じ親です" };
+    if (node.parentId === resolvedParentId && !node.isUnplaced) {
+      return { ok: false, reason: "既に同じ親です" };
+    }
     if (wouldCreateCycle(state.nodes, nodeId, resolvedParentId)) {
       return { ok: false, reason: "循環参照になるため移動できません" };
     }
     const newParent = resolvedParentId ? state.nodes.find((n) => n.id === resolvedParentId) : null;
-    const detail = newParent
-      ? `「${node.name}」を「${newParent.name}」配下に移動`
-      : `「${node.name}」をルートへ移動`;
+    const wasUnplaced = !!node.isUnplaced;
+    const detail = wasUnplaced
+      ? newParent
+        ? `「${node.name}」を「${newParent.name}」配下に配置`
+        : `「${node.name}」をルートに配置`
+      : newParent
+        ? `「${node.name}」を「${newParent.name}」配下に移動`
+        : `「${node.name}」をルートへ移動`;
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: state.nodes.map((n) =>
-        n.id === nodeId ? { ...n, parentId: resolvedParentId } : n,
+        n.id === nodeId
+          ? { ...n, parentId: resolvedParentId, isUnplaced: false }
+          : n,
       ),
       log: pushLog(state.log, makeLog("move", detail)),
       dirty: true,

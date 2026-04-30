@@ -42,6 +42,8 @@ export type OrgNode = {
   roleLabel?: PersonRole;
   /** person-only: when true, render in the executive band (parent=ROOT) or with an exec badge inside a dept card */
   isExecutive?: boolean;
+  /** when true, this node has been created but not yet placed in the tree — it lives in the left tray until the user drags it onto the canvas. */
+  isUnplaced?: boolean;
 };
 
 export type LogEntry = {
