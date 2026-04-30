@@ -2,66 +2,38 @@ import { useState } from "react";
 import { useReactFlow } from "reactflow";
 import { useOrgStore } from "../store/useOrgStore";
 import { VersionsPanel } from "./VersionsPanel";
+import { TrayPanel } from "./TrayPanel";
 import { EXECUTIVE_ROLES } from "../lib/types";
 
 export function Sidebar() {
-  const selectedId = useOrgStore((s) => s.selectedId);
-  const nodes = useOrgStore((s) => s.nodes);
   const addDepartment = useOrgStore((s) => s.addDepartment);
   const addPerson = useOrgStore((s) => s.addPerson);
   const addExecutive = useOrgStore((s) => s.addExecutive);
-  const setToast = useOrgStore((s) => s.setToast);
   const rf = useReactFlow();
   const [execMenuOpen, setExecMenuOpen] = useState(false);
-
-  const selected = nodes.find((n) => n.id === selectedId) ?? null;
-
-  let deptForPerson: string | null = null;
-  let parentForDept: string | null = null;
-  if (selected) {
-    if (selected.kind === "department") {
-      deptForPerson = selected.id;
-      parentForDept = selected.id;
-    } else {
-      deptForPerson = selected.parentId;
-      parentForDept = selected.parentId;
-    }
-  }
-
-  const targetDept = deptForPerson ? nodes.find((n) => n.id === deptForPerson) : null;
 
   return (
     <aside className="sidebar">
       <section className="sidebar__section">
-        <h2 className="sidebar__title">追加</h2>
+        <h2 className="sidebar__title">新規追加</h2>
         <div className="sidebar__hint">
-          追加先：<strong>{targetDept?.name ?? "（ルート）"}</strong>
+          新規ノードは <strong>未配置エリア</strong> に追加されます。
           <div className="sidebar__hintSub">
-            部署選択中はその直下、人員選択中は同じ部署内に追加されます
+            未配置エリアからドラッグして、配置先の部署カードまたはキャンバスに直接ドロップしてください。
           </div>
         </div>
         <div className="sidebar__btnRow">
           <button
             className="btn btn--primary"
-            onClick={() => addDepartment(parentForDept)}
-            title={parentForDept ? "選択中の配下に部署を追加" : "ルートに部署を追加"}
+            onClick={() => addDepartment(null)}
+            title="未配置エリアに新しい部署を追加"
           >
             ＋部署
           </button>
           <button
             className="btn"
-            onClick={() => {
-              if (!deptForPerson) {
-                setToast({
-                  kind: "error",
-                  message: "人員を追加するには、先に部署を選択してください",
-                });
-                return;
-              }
-              addPerson(deptForPerson);
-            }}
-            disabled={!deptForPerson}
-            title={deptForPerson ? "この部署にメンバーを追加" : "部署を選択してください"}
+            onClick={() => addPerson(null)}
+            title="未配置エリアに新しい人員を追加"
           >
             ＋人員
           </button>
@@ -70,7 +42,7 @@ export function Sidebar() {
           <button
             className="btn btn--ghost btn--xs"
             onClick={() => setExecMenuOpen((v) => !v)}
-            title="役員（COO/CFO/CTO/CMO/CHRO）を追加"
+            title="役員（COO/CFO/CTO/CMO/CHRO）を未配置で追加"
           >
             ＋役員 ▾
           </button>
@@ -99,6 +71,7 @@ export function Sidebar() {
         )}
       </section>
 
+      <TrayPanel />
       <VersionsPanel />
     </aside>
   );

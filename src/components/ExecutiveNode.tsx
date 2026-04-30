@@ -2,6 +2,7 @@ import type { DragEvent } from "react";
 import { Handle, Position } from "reactflow";
 import type { NodeProps } from "reactflow";
 import { useOrgStore } from "../store/useOrgStore";
+import { useDndStore } from "../store/useDndStore";
 import { setDragKind } from "../lib/dndState";
 import type { PersonRole } from "../lib/types";
 
@@ -21,11 +22,18 @@ export function ExecutiveNode({ id, data }: NodeProps<ExecNodeData>) {
     e.dataTransfer.effectAllowed = "move";
     e.currentTarget.classList.add("is-being-dragged");
     setDragKind("person");
+    useDndStore.getState().startDrag({
+      id,
+      kind: "person",
+      label: data.name,
+      source: "tree",
+    });
   }
 
   function endDrag(e: DragEvent) {
     e.currentTarget.classList.remove("is-being-dragged");
     setDragKind(null);
+    useDndStore.getState().endDrag();
   }
 
   function selectClick(e: React.MouseEvent) {

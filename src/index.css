@@ -60,7 +60,7 @@ select.field__input {
 
 .app__main {
   display: grid;
-  grid-template-columns: 280px 1fr 300px;
+  grid-template-columns: 300px 1fr 300px;
   min-height: 0;
 }
 
@@ -295,6 +295,245 @@ select.field__input {
   position: absolute;
   left: 4px;
   color: var(--primary);
+}
+
+/* Tray (未配置エリア) */
+.tray {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: #fffbe6;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tray__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tray__hint {
+  font-size: 10px;
+  color: #92400e;
+  font-weight: 500;
+}
+
+.tray__empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.55;
+  padding: 4px 0;
+}
+
+.tray__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tray__item {
+  display: flex;
+  align-items: stretch;
+  background: #fff;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.06s;
+}
+
+.tray__item:hover {
+  border-color: #f59e0b;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.15);
+}
+
+.tray__item.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.tray__item--person .tray__handle {
+  border-left: 4px solid #475569;
+}
+
+.tray__item--dept .tray__handle {
+  border-left: 4px solid #f59e0b;
+}
+
+.tray__handle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: grab;
+  user-select: none;
+}
+
+.tray__handle:active {
+  cursor: grabbing;
+}
+
+.tray__handle.is-being-dragged {
+  opacity: 0.45;
+  transform: scale(0.96);
+}
+
+.tray__kind {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: #fef3c7;
+  color: #92400e;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.tray__item--person .tray__kind {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.tray__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tray__grip {
+  color: #cbd5e1;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.tray__delete {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  width: 26px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  transition: background 0.12s, color 0.12s;
+}
+
+.tray__delete:hover {
+  background: #fee2e2;
+  color: var(--danger);
+}
+
+/* Drag status ribbon (rendered inside the canvas overlay) */
+.drag-status {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  animation: drag-status-in 0.18s ease-out;
+}
+
+.drag-status--valid {
+  background: rgba(22, 101, 52, 0.95);
+}
+
+.drag-status--invalid {
+  background: rgba(153, 27, 27, 0.95);
+}
+
+.drag-status__icon {
+  font-size: 14px;
+}
+
+.drag-status__source {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.drag-status__source-kind {
+  font-size: 10px;
+  opacity: 0.7;
+  letter-spacing: 0.04em;
+}
+
+.drag-status__arrow {
+  opacity: 0.5;
+}
+
+.drag-status__target {
+  font-weight: 600;
+}
+
+.drag-status__warn {
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+@keyframes drag-status-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Inline edit inputs replacing chips and dept names */
+.dept-card__nameInput {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text);
+  border: 2px solid var(--primary);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
+}
+
+.chip.chip--editing {
+  background: #fff;
+  border: 2px solid var(--primary);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
 }
 
 /* Versions panel */
