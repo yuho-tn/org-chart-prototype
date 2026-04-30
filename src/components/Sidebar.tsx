@@ -1,14 +1,18 @@
+import { useState } from "react";
 import { useReactFlow } from "reactflow";
 import { useOrgStore } from "../store/useOrgStore";
 import { VersionsPanel } from "./VersionsPanel";
+import { EXECUTIVE_ROLES } from "../lib/types";
 
 export function Sidebar() {
   const selectedId = useOrgStore((s) => s.selectedId);
   const nodes = useOrgStore((s) => s.nodes);
   const addDepartment = useOrgStore((s) => s.addDepartment);
   const addPerson = useOrgStore((s) => s.addPerson);
+  const addExecutive = useOrgStore((s) => s.addExecutive);
   const setToast = useOrgStore((s) => s.setToast);
   const rf = useReactFlow();
+  const [execMenuOpen, setExecMenuOpen] = useState(false);
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
@@ -62,12 +66,37 @@ export function Sidebar() {
             ＋人員
           </button>
         </div>
-        <button
-          className="btn btn--ghost btn--xs"
-          onClick={() => rf.fitView({ padding: 0.2, duration: 200 })}
-        >
-          フィットビュー
-        </button>
+        <div className="sidebar__execRow">
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => setExecMenuOpen((v) => !v)}
+            title="役員（COO/CFO/CTO/CMO/CHRO）を追加"
+          >
+            ＋役員 ▾
+          </button>
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => rf.fitView({ padding: 0.2, duration: 200 })}
+          >
+            フィットビュー
+          </button>
+        </div>
+        {execMenuOpen && (
+          <div className="exec-menu">
+            {EXECUTIVE_ROLES.map((role) => (
+              <button
+                key={role}
+                className="btn btn--ghost btn--xs exec-menu__item"
+                onClick={() => {
+                  addExecutive(role);
+                  setExecMenuOpen(false);
+                }}
+              >
+                ＋{role}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       <VersionsPanel />

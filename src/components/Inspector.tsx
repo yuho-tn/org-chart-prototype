@@ -7,7 +7,12 @@ import { PALETTE } from "../lib/palette";
 const CATEGORIES: DeptCategory[] = ["ROOT", "DIV", "TM", "Unit", "DEPT"];
 const ROLES: { value: PersonRole; label: string }[] = [
   { value: null, label: "メンバー（役職なし）" },
-  { value: "CEO", label: "CEO（経営）" },
+  { value: "CEO", label: "CEO（最高経営責任者）" },
+  { value: "COO", label: "COO（最高執行責任者）" },
+  { value: "CFO", label: "CFO（最高財務責任者）" },
+  { value: "CTO", label: "CTO（最高技術責任者）" },
+  { value: "CMO", label: "CMO（最高マーケティング責任者）" },
+  { value: "CHRO", label: "CHRO（最高人事責任者）" },
   { value: "DM", label: "DM（DIVマネージャー）" },
   { value: "TM", label: "TM（チームマネージャー）" },
   { value: "UL", label: "UL（ユニットリーダー）" },
@@ -30,6 +35,7 @@ export function Inspector() {
   const selectedId = useOrgStore((s) => s.selectedId);
   const rename = useOrgStore((s) => s.rename);
   const setRole = useOrgStore((s) => s.setRole);
+  const setExecutive = useOrgStore((s) => s.setExecutive);
   const setCategory = useOrgStore((s) => s.setCategory);
   const setColor = useOrgStore((s) => s.setColor);
   const deleteNode = useOrgStore((s) => s.deleteNode);
@@ -112,6 +118,7 @@ export function Inspector() {
         )}
 
         {selected.kind === "person" && (
+          <>
           <label className="field">
             <span className="field__label">役職</span>
             <select
@@ -129,6 +136,24 @@ export function Inspector() {
               ))}
             </select>
           </label>
+          <label className="field">
+            <span className="field__label">役員フラグ</span>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={!!selected.isExecutive}
+                onChange={(e) => setExecutive(selected.id, e.target.checked)}
+              />
+              <span>
+                役員として扱う（DIVを横断するポジション）
+                <br />
+                <small style={{ color: "var(--text-muted)" }}>
+                  ONかつ親がROOTのとき、役員バンドに表示。DIVカード内にドラッグするとその部署のリーダー扱いに切り替わります。
+                </small>
+              </span>
+            </label>
+          </label>
+          </>
         )}
 
         <div className="field">
