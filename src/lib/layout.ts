@@ -57,8 +57,19 @@ export function isInExecutiveBand(node: OrgNode, byId: Map<string, OrgNode>): bo
 }
 
 export function layoutAll(nodes: OrgNode[]): LayoutResult {
-  // Unplaced nodes live in the tray and never appear on the canvas.
-  const placed = nodes.filter((n) => !n.isUnplaced);
+  // Unplaced nodes live in the tray and never appear on the canvas. A pasted
+  // dept brings its children with it: those children have isUnplaced=false but
+  // their root ancestor is unplaced, so we walk up to filter the whole subtree.
+  const allById = new Map(nodes.map((n) => [n.id, n]));
+  const isInTray = (n: OrgNode): boolean => {
+    let cur: OrgNode | undefined = n;
+    while (cur) {
+      if (cur.isUnplaced) return true;
+      cur = cur.parentId ? allById.get(cur.parentId) : undefined;
+    }
+    return false;
+  };
+  const placed = nodes.filter((n) => !isInTray(n));
   const byId = new Map(placed.map((n) => [n.id, n]));
   const depts = placed.filter((n) => n.kind === "department");
   const persons = placed.filter((n) => n.kind === "person");

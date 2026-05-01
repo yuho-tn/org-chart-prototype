@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { AppState, LogEntry, OrgNode, PersonRole, DeptCategory } from "../lib/types";
 import { seedData } from "../lib/seed";
 import { descendantsOf, wouldCreateCycle } from "../lib/layout";
-import { applyMove } from "../lib/move";
+import { applyMove, cloneSubtree } from "../lib/move";
 
 const STORAGE_KEY = "org-chart-prototype:v2";
 const LOG_LIMIT = 10;
@@ -12,6 +12,8 @@ type DeleteWithChildrenStrategy = "cascade" | "promoteToRoot";
 
 type Snapshot = Pick<AppState, "nodes">;
 
+type Clipboard = { snapshot: OrgNode[]; rootId: string } | null;
+
 type Store = AppState & {
   past: Snapshot[];
   future: Snapshot[];
@@ -20,6 +22,8 @@ type Store = AppState & {
   currentVersionId: string | null;
   /** label shown next to the dirty/saved badge */
   currentVersionLabel: string | null;
+  /** in-memory clipboard for Cmd+C / Cmd+V */
+  clipboard: Clipboard;
 
   addDepartment: (parentId: string | null, opts?: { category?: DeptCategory; colorIndex?: number }) => void;
   addPerson: (parentId: string | null, opts?: { roleLabel?: PersonRole }) => void;
@@ -35,6 +39,16 @@ type Store = AppState & {
     newParentId: string | null,
     atIndex?: number,
   ) => { ok: boolean; reason?: string };
+  /** Deep-copy a subtree to the clipboard for later Cmd+V. */
+  copyToClipboard: (id: string) => boolean;
+  /** Paste clipboard contents into the tray as an unplaced subtree. */
+  pasteFromClipboard: () => { ok: boolean; reason?: string };
+  /** Deep-copy a subtree directly to a position (used by Option+Drag). */
+  duplicateAtPosition: (
+    sourceId: string,
+    targetParentId: string | null,
+    atIndex: number,
+  ) => { ok: boolean; reason?: string; newRootId?: string };
   setSelected: (id: string | null) => void;
   setToast: (toast: AppState["toast"]) => void;
 
@@ -86,6 +100,7 @@ export const useOrgStore = create<Store>((set, get) => ({
   dirty: false,
   currentVersionId: null,
   currentVersionLabel: null,
+  clipboard: null,
 
   addDepartment: (parentId, opts) => {
     const state = get();
@@ -345,6 +360,120 @@ export const useOrgStore = create<Store>((set, get) => ({
       dirty: true,
     });
     return { ok: true };
+  },
+
+  copyToClipboard: (id) => {
+    const state = get();
+    const target = state.nodes.find((n) => n.id === id);
+    if (!target) return false;
+    const subtree = [target, ...descendantsOf(state.nodes, id)].map((n) => ({
+      ...n,
+    }));
+    set({
+      clipboard: { snapshot: subtree, rootId: id },
+      log: pushLog(
+        state.log,
+        makeLog(
+          "add",
+          `「${target.name}」をコピー（${subtree.length}件）`,
+        ),
+      ),
+      toast: {
+        kind: "info",
+        message: `「${target.name}」をコピーしました（Cmd+Vで貼り付け）`,
+      },
+    });
+    return true;
+  },
+
+  pasteFromClipboard: () => {
+    const state = get();
+    const cb = state.clipboard;
+    if (!cb) {
+      set({ toast: { kind: "error", message: "クリップボードが空です" } });
+      return { ok: false, reason: "クリップボードが空です" };
+    }
+    const { clones, newRootId } = cloneSubtree(cb.snapshot, cb.rootId);
+    if (clones.length === 0) return { ok: false, reason: "コピー対象が見つかりません" };
+    // Mark only the root as unplaced; descendants follow naturally and are
+    // hidden by the layout filter that walks ancestors.
+    const stamped = clones.map((n) => {
+      if (n.id === newRootId) {
+        return {
+          ...n,
+          parentId: null,
+          isUnplaced: true,
+          name: `${n.name} (コピー)`,
+        };
+      }
+      return { ...n, isUnplaced: false };
+    });
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: [...state.nodes, ...stamped],
+      selectedId: newRootId,
+      log: pushLog(
+        state.log,
+        makeLog(
+          "add",
+          `「${stamped[0].name}」を貼り付け（未配置に${stamped.length}件）`,
+        ),
+      ),
+      toast: {
+        kind: "info",
+        message: "未配置エリアに貼り付けました。ドラッグで配置してください",
+      },
+      dirty: true,
+    });
+    return { ok: true };
+  },
+
+  duplicateAtPosition: (sourceId, targetParentId, atIndex) => {
+    const state = get();
+    const source = state.nodes.find((n) => n.id === sourceId);
+    if (!source) return { ok: false, reason: "対象ノードが見つかりません" };
+    if (source.kind === "person" && targetParentId) {
+      const target = state.nodes.find((n) => n.id === targetParentId);
+      if (!target || target.kind !== "department") {
+        return { ok: false, reason: "人員は部署の中にのみ配置できます" };
+      }
+    }
+    const { clones, newRootId } = cloneSubtree(state.nodes, sourceId);
+    if (clones.length === 0) return { ok: false, reason: "コピーに失敗しました" };
+    // The new root attaches to the target; descendants keep their (remapped)
+    // internal parent links. All clones are placed (isUnplaced=false).
+    const stamped = clones.map((n) =>
+      n.id === newRootId
+        ? { ...n, parentId: targetParentId, isUnplaced: false }
+        : { ...n, isUnplaced: false },
+    );
+    let next = [...state.nodes, ...stamped];
+    next = applyMove(next, newRootId, targetParentId, atIndex);
+    const targetMeta = targetParentId
+      ? state.nodes.find((n) => n.id === targetParentId)
+      : null;
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: next,
+      selectedId: newRootId,
+      log: pushLog(
+        state.log,
+        makeLog(
+          "add",
+          targetMeta
+            ? `「${source.name}」を「${targetMeta.name}」配下に複製（${clones.length}件）`
+            : `「${source.name}」をルートに複製（${clones.length}件）`,
+        ),
+      ),
+      toast: {
+        kind: "info",
+        message: `${source.name} を複製しました`,
+      },
+      dirty: true,
+    });
+    return { ok: true, newRootId };
   },
 
   setSelected: (id) => set({ selectedId: id }),

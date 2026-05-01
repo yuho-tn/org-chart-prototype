@@ -1,5 +1,36 @@
 import type { OrgNode } from "./types";
-import { wouldCreateCycle } from "./layout";
+import { descendantsOf, wouldCreateCycle } from "./layout";
+
+function uid(kind: OrgNode["kind"]): string {
+  const prefix = kind === "person" ? "p" : "d";
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36).slice(-4)}`;
+}
+
+/**
+ * Deep-clone a subtree (rootId + all descendants) with fresh ids. Internal
+ * parent links are remapped to the new ids; the root's parentId is preserved
+ * so the caller can decide where to attach the clone.
+ */
+export function cloneSubtree(
+  allNodes: OrgNode[],
+  rootId: string,
+): { clones: OrgNode[]; newRootId: string; idMap: Map<string, string> } {
+  const root = allNodes.find((n) => n.id === rootId);
+  if (!root) return { clones: [], newRootId: rootId, idMap: new Map() };
+
+  const subtree = [root, ...descendantsOf(allNodes, rootId)];
+  const idMap = new Map<string, string>();
+  for (const n of subtree) idMap.set(n.id, uid(n.kind));
+
+  const clones = subtree.map((n) => ({
+    ...n,
+    id: idMap.get(n.id)!,
+    parentId:
+      n.parentId && idMap.has(n.parentId) ? idMap.get(n.parentId)! : n.parentId,
+  }));
+
+  return { clones, newRootId: idMap.get(rootId)!, idMap };
+}
 
 /** Same-kind sibling slots under a given parent, in current array order. */
 function siblingsUnder(
