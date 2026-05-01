@@ -237,8 +237,8 @@ function PersonChip({
       }}
       title={
         person.roleLabel
-          ? `${person.roleLabel}：${person.name}${person.isExecutive ? "（役員）" : ""}（ダブルクリックで編集）`
-          : `${person.name}（ダブルクリックで編集）`
+          ? `${person.roleLabel}：${person.name}${person.isExecutive ? "（役員）" : ""}${person.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`
+          : `${person.name}${person.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`
       }
     >
       {isLeader && (
@@ -249,8 +249,11 @@ function PersonChip({
           {person.roleLabel}
         </span>
       )}
-      <span className="lv-chip__name">{person.name}</span>
+      <span className="lv-chip__name">
+        {person.isConcurrent && !person.name.startsWith("*") ? `*${person.name}` : person.name}
+      </span>
       {person.isExecutive && <span className="lv-chip__badge">役員</span>}
+      {person.isConcurrent && <span className="lv-chip__badge lv-chip__badge--concurrent">兼務</span>}
     </div>
   );
 }

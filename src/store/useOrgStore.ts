@@ -53,6 +53,7 @@ type Store = AppState & {
   rename: (id: string, name: string) => void;
   setRole: (id: string, roleLabel: PersonRole) => void;
   setExecutive: (id: string, isExecutive: boolean) => void;
+  setConcurrent: (id: string, isConcurrent: boolean) => void;
   setCategory: (id: string, category: DeptCategory) => void;
   setColor: (id: string, colorIndex: number) => void;
   reparent: (
@@ -335,6 +336,24 @@ export const useOrgStore = create<Store>((set, get) => ({
         state,
         "role",
         `「${target.name}」を${isExecutive ? "役員" : "通常メンバー"}に変更`,
+      ),
+      dirty: true,
+    });
+  },
+
+  setConcurrent: (id, isConcurrent) => {
+    const state = get();
+    const target = state.nodes.find((n) => n.id === id);
+    if (!target || target.kind !== "person") return;
+    if (!!target.isConcurrent === isConcurrent) return;
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, isConcurrent } : n)),
+      log: logEntry(
+        state,
+        "role",
+        `「${target.name}」を${isConcurrent ? "兼務として" : "主務として"}設定`,
       ),
       dirty: true,
     });

@@ -30,6 +30,7 @@ export function Inspector() {
   const rename = useOrgStore((s) => s.rename);
   const setRole = useOrgStore((s) => s.setRole);
   const setExecutive = useOrgStore((s) => s.setExecutive);
+  const setConcurrent = useOrgStore((s) => s.setConcurrent);
   const setCategory = useOrgStore((s) => s.setCategory);
   const setColor = useOrgStore((s) => s.setColor);
   const deleteNode = useOrgStore((s) => s.deleteNode);
@@ -143,6 +144,23 @@ export function Inspector() {
                 <br />
                 <small style={{ color: "var(--text-muted)" }}>
                   ONかつ親がROOTのとき、役員バンドに表示。DIVカード内にドラッグするとその部署のリーダー扱いに切り替わります。
+                </small>
+              </span>
+            </label>
+          </label>
+          <label className="field">
+            <span className="field__label">兼務フラグ</span>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={!!selected.isConcurrent}
+                onChange={(e) => setConcurrent(selected.id, e.target.checked)}
+              />
+              <span>
+                このノードは兼務（主務組織は別にある）
+                <br />
+                <small style={{ color: "var(--text-muted)" }}>
+                  ONにすると名前の先頭に「*」が自動で付きます。各メンバーの主務組織は1つ、兼務先は複数あってOK。
                 </small>
               </span>
             </label>

@@ -10,6 +10,7 @@ export type ExecNodeData = {
   name: string;
   role: PersonRole;
   selected: boolean;
+  isConcurrent?: boolean;
 };
 
 const PERSON_MIME = "application/x-person-id";
@@ -49,11 +50,14 @@ export function ExecutiveNode({ id, data }: NodeProps<ExecNodeData>) {
       onDragEnd={endDrag}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={selectClick}
-      title={`${data.role}：${data.name}`}
+      title={`${data.role}：${data.name}${data.isConcurrent ? "（兼務）" : ""}`}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
       <span className="exec-card__role">{data.role}</span>
-      <span className="exec-card__name">{data.name}</span>
+      <span className="exec-card__name">
+        {data.isConcurrent && !data.name.startsWith("*") ? `*${data.name}` : data.name}
+      </span>
+      {data.isConcurrent && <span className="chip__badge chip__badge--concurrent">兼務</span>}
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
     </div>
   );

@@ -111,24 +111,34 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     if (is_private !== undefined) payload.is_private = is_private;
     if (grants !== undefined) payload.grants = grants;
 
+    // .maybeSingle() is critical here: when an RLS policy on the table denies
+    // the SELECT-after-INSERT (a common misconfiguration) PostgREST returns
+    // 0 rows. .single() throws "Cannot coerce the result to a single JSON
+    // object"; .maybeSingle() returns data: null and lets us recover.
     let resp = (await supabase
       .from("org_versions")
       .insert(payload)
       .select(VERSION_SELECT)
-      .single()) as { data: unknown; error: { message: string } | null };
+      .maybeSingle()) as { data: unknown; error: { message: string } | null };
     if (
       resp.error &&
       /column .*(created_by_email|is_private|grants).* does not exist/i.test(resp.error.message)
     ) {
-      // Legacy schema fallback: drop the permission fields and try again.
       resp = (await supabase
         .from("org_versions")
         .insert({ name, author, note, snapshot: { nodes } })
         .select("id, name, author, note, created_at")
-        .single()) as { data: unknown; error: { message: string } | null };
+        .maybeSingle()) as { data: unknown; error: { message: string } | null };
     }
-    if (resp.error || !resp.data) {
-      set({ error: resp.error?.message ?? "保存に失敗しました" });
+    if (resp.error) {
+      set({ error: resp.error.message });
+      return null;
+    }
+    if (!resp.data) {
+      set({
+        error:
+          "保存はされた可能性がありますが、結果を取得できませんでした。Supabaseの行レベルセキュリティ（RLS）で SELECT が許可されているかご確認ください。",
+      });
       return null;
     }
     const row = resp.data as VersionRow;
@@ -141,31 +151,56 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     const patch: Record<string, unknown> = { snapshot: { nodes } };
     if (optionalPatch?.name !== undefined) patch.name = optionalPatch.name;
     if (optionalPatch?.note !== undefined) patch.note = optionalPatch.note;
+
     const { data, error } = await supabase
       .from("org_versions")
       .update(patch)
       .eq("id", id)
       .select(VERSION_SELECT)
-      .single();
-    if (error || !data) {
-      set({ error: error?.message ?? "更新に失敗しました" });
+      .maybeSingle();
+    if (error) {
+      set({ error: error.message });
       return null;
     }
-    const row = data as VersionRow;
+    // RLS may withhold the returned row even when the update succeeded.
+    // In that case fall back to a separate select; if THAT also returns
+    // nothing, apply an optimistic patch locally so the UI stays in sync.
+    let row: VersionRow | null = (data as VersionRow | null) ?? null;
+    if (!row) {
+      const refetch = await supabase
+        .from("org_versions")
+        .select(VERSION_SELECT)
+        .eq("id", id)
+        .maybeSingle();
+      row = (refetch.data as VersionRow | null) ?? null;
+    }
+    if (!row) {
+      const existing = get().versions.find((v) => v.id === id);
+      if (!existing) return null;
+      const optimistic: VersionRow = {
+        ...existing,
+        ...(optionalPatch?.name !== undefined ? { name: optionalPatch.name } : {}),
+        ...(optionalPatch?.note !== undefined ? { note: optionalPatch.note } : {}),
+        updated_at: new Date().toISOString(),
+      };
+      set({
+        versions: get().versions.map((v) => (v.id === id ? optimistic : v)),
+      });
+      return optimistic;
+    }
     set({
-      versions: get().versions.map((v) => (v.id === id ? row : v)),
+      versions: get().versions.map((v) => (v.id === id ? row! : v)),
     });
     return row;
   },
 
   duplicate: async (id, nameOverride, author, created_by_email) => {
     if (!supabase) return null;
-    // Pull the source's snapshot + note.
     const { data: src, error: srcErr } = await supabase
       .from("org_versions")
       .select("snapshot, note")
       .eq("id", id)
-      .single();
+      .maybeSingle();
     if (srcErr || !src) {
       set({ error: srcErr?.message ?? "複製元の取得に失敗しました" });
       return null;
@@ -175,7 +210,6 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
       author,
       note: (src as { note: string | null }).note,
       snapshot: (src as { snapshot: unknown }).snapshot,
-      // Duplicates land as fresh drafts owned by the current user.
       created_by_email,
       is_confirmed: false,
       confirmed_period: null,
@@ -186,9 +220,7 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
       .from("org_versions")
       .insert(insertPayload)
       .select(VERSION_SELECT)
-      .single()) as { data: unknown; error: { message: string } | null };
-    // Legacy schema fallback (no permission columns) — retry with the
-    // minimal column set.
+      .maybeSingle()) as { data: unknown; error: { message: string } | null };
     if (
       resp.error &&
       /column .*(created_by_email|is_private|grants|is_confirmed|confirmed_period).* does not exist/i.test(
@@ -204,10 +236,14 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
           snapshot: (src as { snapshot: unknown }).snapshot,
         })
         .select("id, name, author, note, created_at")
-        .single()) as { data: unknown; error: { message: string } | null };
+        .maybeSingle()) as { data: unknown; error: { message: string } | null };
     }
-    if (resp.error || !resp.data) {
-      set({ error: resp.error?.message ?? "複製に失敗しました" });
+    if (resp.error) {
+      set({ error: resp.error.message });
+      return null;
+    }
+    if (!resp.data) {
+      set({ error: "複製に失敗しました（結果が返却されませんでした）" });
       return null;
     }
     const row = resp.data as VersionRow;
@@ -257,12 +293,13 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
       .from("org_versions")
       .select("snapshot")
       .eq("id", id)
-      .single();
-    if (error || !data) {
-      set({ error: error?.message ?? "読み込みに失敗しました" });
+      .maybeSingle();
+    if (error) {
+      set({ error: error.message });
       return null;
     }
-    const snap = data.snapshot as { nodes?: OrgNode[] } | null;
+    if (!data) return null;
+    const snap = (data as { snapshot: { nodes?: OrgNode[] } | null }).snapshot;
     if (!snap || !Array.isArray(snap.nodes)) return null;
     return snap.nodes;
   },

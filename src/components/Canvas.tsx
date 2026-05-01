@@ -107,10 +107,16 @@ export function Canvas() {
           roleLabel: p.roleLabel ?? null,
           selected: selectedId === p.id,
           isExecutive: !!p.isExecutive,
+          isConcurrent: !!p.isConcurrent,
         }));
       const members = persons
         .filter((p) => !p.roleLabel)
-        .map((p) => ({ id: p.id, name: p.name, selected: selectedId === p.id }));
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          selected: selectedId === p.id,
+          isConcurrent: !!p.isConcurrent,
+        }));
 
       return {
         id: d.id,
@@ -143,6 +149,7 @@ export function Canvas() {
         name: e.name,
         role: e.roleLabel ?? null,
         selected: selectedId === e.id,
+        isConcurrent: !!e.isConcurrent,
       },
       draggable: false,
       selectable: true,
@@ -406,11 +413,16 @@ export function Canvas() {
       nodesConnectable={false}
       edgesFocusable={false}
       nodeDragThreshold={6}
-      panActivationKeyCode="Space"
-      panOnDrag
+      // Figma-style trackpad UX: two-finger scroll pans the canvas, pinch
+      // zooms, ⌘/Ctrl + scroll also zooms (matches macOS conventions).
+      // Click-and-drag on empty pane still pans for mouse users.
+      panOnScroll
+      panOnScrollSpeed={0.8}
+      panOnDrag={[0, 1, 2]}
       selectionOnDrag={false}
-      zoomOnScroll
+      zoomOnScroll={false}
       zoomOnPinch
+      zoomActivationKeyCode={["Meta", "Control"]}
       proOptions={{ hideAttribution: true }}
       defaultEdgeOptions={{ type: "smoothstep", style: { strokeWidth: 1.5 } }}
     >

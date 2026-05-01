@@ -23,10 +23,19 @@ export type DeptNodeData = {
     roleLabel: PersonRole;
     selected: boolean;
     isExecutive: boolean;
+    isConcurrent?: boolean;
   }[];
-  members: { id: string; name: string; selected: boolean }[];
+  members: { id: string; name: string; selected: boolean; isConcurrent?: boolean }[];
   viewOnly?: boolean;
 };
+
+/** Prefix the chip name with "*" when this is a 兼務 entry. The asterisk
+ * is the existing manual convention — toggling Inspector → 兼務 just makes
+ * the prefix automatic so it never gets out of sync with intent. */
+function displayName(name: string, isConcurrent?: boolean): string {
+  if (!isConcurrent) return name;
+  return name.startsWith("*") ? name : `*${name}`;
+}
 
 const PERSON_MIME = "application/x-person-id";
 const DEPT_MIME = "application/x-dept-id";
@@ -356,11 +365,12 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
               onClick={(e) => selectChip(e, p.id)}
               onDoubleClick={(e) => startChipEdit(e, p.id, p.name)}
               onMouseDown={(e) => e.stopPropagation()}
-              title={`${p.roleLabel ?? ""}：${p.name}${p.isExecutive ? "（役員）" : ""}（ダブルクリックで編集）`}
+              title={`${p.roleLabel ?? ""}：${p.name}${p.isExecutive ? "（役員）" : ""}${p.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`}
             >
               <span className="chip__role">{p.roleLabel}</span>
-              <span className="chip__name">{p.name}</span>
+              <span className="chip__name">{displayName(p.name, p.isConcurrent)}</span>
               {p.isExecutive && <span className="chip__badge">役員</span>}
+              {p.isConcurrent && <span className="chip__badge chip__badge--concurrent">兼務</span>}
             </div>
           );
         })}
@@ -393,10 +403,11 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
               onClick={(e) => selectChip(e, p.id)}
               onDoubleClick={(e) => startChipEdit(e, p.id, p.name)}
               onMouseDown={(e) => e.stopPropagation()}
-              title={`${p.name}（ダブルクリックで編集）`}
+              title={`${p.name}${p.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`}
             >
               <span className="chip__bullet">•</span>
-              <span className="chip__name">{p.name}</span>
+              <span className="chip__name">{displayName(p.name, p.isConcurrent)}</span>
+              {p.isConcurrent && <span className="chip__badge chip__badge--concurrent">兼務</span>}
             </div>
           );
         })}

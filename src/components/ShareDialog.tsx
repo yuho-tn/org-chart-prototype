@@ -3,12 +3,15 @@ import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
 import { buildShareUrl } from "../lib/share";
 import { useVersionsStore } from "../store/useVersionsStore";
+import { useAuthStore } from "../store/useAuthStore";
 import { getAuthor } from "../lib/author";
 
 /**
- * Modal that lets the user generate and copy a public read-only URL pointing
- * at a saved version. If the current state is dirty (or no version is loaded),
- * we offer to save first.
+ * One-step share dialog. Opens, auto-saves the current state to the server
+ * (overwriting the loaded file when possible, otherwise creating a new
+ * "共有用 ..." snapshot), and immediately shows the shareable URL. The user
+ * never has to choose between "save" and "share" — the action they wanted
+ * was always "give me a link to what I'm looking at right now".
  */
 export function ShareDialog({ onClose }: { onClose: () => void }) {
   const dirty = useOrgStore((s) => s.dirty);
@@ -18,16 +21,19 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const markClean = useOrgStore((s) => s.markClean);
   const setToast = useOrgStore((s) => s.setToast);
   const save = useVersionsStore((s) => s.save);
+  const updateSnapshot = useVersionsStore((s) => s.updateSnapshot);
+  const versions = useVersionsStore((s) => s.versions);
   const view = useUiStore((s) => s.view);
+  const currentUser = useAuthStore((s) => s.currentUser);
 
-  const [savingForShare, setSavingForShare] = useState(false);
-  const [versionIdToShare, setVersionIdToShare] = useState<string | null>(
-    currentVersionId,
-  );
-  const [versionLabelToShare, setVersionLabelToShare] = useState<string | null>(
-    currentVersionLabel,
-  );
+  const [versionIdToShare, setVersionIdToShare] = useState<string | null>(currentVersionId);
+  const [versionLabelToShare, setVersionLabelToShare] = useState<string | null>(currentVersionLabel);
+  const [phase, setPhase] = useState<"preparing" | "ready" | "error">("preparing");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Guard against React StrictMode double-invocation in dev — without this
+  // we'd save twice on mount.
+  const initRan = useRef(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -37,33 +43,79 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function handleSaveAndShare() {
-    const author = getAuthor();
-    if (!author) {
-      setToast({
-        kind: "error",
-        message: "作成者の名前が未設定です。先に画面右上から設定してください",
-      });
+  useEffect(() => {
+    if (initRan.current) return;
+    initRan.current = true;
+    void prepareShare();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Resolve "the URL the user wants" through three branches:
+   *   1. Confirmed file or read-only: share the loaded version as-is.
+   *   2. Editable file with no unsaved changes: share the loaded version.
+   *   3. Anything else: persist the current state (overwrite if we own the
+   *      file; create a fresh "共有用..." snapshot otherwise) then share it.
+   */
+  async function prepareShare() {
+    const author = getAuthor() ?? currentUser?.display_name ?? "共有";
+
+    const currentFile = currentVersionId
+      ? versions.find((v) => v.id === currentVersionId)
+      : null;
+    const isConfirmed = !!currentFile?.is_confirmed;
+    const canOverwrite =
+      !!currentVersionId &&
+      !isConfirmed &&
+      currentUser?.role !== "viewer";
+
+    // Branch 1+2: nothing to write. Just share the loaded version.
+    if (currentVersionId && (!dirty || isConfirmed || currentUser?.role === "viewer")) {
+      setVersionIdToShare(currentVersionId);
+      setVersionLabelToShare(currentVersionLabel);
+      setPhase("ready");
       return;
     }
-    setSavingForShare(true);
+
+    // Branch 3a: overwrite the loaded file with the latest state.
+    if (canOverwrite && dirty) {
+      const row = await updateSnapshot(currentVersionId, nodes);
+      if (!row) {
+        return finishWithError(
+          "現在のファイルへの上書き保存に失敗しました。手動で保存してから再度お試しください。",
+        );
+      }
+      markClean({ versionId: row.id, versionLabel: row.name });
+      setVersionIdToShare(row.id);
+      setVersionLabelToShare(row.name);
+      setPhase("ready");
+      return;
+    }
+
+    // Branch 3b: nothing loaded — auto-create a new file.
     const now = new Date();
     const pad = (n: number) => n.toString().padStart(2, "0");
-    const autoName = `共有用 ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const autoName =
+      `共有用 ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     const row = await save({
       name: autoName,
       author,
       note: "共有リンク発行のため自動保存",
       nodes,
+      created_by_email: currentUser?.email ?? null,
     });
-    setSavingForShare(false);
     if (!row) {
-      setToast({ kind: "error", message: "保存に失敗したため共有URLを発行できませんでした" });
-      return;
+      return finishWithError("共有用ファイルの作成に失敗しました。");
     }
     markClean({ versionId: row.id, versionLabel: row.name });
     setVersionIdToShare(row.id);
     setVersionLabelToShare(row.name);
+    setPhase("ready");
+  }
+
+  function finishWithError(msg: string) {
+    setErrorMessage(msg);
+    setPhase("error");
   }
 
   const url = versionIdToShare ? buildShareUrl(versionIdToShare, view) : "";
@@ -72,14 +124,9 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
     if (!url) return;
     navigator.clipboard?.writeText(url).then(
       () => setToast({ kind: "info", message: "URLをコピーしました" }),
-      () => {
-        // Fallback: select the input
-        inputRef.current?.select();
-      },
+      () => inputRef.current?.select(),
     );
   }
-
-  const needsSave = !versionIdToShare || (dirty && versionIdToShare === currentVersionId);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -90,45 +137,35 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
           リンク先ではツリー／リストの両ビューを切り替えて閲覧可能です。
         </p>
 
-        {needsSave ? (
+        {phase === "preparing" && (
+          <div className="share-prep">
+            <p className="modal__body">準備中…（最新の状態を保存しています）</p>
+          </div>
+        )}
+
+        {phase === "error" && (
           <>
-            <p className="share-notice">
-              共有するには、現状をバージョンとして保存する必要があります。
-              {dirty && currentVersionId && (
-                <>
-                  <br />
-                  最新の保存済バージョン「<strong>{currentVersionLabel}</strong>」のURLを発行することもできます（編集中の差分は含まれません）。
-                </>
-              )}
-            </p>
-            <div className="modal__actions" style={{ marginTop: 12 }}>
-              <button className="btn btn--ghost" onClick={onClose}>
-                キャンセル
-              </button>
-              {dirty && currentVersionId && (
-                <button
-                  className="btn"
-                  onClick={() => {
-                    setVersionIdToShare(currentVersionId);
-                    setVersionLabelToShare(currentVersionLabel);
-                  }}
-                >
-                  最新の保存済バージョンで共有
-                </button>
-              )}
+            <p className="versions__error" style={{ marginBottom: 12 }}>{errorMessage}</p>
+            <div className="modal__actions">
+              <button className="btn btn--ghost" onClick={onClose}>閉じる</button>
               <button
                 className="btn btn--primary"
-                onClick={handleSaveAndShare}
-                disabled={savingForShare}
+                onClick={() => {
+                  setPhase("preparing");
+                  setErrorMessage(null);
+                  void prepareShare();
+                }}
               >
-                {savingForShare ? "保存中..." : "今の状態を保存して共有"}
+                再試行
               </button>
             </div>
           </>
-        ) : (
+        )}
+
+        {phase === "ready" && (
           <>
             <div className="share-version">
-              共有するバージョン：<strong>{versionLabelToShare}</strong>
+              共有するバージョン：<strong>{versionLabelToShare ?? "（無題）"}</strong>
             </div>
             <label className="field" style={{ marginTop: 12 }}>
               <span className="field__label">共有URL</span>
@@ -145,9 +182,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               （現在のタブをそのまま反映）
             </div>
             <div className="modal__actions" style={{ marginTop: 12 }}>
-              <button className="btn btn--ghost" onClick={onClose}>
-                閉じる
-              </button>
+              <button className="btn btn--ghost" onClick={onClose}>閉じる</button>
               <button className="btn btn--primary" onClick={handleCopy}>
                 URLをコピー
               </button>

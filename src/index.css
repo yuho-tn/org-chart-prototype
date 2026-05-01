@@ -1861,6 +1861,14 @@ body.is-dragging .dept-card__add-child {
   flex-shrink: 0;
 }
 
+.chip__badge--concurrent {
+  background: #6366f1;
+}
+
+.lv-chip__badge--concurrent {
+  background: #6366f1;
+}
+
 /* Modal */
 .modal-backdrop {
   position: fixed;

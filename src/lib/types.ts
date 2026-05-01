@@ -102,6 +102,17 @@ export type OrgNode = {
   /** when true, this node has been created but not yet placed in the tree — it lives in the left tray until the user drags it onto the canvas. */
   isUnplaced?: boolean;
   /**
+   * person-only: marks this node as a 兼務 (concurrent assignment) entry —
+   * i.e. the same person also has a primary 主務組織 elsewhere in the chart
+   * (or in another chart). The chip name renders with a leading "*" so the
+   * visual marker is consistent with the existing manual convention.
+   *
+   * No structural enforcement: an employee can have one primary node and
+   * any number of 兼務 nodes; the user keeps the bookkeeping. We just give
+   * them a checkbox + visible asterisk so the intent is explicit.
+   */
+  isConcurrent?: boolean;
+  /**
    * person-only: optional foreign key into the public.employees master.
    * When set, this person node represents a specific registered employee —
    * used to compute "unplaced employees" per version (i.e. employees on the
