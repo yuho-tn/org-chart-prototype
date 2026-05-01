@@ -17,7 +17,7 @@ import { ExecutiveNode, type ExecNodeData } from "./ExecutiveNode";
 import { isInExecutiveBand, layoutAll, wouldCreateCycle } from "../lib/layout";
 import { setDragKind } from "../lib/dndState";
 import { useDndStore } from "../store/useDndStore";
-import { applyMove, validateMove } from "../lib/move";
+import { validateMove } from "../lib/move";
 import { DragStatus } from "./DragStatus";
 import type { OrgNode } from "../lib/types";
 
@@ -34,9 +34,12 @@ function buildDeptEdges(nodes: OrgNode[]): Edge[] {
     }));
 }
 
+type DropIntent = "before" | "after" | "child" | "invalid" | null;
+
 type DragState = {
   draggingId: string | null;
   hoverId: string | null;
+  intent: DropIntent;
 };
 
 export function Canvas() {
@@ -47,20 +50,23 @@ export function Canvas() {
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setToast = useOrgStore((s) => s.setToast);
   const viewOnly = useUiStore((s) => s.viewOnly);
-  const preview = useDndStore((s) => s.preview);
   const reactFlow = useReactFlow();
 
-  const [drag, setDrag] = useState<DragState>({ draggingId: null, hoverId: null });
+  const [drag, setDrag] = useState<DragState>({
+    draggingId: null,
+    hoverId: null,
+    intent: null,
+  });
   const dragRef = useRef(drag);
   dragRef.current = drag;
 
-  // While a drag preview is active, render nodes after applying the move so
-  // the surrounding tree visually rearranges to make room. The actual store
-  // is committed only on drop.
-  const nodes = useMemo(() => {
-    if (!preview) return baseNodes;
-    return applyMove(baseNodes, preview.sourceId, preview.targetParentId, preview.atIndex);
-  }, [baseNodes, preview]);
+  // We deliberately do NOT apply the in-flight preview to the layout. Live
+  // reflow on every mouse move was causing the surrounding tree to jitter and
+  // intent to whip back-and-forth as the cursor crossed dept boundaries.
+  // Instead, only the dragged node follows the cursor (handled by RF) and the
+  // hovered target shows a colored insertion indicator. The actual move is
+  // committed once on drop.
+  const nodes = baseNodes;
 
   const layout = useMemo(() => layoutAll(nodes), [nodes]);
   const { depts: laidOutDepts, execs: laidOutExecs } = layout;
@@ -85,9 +91,11 @@ export function Canvas() {
       const isDragging = drag.draggingId === d.id;
       const isHover = drag.hoverId === d.id;
       let dropState: "none" | "valid" | "invalid" = "none";
+      let dropIntent: DropIntent = null;
       if (isHover && drag.draggingId && drag.draggingId !== d.id) {
         const cycle = wouldCreateCycle(nodes, drag.draggingId, d.id);
         dropState = cycle ? "invalid" : "valid";
+        dropIntent = cycle ? "invalid" : drag.intent;
       }
 
       const persons = personsByParent.get(d.id) ?? [];
@@ -116,6 +124,7 @@ export function Canvas() {
           selected: selectedId === d.id,
           isBeingDragged: isDragging,
           dropState,
+          dropIntent,
           leaders,
           members,
           viewOnly,
@@ -154,7 +163,7 @@ export function Canvas() {
   const onNodeDragStart: NodeMouseHandler = useCallback(
     (_, node) => {
       if (node.type !== "department") return;
-      setDrag({ draggingId: node.id, hoverId: null });
+      setDrag({ draggingId: node.id, hoverId: null, intent: null });
       setDragKind("dept");
       const meta = nodes.find((n) => n.id === node.id);
       useDndStore.getState().startDrag({
@@ -179,9 +188,11 @@ export function Canvas() {
         x: native.clientX - rect.left,
         y: native.clientY - rect.top,
       });
-      // Find the closest dept under the cursor and decide whether the drop
-      // intent is "child of target" (cursor in the middle band) or
-      // "left/right sibling of target" (cursor near the left/right edge).
+      // Find the closest dept under the cursor. Intent: "before" / "after"
+      // if cursor is near the left/right quartile of the target, otherwise
+      // "child". Hysteresis on intent (boundaries at 0.30 / 0.70 instead of
+      // 0.25 / 0.75) keeps the indicator from flipping when the cursor
+      // hovers right on the edge.
       let hoverId: string | null = null;
       let intent: "child" | "before" | "after" = "child";
       let bestDist = Infinity;
@@ -197,17 +208,17 @@ export function Canvas() {
             bestDist = dist;
             hoverId = d.id;
             const localX = point.x - d.x;
-            if (localX < d.width * 0.25) intent = "before";
-            else if (localX > d.width * 0.75) intent = "after";
+            if (localX < d.width * 0.30) intent = "before";
+            else if (localX > d.width * 0.70) intent = "after";
             else intent = "child";
           }
         }
       }
 
-      // Compute preview move + hover label
       if (hoverId === null) {
-        if (dragRef.current.hoverId !== null) {
-          setDrag({ draggingId: node.id, hoverId: null });
+        const cur = dragRef.current;
+        if (cur.hoverId !== null || cur.intent !== null) {
+          setDrag({ draggingId: node.id, hoverId: null, intent: null });
           useDndStore.getState().setHover(null);
           useDndStore.getState().setPreview(null);
         }
@@ -235,11 +246,12 @@ export function Canvas() {
       }
 
       const reason = validateMove(baseNodes, node.id, targetParentId);
+      const cur = dragRef.current;
       if (reason) {
         useDndStore.getState().setHover(targetMeta.name, "invalid");
         useDndStore.getState().setPreview(null);
-        if (dragRef.current.hoverId !== hoverId) {
-          setDrag({ draggingId: node.id, hoverId });
+        if (cur.hoverId !== hoverId || cur.intent !== "invalid") {
+          setDrag({ draggingId: node.id, hoverId, intent: "invalid" });
         }
         return;
       }
@@ -251,11 +263,22 @@ export function Canvas() {
             ? "（左隣に）"
             : "（右隣に）";
       useDndStore.getState().setHover(`${targetMeta.name}${labelSuffix}`, "valid");
-      useDndStore
-        .getState()
-        .setPreview({ sourceId: node.id, targetParentId, atIndex });
-      if (dragRef.current.hoverId !== hoverId) {
-        setDrag({ draggingId: node.id, hoverId });
+      // Only fire setPreview when the resolved drop point actually changes.
+      // setPreview triggers a store update which re-renders the canvas; if
+      // we set the same value on every mouse move we burn cycles for nothing.
+      const prevPreview = useDndStore.getState().preview;
+      if (
+        !prevPreview ||
+        prevPreview.sourceId !== node.id ||
+        prevPreview.targetParentId !== targetParentId ||
+        prevPreview.atIndex !== atIndex
+      ) {
+        useDndStore
+          .getState()
+          .setPreview({ sourceId: node.id, targetParentId, atIndex });
+      }
+      if (cur.hoverId !== hoverId || cur.intent !== intent) {
+        setDrag({ draggingId: node.id, hoverId, intent });
       }
     },
     [laidOutDepts, baseNodes, reactFlow],
@@ -266,7 +289,7 @@ export function Canvas() {
       if (node.type !== "department") return;
       const finalPreview = useDndStore.getState().preview;
       const isCopy = !!(event as React.MouseEvent | undefined)?.altKey;
-      setDrag({ draggingId: null, hoverId: null });
+      setDrag({ draggingId: null, hoverId: null, intent: null });
       setDragKind(null);
       useDndStore.getState().endDrag();
       if (finalPreview) {

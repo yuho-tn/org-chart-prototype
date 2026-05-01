@@ -86,22 +86,28 @@ select.field__input {
   border-right: none;
 }
 
-.app--editor .app__canvas {
-  position: relative;
-  background: var(--bg);
-  border-left: none;
-  border-right: none;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-}
-
 .app__canvas {
   position: relative;
   background: var(--bg);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
-  min-width: 0;
+}
+
+/* Editor mode: app__content already provides side borders. */
+.app--editor .app__canvas {
+  border-left: none;
+  border-right: none;
+}
+
+/* Viewer mode: app__content has no side borders, the canvas is the whole
+ * thing — no internal border-left/right either. */
+.app--viewer .app__canvas {
+  border-left: none;
+  border-right: none;
 }
 
 /* TopBar */
@@ -1382,12 +1388,36 @@ body.is-dragging-dept .dept-card:not(.is-being-dragged) {
   transition: outline-color 0.12s, box-shadow 0.12s;
 }
 
-/* Hovered drop target — strong feedback */
-.dept-card.is-drop-valid {
-  outline: 3px solid var(--ok) !important;
+/* Hovered drop target — granular feedback per intent. We use thin side bars
+ * for sibling intent and a soft glow for child intent so the visual reads
+ * distinctly without redrawing or shifting the surrounding tree. */
+.dept-card.is-drop-child {
+  outline: 3px solid var(--primary) !important;
   outline-offset: 4px !important;
-  box-shadow: 0 0 0 8px rgba(22, 163, 74, 0.18);
-  animation: drop-pulse-ok 0.9s ease-in-out infinite;
+  box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.18);
+  animation: drop-pulse-blue 0.9s ease-in-out infinite;
+}
+
+.dept-card.is-drop-before::before,
+.dept-card.is-drop-after::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 4px;
+  background: var(--primary);
+  border-radius: 2px;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.dept-card.is-drop-before::before {
+  left: -10px;
+}
+
+.dept-card.is-drop-after::before {
+  right: -10px;
 }
 
 .dept-card.is-drop-invalid {
@@ -1396,6 +1426,7 @@ body.is-dragging-dept .dept-card:not(.is-being-dragged) {
   box-shadow: 0 0 0 8px rgba(220, 38, 38, 0.18);
 }
 
+/* Person-on-dept drag (HTML5) still uses imperative class on dragover. */
 .dept-card.is-chip-drop-over {
   outline: 3px solid var(--primary) !important;
   outline-offset: 4px !important;

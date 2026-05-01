@@ -15,6 +15,8 @@ export type DeptNodeData = {
   selected: boolean;
   isBeingDragged: boolean;
   dropState: "none" | "valid" | "invalid";
+  /** During dept-on-dept drag, indicates how the hover would resolve. */
+  dropIntent: "before" | "after" | "child" | "invalid" | null;
   leaders: {
     id: string;
     name: string;
@@ -68,8 +70,12 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
     `dept-card--${data.category.toLowerCase()}`,
     data.selected ? "is-selected" : "",
     data.isBeingDragged ? "is-being-dragged" : "",
-    data.dropState === "valid" ? "is-drop-valid" : "",
-    data.dropState === "invalid" ? "is-drop-invalid" : "",
+    data.dropIntent === "before" ? "is-drop-before" : "",
+    data.dropIntent === "after" ? "is-drop-after" : "",
+    data.dropIntent === "child" ? "is-drop-child" : "",
+    data.dropIntent === "invalid" || data.dropState === "invalid"
+      ? "is-drop-invalid"
+      : "",
   ]
     .filter(Boolean)
     .join(" ");

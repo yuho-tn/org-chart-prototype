@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "r
 import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
 import { useDndStore } from "../store/useDndStore";
-import { applyMove, validateMove } from "../lib/move";
+import { validateMove } from "../lib/move";
 import { setDragKind } from "../lib/dndState";
 import type { OrgNode } from "../lib/types";
 
@@ -101,6 +101,10 @@ function PersonChip({
       e.preventDefault();
       return;
     }
+    // Stop the dragstart from bubbling up to the surrounding .lv-card; that
+    // ancestor is also draggable=true and would otherwise also fire dragstart,
+    // overwriting our person-drag state with a dept-drag and breaking the move.
+    e.stopPropagation();
     e.dataTransfer.setData(PERSON_MIME, person.id);
     e.dataTransfer.effectAllowed = "move";
     e.currentTarget.classList.add("is-being-dragged");
@@ -114,6 +118,7 @@ function PersonChip({
   }
 
   function endDrag(e: DragEvent) {
+    e.stopPropagation();
     e.currentTarget.classList.remove("is-being-dragged");
     setDragKind(null);
     useDndStore.getState().endDrag();
@@ -288,6 +293,9 @@ function DeptCard({
       e.preventDefault();
       return;
     }
+    // Only handle dragstart that originated on the card itself. If a child
+    // chip/button initiated the drag, ignore here.
+    if (e.target !== e.currentTarget) return;
     e.dataTransfer.setData(DEPT_MIME, node.id);
     e.dataTransfer.effectAllowed = "move";
     e.currentTarget.classList.add("is-being-dragged");
@@ -575,20 +583,13 @@ export function ListView() {
   const versionLabel = useOrgStore((s) => s.currentVersionLabel);
   const sharedLabel = useUiStore((s) => s.sharedVersionLabel);
   const viewOnly = useUiStore((s) => s.viewOnly);
-  const preview = useDndStore((s) => s.preview);
 
-  // Apply preview to nodes so the list view also reflects the live drag preview.
-  const nodes = useMemo(() => {
-    if (!preview) return baseNodes;
-    return applyMove(
-      baseNodes,
-      preview.sourceId,
-      preview.targetParentId,
-      preview.atIndex,
-    );
-  }, [baseNodes, preview]);
-
-  const trees = useMemo(() => buildTree(nodes), [nodes]);
+  // Tree is built from the canonical store state; we do NOT apply the
+  // in-flight drag preview to the layout (that caused the whole list to
+  // reflow on every mouse move and made dropping awkward). Drop intent is
+  // shown via the per-target is-drop-before/after/child classes set
+  // imperatively in handleDragOver.
+  const trees = useMemo(() => buildTree(baseNodes), [baseNodes]);
   const headline = viewOnly ? sharedLabel : versionLabel;
 
   return (
