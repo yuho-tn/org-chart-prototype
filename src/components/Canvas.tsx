@@ -43,6 +43,7 @@ export function Canvas() {
   const selectedId = useOrgStore((s) => s.selectedId);
   const setSelected = useOrgStore((s) => s.setSelected);
   const reparent = useOrgStore((s) => s.reparent);
+  const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setToast = useOrgStore((s) => s.setToast);
   const preview = useDndStore((s) => s.preview);
   const reactFlow = useReactFlow();
@@ -258,30 +259,39 @@ export function Canvas() {
   );
 
   const onNodeDragStop: NodeMouseHandler = useCallback(
-    (_, node) => {
+    (event, node) => {
       if (node.type !== "department") return;
       const finalPreview = useDndStore.getState().preview;
+      const isCopy = !!(event as React.MouseEvent | undefined)?.altKey;
       setDrag({ draggingId: null, hoverId: null });
       setDragKind(null);
       useDndStore.getState().endDrag();
       if (finalPreview) {
-        const result = reparent(
-          finalPreview.sourceId,
-          finalPreview.targetParentId,
-          finalPreview.atIndex,
-        );
+        const result = isCopy
+          ? duplicateAtPosition(
+              finalPreview.sourceId,
+              finalPreview.targetParentId,
+              finalPreview.atIndex,
+            )
+          : reparent(
+              finalPreview.sourceId,
+              finalPreview.targetParentId,
+              finalPreview.atIndex,
+            );
         if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
           setToast({ kind: "error", message: result.reason });
         }
         return;
       }
       // Fallback when no valid preview was registered (drop on empty canvas)
-      const result = reparent(node.id, null);
+      const result = isCopy
+        ? duplicateAtPosition(node.id, null, Number.MAX_SAFE_INTEGER)
+        : reparent(node.id, null);
       if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
         setToast({ kind: "error", message: result.reason });
       }
     },
-    [reparent, setToast],
+    [reparent, duplicateAtPosition, setToast],
   );
 
   const fitOnceRef = useRef<ReactFlowInstance | null>(null);
@@ -313,15 +323,28 @@ export function Canvas() {
       if (!deptId) return;
       e.preventDefault();
       const preview = useDndStore.getState().preview;
+      const isCopy = e.altKey;
       const result = preview
-        ? reparent(preview.sourceId, preview.targetParentId, preview.atIndex)
-        : reparent(deptId, null);
+        ? isCopy
+          ? duplicateAtPosition(
+              preview.sourceId,
+              preview.targetParentId,
+              preview.atIndex,
+            )
+          : reparent(
+              preview.sourceId,
+              preview.targetParentId,
+              preview.atIndex,
+            )
+        : isCopy
+          ? duplicateAtPosition(deptId, null, Number.MAX_SAFE_INTEGER)
+          : reparent(deptId, null);
       useDndStore.getState().endDrag();
       if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
         setToast({ kind: "error", message: result.reason });
       }
     },
-    [reparent, setToast],
+    [reparent, duplicateAtPosition, setToast],
   );
 
   const onPaneDragLeave = useCallback((e: ReactDragEvent) => {

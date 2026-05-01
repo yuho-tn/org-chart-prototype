@@ -119,6 +119,13 @@ select.field__input {
   flex: 1;
 }
 
+.topbar__divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -470,6 +477,29 @@ select.field__input {
 
 .drag-status--invalid {
   background: rgba(153, 27, 27, 0.95);
+}
+
+.drag-status--copy {
+  background: rgba(124, 58, 237, 0.95);
+}
+
+.drag-status__mode {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.drag-status__hint {
+  font-size: 10px;
+  opacity: 0.75;
+  margin-left: 4px;
+}
+
+.drag-status__hint strong {
+  color: #fde68a;
 }
 
 .drag-status__icon {
@@ -848,6 +878,12 @@ body.is-dragging-dept .dept-card:not(.is-being-dragged) {
   outline-offset: 4px !important;
   box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.2);
   animation: drop-pulse-blue 0.9s ease-in-out infinite;
+}
+
+/* Copy-mode drop target: violet to differentiate from move (blue/green). */
+.dept-card.is-copy-target {
+  outline: 3px solid #7c3aed !important;
+  box-shadow: 0 0 0 8px rgba(124, 58, 237, 0.2);
 }
 
 @keyframes drop-pulse-ok {

@@ -48,6 +48,7 @@ function categoryLabel(cat: DeptCategory): string {
 export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   const setSelected = useOrgStore((s) => s.setSelected);
   const reparent = useOrgStore((s) => s.reparent);
+  const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const rename = useOrgStore((s) => s.rename);
   const setToast = useOrgStore((s) => s.setToast);
 
@@ -76,8 +77,9 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
     const isDept = types.includes(DEPT_MIME);
     if (!isPerson && !isDept) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+    e.dataTransfer.dropEffect = e.altKey ? "copy" : "move";
     e.currentTarget.classList.add("is-chip-drop-over");
+    e.currentTarget.classList.toggle("is-copy-target", e.altKey);
 
     const dragging = useDndStore.getState().dragging;
     if (!dragging) return;
@@ -178,11 +180,19 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
 
   function handleDrop(e: DragEvent) {
     e.currentTarget.classList.remove("is-chip-drop-over");
+    e.currentTarget.classList.remove("is-copy-target");
     e.preventDefault();
     e.stopPropagation();
     const preview = useDndStore.getState().preview;
     if (!preview) return;
-    const result = reparent(preview.sourceId, preview.targetParentId, preview.atIndex);
+    const isCopy = e.altKey;
+    const result = isCopy
+      ? duplicateAtPosition(
+          preview.sourceId,
+          preview.targetParentId,
+          preview.atIndex,
+        )
+      : reparent(preview.sourceId, preview.targetParentId, preview.atIndex);
     useDndStore.getState().endDrag();
     if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
       setToast({ kind: "error", message: result.reason });

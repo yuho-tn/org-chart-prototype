@@ -23,9 +23,12 @@ type DndState = {
   hoverTargetState: "valid" | "invalid" | "none";
   /** When set, Canvas re-renders nodes after applying this move so the user sees a live preview. */
   preview: PreviewMove | null;
+  /** True while Alt/Option is held — drop will create a copy instead of moving. */
+  copyMode: boolean;
   startDrag: (meta: DraggingMeta) => void;
   setHover: (label: string | null, state?: "valid" | "invalid" | "none") => void;
   setPreview: (preview: PreviewMove | null) => void;
+  setCopyMode: (on: boolean) => void;
   endDrag: () => void;
 };
 
@@ -34,6 +37,7 @@ export const useDndStore = create<DndState>((set) => ({
   hoverTargetLabel: null,
   hoverTargetState: "none",
   preview: null,
+  copyMode: false,
 
   startDrag: (meta) =>
     set({
@@ -45,11 +49,13 @@ export const useDndStore = create<DndState>((set) => ({
   setHover: (label, state = "valid") =>
     set({ hoverTargetLabel: label, hoverTargetState: label ? state : "none" }),
   setPreview: (preview) => set({ preview }),
+  setCopyMode: (on) => set({ copyMode: on }),
   endDrag: () =>
     set({
       dragging: null,
       hoverTargetLabel: null,
       hoverTargetState: "none",
       preview: null,
+      copyMode: false,
     }),
 }));

@@ -3,37 +3,61 @@ import { useOrgStore } from "../store/useOrgStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
 import { getAuthor, setAuthor } from "../lib/author";
 
+function isFromTextField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
+}
+
 export function TopBar() {
   const dirty = useOrgStore((s) => s.dirty);
   const versionLabel = useOrgStore((s) => s.currentVersionLabel);
+  const selectedId = useOrgStore((s) => s.selectedId);
+  const clipboard = useOrgStore((s) => s.clipboard);
   const past = useOrgStore((s) => s.past);
   const future = useOrgStore((s) => s.future);
   const undo = useOrgStore((s) => s.undo);
   const redo = useOrgStore((s) => s.redo);
   const reset = useOrgStore((s) => s.reset);
+  const copyToClipboard = useOrgStore((s) => s.copyToClipboard);
+  const pasteFromClipboard = useOrgStore((s) => s.pasteFromClipboard);
+  const setToast = useOrgStore((s) => s.setToast);
 
   const [showSave, setShowSave] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.key.toLowerCase() === "z" && !e.shiftKey) {
+      if (!meta) return;
+      // Skip when the user is typing in an input / textarea / chip rename — let
+      // the browser handle the native clipboard behavior on text content.
+      if (isFromTextField(e.target)) return;
+
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
-      } else if (
-        meta &&
-        (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))
-      ) {
+      } else if (key === "y" || (key === "z" && e.shiftKey)) {
         e.preventDefault();
         redo();
-      } else if (meta && e.key.toLowerCase() === "s") {
+      } else if (key === "s") {
         e.preventDefault();
         setShowSave(true);
+      } else if (key === "c") {
+        if (!selectedId) {
+          setToast({ kind: "error", message: "コピーするノードを選択してください" });
+          return;
+        }
+        e.preventDefault();
+        copyToClipboard(selectedId);
+      } else if (key === "v") {
+        e.preventDefault();
+        pasteFromClipboard();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
+  }, [undo, redo, selectedId, copyToClipboard, pasteFromClipboard, setToast]);
 
   function handleReset() {
     if (confirm("初期データへリセットします。未保存の変更は破棄されます。よろしいですか？")) {
@@ -46,6 +70,14 @@ export function TopBar() {
     const next = window.prompt("作成者の表示名を変更します", current);
     if (next === null) return;
     if (next.trim()) setAuthor(next.trim());
+  }
+
+  function handleCopy() {
+    if (!selectedId) {
+      setToast({ kind: "error", message: "コピーするノードを選択してください" });
+      return;
+    }
+    copyToClipboard(selectedId);
   }
 
   return (
@@ -63,6 +95,24 @@ export function TopBar() {
         >
           {getAuthor() ?? "名前未設定"} ▾
         </button>
+        <div className="topbar__divider" aria-hidden />
+        <button
+          className="btn btn--ghost"
+          onClick={handleCopy}
+          disabled={!selectedId}
+          title="選択中のノードと配下をコピー（Cmd/Ctrl+C）"
+        >
+          コピー
+        </button>
+        <button
+          className="btn btn--ghost"
+          onClick={() => pasteFromClipboard()}
+          disabled={!clipboard}
+          title="クリップボードのノードを未配置エリアに貼り付け（Cmd/Ctrl+V）"
+        >
+          貼り付け
+        </button>
+        <div className="topbar__divider" aria-hidden />
         <button className="btn btn--ghost" onClick={undo} disabled={past.length === 0} title="Cmd/Ctrl+Z">
           Undo
         </button>
