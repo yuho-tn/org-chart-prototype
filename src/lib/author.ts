@@ -1,26 +1,14 @@
-const KEY = "org-chart-prototype:author";
+import { STORAGE_KEYS, readStorage, writeStorage } from "./storageKeys";
 
 export function getAuthor(): string | null {
-  try {
-    const v = localStorage.getItem(KEY);
-    return v && v.trim() ? v : null;
-  } catch {
-    return null;
-  }
+  const v = readStorage(STORAGE_KEYS.author);
+  return v && v.trim() ? v : null;
 }
 
 export function setAuthor(name: string): void {
-  try {
-    localStorage.setItem(KEY, name.trim());
-  } catch {
-    // ignore quota errors
-  }
+  writeStorage(STORAGE_KEYS.author, name.trim());
 }
 
 export function clearAuthor(): void {
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    // ignore
-  }
+  writeStorage(STORAGE_KEYS.author, null);
 }

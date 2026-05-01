@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { supabase, type EmployeeRow } from "../lib/supabase";
 import { parseCsv, pick, normalizeDate } from "../lib/csv";
+import { STORAGE_KEYS } from "../lib/storageKeys";
 
-const SHEET_URL_KEY = "org-chart-prototype:sheet-csv-url";
+const SHEET_URL_KEY = STORAGE_KEYS.sheetCsvUrl;
 
 /**
  * Header synonyms accepted in CSV imports. The first hit wins.

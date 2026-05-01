@@ -225,52 +225,48 @@ select.field__input {
 /* ── View tabs (between TopBar and main) ───────────────────────────── */
 .view-tabs {
   display: flex;
-  align-items: stretch;
-  gap: 0;
+  align-items: center;
+  gap: 6px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  padding: 0 14px;
-  position: relative;
+  padding: 8px 18px;
+  min-height: 44px;
+  flex-shrink: 0;
 }
 
 .view-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 14px;
-  height: 100%;
-  border: none;
-  background: transparent;
+  gap: 8px;
+  padding: 7px 16px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: var(--panel);
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
+  border-radius: 999px;
   cursor: pointer;
-  position: relative;
-  transition: color 0.12s, background 0.12s;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
 }
 
 .view-tab:hover {
   color: var(--text);
-  background: #f8fafc;
+  background: var(--bg-soft);
+  border-color: var(--border-strong);
 }
 
 .view-tab.is-active {
   color: var(--primary);
+  background: var(--primary-soft);
+  border-color: rgba(37, 99, 235, 0.3);
   font-weight: 600;
-}
-
-.view-tab.is-active::after {
-  content: "";
-  position: absolute;
-  inset: auto 8px -1px 8px;
-  height: 2px;
-  background: var(--primary);
-  border-radius: 2px;
 }
 
 .view-tab__icon {
   font-size: 14px;
+  line-height: 1;
 }
 
 .view-tabs__spacer {
@@ -818,38 +814,24 @@ select.field__input {
 }
 
 .sidebar__section {
-  padding: 14px 14px 12px;
+  padding: 14px 14px 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
+}
+
+/* The first section in the sidebar gets a navy-tinted band so the rail
+ * has clear hierarchy against the dark global header above it. */
+.sidebar > .sidebar__section:first-of-type {
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
 }
 
 .sidebar__btnRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-}
-
-.sidebar__execRow {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.exec-menu {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 4px;
-  padding: 6px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.exec-menu__item {
-  font-weight: 600;
 }
 
 .checkbox {
@@ -871,34 +853,23 @@ select.field__input {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-muted);
+  color: #1e3a8a;
   margin: 0 0 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar__title::before {
+  content: "";
+  width: 3px;
+  height: 12px;
+  background: var(--primary);
+  border-radius: 2px;
 }
 
 .sidebar__title--mt {
   margin-top: 18px;
-}
-
-.sidebar__hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  background: var(--bg);
-  padding: 10px 12px;
-  border-radius: 8px;
-  margin: 0 0 6px;
-  line-height: 1.55;
-  border: 1px solid var(--border);
-}
-
-.sidebar__hint strong {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.sidebar__hintSub {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
 }
 
 .sidebar__tips {
@@ -1281,27 +1252,6 @@ select.field__input {
   white-space: nowrap;
 }
 
-.version-card__delete {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 0 4px;
-  border-radius: 4px;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.12s, color 0.12s, background 0.12s;
-}
-
-.version-card:hover .version-card__delete {
-  opacity: 1;
-}
-
-.version-card__delete:hover {
-  color: var(--danger);
-  background: #fee2e2;
-}
-
 .version-card__meta {
   font-size: 11px;
   color: var(--text-muted);
@@ -1364,26 +1314,6 @@ select.field__input {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
-}
-
-.version-card__fix {
-  position: absolute;
-  bottom: 8px;
-  right: 10px;
-  font-size: 10px;
-  padding: 3px 8px;
-}
-
-.version-card__actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
-
-.version-card__actions .btn {
-  font-size: 10px;
-  padding: 3px 8px;
 }
 
 .versions__tabs {
@@ -1969,45 +1899,6 @@ body.is-dragging .dept-card__add-child {
   height: 100vh;
   background: var(--bg);
   overflow: hidden;
-}
-
-.emppage {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 18px 28px 12px;
-  background: var(--bg);
-  overflow: hidden;
-}
-
-.emppage__head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.emppage__title {
-  flex: 1;
-}
-
-.emppage__title h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.emppage__subtitle {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.emppage__headRight {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .emppage__toolbar,
@@ -2976,48 +2867,52 @@ body.is-dragging .dept-card__add-child {
 /* ── Global header (top tier, always visible) ─────────────────────── */
 .ghdr {
   height: var(--header-h);
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  background:
+    linear-gradient(135deg, #0b1729 0%, #0f1e3a 50%, #122553 100%);
+  border-bottom: 1px solid #0a0f1c;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 2px 6px rgba(7, 12, 24, 0.18);
   display: flex;
   align-items: center;
   padding: 0 20px;
   gap: 24px;
   flex-shrink: 0;
   z-index: 50;
+  color: #e2e8f0;
 }
 
 .ghdr__brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .ghdr__brandMark {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
   font-weight: 700;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.45);
 }
 
 .ghdr__brandName {
   font-weight: 700;
   font-size: 16px;
-  color: var(--text-strong);
+  color: #f8fafc;
   letter-spacing: 0.01em;
 }
 
 .ghdr__brandSub {
   font-size: 11px;
-  color: var(--text-muted);
+  color: #94a3b8;
   margin-left: 4px;
-  padding-left: 10px;
-  border-left: 1px solid var(--border);
+  padding-left: 12px;
+  border-left: 1px solid rgba(148, 163, 184, 0.25);
 }
 
 .ghdr__tabs {
@@ -3038,21 +2933,22 @@ body.is-dragging .dept-card__add-child {
   border-radius: 999px;
   font-size: 13.5px;
   font-weight: 500;
-  color: var(--text-muted);
+  color: #cbd5e1;
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .ghdr__tab:hover {
-  background: var(--bg-soft);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
 }
 
 .ghdr__tab.is-active {
-  background: var(--primary-soft);
-  color: var(--primary-hover);
-  border-color: rgba(37, 99, 235, 0.2);
+  background: rgba(59, 130, 246, 0.22);
+  color: #fff;
+  border-color: rgba(96, 165, 250, 0.45);
   font-weight: 600;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15) inset;
 }
 
 .ghdr__tabIcon {
@@ -3068,24 +2964,25 @@ body.is-dragging .dept-card__add-child {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: transparent;
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 999px;
-  padding: 4px 12px 4px 4px;
+  padding: 4px 14px 4px 4px;
   cursor: pointer;
+  color: #e2e8f0;
   transition: background 0.12s, border-color 0.12s;
 }
 
 .ghdr__user:hover {
-  background: var(--bg-soft);
-  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(148, 163, 184, 0.35);
 }
 
 .ghdr__avatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
   color: #fff;
   display: flex;
   align-items: center;
@@ -3104,60 +3001,54 @@ body.is-dragging .dept-card__add-child {
 .ghdr__userName {
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--text);
+  color: #f1f5f9;
 }
 
 .ghdr__userRole {
   font-size: 10px;
-  color: var(--text-muted);
+  color: #94a3b8;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.ghdr__userRole--master { color: var(--secondary); }
-.ghdr__userRole--editor { color: var(--primary); }
-.ghdr__userRole--viewer { color: var(--text-muted); }
+.ghdr__userRole--master { color: #c4b5fd; }
+.ghdr__userRole--editor { color: #93c5fd; }
+.ghdr__userRole--viewer { color: #94a3b8; }
 
 /* ── Org sub-nav (under global header in 組織図 section) ──────────── */
 .orgsub {
   display: flex;
-  gap: 0;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  padding: 0 20px;
+  gap: 4px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  border-bottom: 1px solid #dbeafe;
+  padding: 6px 18px;
   flex-shrink: 0;
 }
 
 .orgsub__tab {
   position: relative;
   background: transparent;
-  border: none;
-  padding: 12px 18px;
+  border: 1px solid transparent;
+  padding: 8px 18px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-muted);
+  color: #475569;
+  border-radius: 999px;
   cursor: pointer;
-  transition: color 0.12s;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
 }
 
 .orgsub__tab:hover {
-  color: var(--text);
+  color: #1e40af;
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .orgsub__tab.is-active {
-  color: var(--primary);
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary), #1d4ed8);
+  border-color: #1e3a8a;
   font-weight: 600;
-}
-
-.orgsub__tab.is-active::after {
-  content: "";
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: -1px;
-  height: 2px;
-  background: var(--primary);
-  border-radius: 2px;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
 }
 
 /* ── Editor toolbar (under OrgSubNav, only when route=editor) ─────── */
@@ -3167,7 +3058,7 @@ body.is-dragging .dept-card__add-child {
   align-items: center;
   gap: 8px;
   padding: 0 18px;
-  background: var(--panel);
+  background: linear-gradient(180deg, #ffffff 0%, #f8faff 100%);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -3342,7 +3233,7 @@ body.is-dragging .dept-card__add-child {
   font-size: 12.5px;
 }
 
-/* ── File-card icon menu (replaces text-button row) ───────────────── */
+/* ── File-card menu (label-paired action buttons) ─────────────────── */
 .version-card {
   position: relative;
 }
@@ -3358,48 +3249,74 @@ body.is-dragging .dept-card__add-child {
 }
 
 .version-card__menu {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px dashed var(--border);
 }
 
-.vmenu__icon {
-  flex: 1;
-  height: 30px;
+.vmenu__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text);
   cursor: pointer;
   transition: all 0.12s;
 }
 
-.vmenu__icon:hover {
+.vmenu__btn:hover {
   background: var(--bg-soft);
-  color: var(--text);
   border-color: var(--border-strong);
 }
 
-.vmenu__icon.is-on {
+.vmenu__btn.is-on {
   background: #fae8ff;
   color: #86198f;
   border-color: #d8b4fe;
 }
 
-.vmenu__icon.is-on:hover {
+.vmenu__btn.is-on:hover {
   background: #f5d0fe;
 }
 
-.vmenu__icon--danger:hover {
-  background: var(--danger-soft);
+.vmenu__btn--accent {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+.vmenu__btn--accent:hover {
+  background: #bfdbfe;
+  border-color: var(--primary);
+}
+
+.vmenu__btn--danger {
   color: var(--danger);
+}
+
+.vmenu__btn--danger:hover {
+  background: var(--danger-soft);
   border-color: #fca5a5;
+}
+
+.vmenu__icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.vmenu__label {
+  font-size: 12px;
 }
 
 /* ── Hold-to-confirm slider ───────────────────────────────────────── */

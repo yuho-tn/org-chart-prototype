@@ -1,25 +1,11 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { AppUserRow, AppUserRole } from "../lib/supabase";
+import { STORAGE_KEYS, readStorage, writeStorage } from "../lib/storageKeys";
 
-const CURRENT_EMAIL_KEY = "org-chart-prototype:current-email";
-
-function readStoredEmail(): string | null {
-  try {
-    return localStorage.getItem(CURRENT_EMAIL_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredEmail(email: string | null) {
-  try {
-    if (email) localStorage.setItem(CURRENT_EMAIL_KEY, email);
-    else localStorage.removeItem(CURRENT_EMAIL_KEY);
-  } catch {
-    // ignore quota errors
-  }
-}
+const readStoredEmail = () => readStorage(STORAGE_KEYS.currentEmail);
+const writeStoredEmail = (email: string | null) =>
+  writeStorage(STORAGE_KEYS.currentEmail, email);
 
 type AuthState = {
   /** Email used to identify the current user (carried in localStorage). */

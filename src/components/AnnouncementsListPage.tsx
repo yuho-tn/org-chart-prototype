@@ -5,6 +5,7 @@ import { useVersionsStore } from "../store/useVersionsStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useEmployeesStore } from "../store/useEmployeesStore";
 import { useOrgStore } from "../store/useOrgStore";
+import { ConfirmDialog } from "./ConfirmDialog";
 import {
   computeAnnouncement,
   emptyPayload,
@@ -173,22 +174,18 @@ export function AnnouncementsListPage() {
       )}
 
       {pendingDelete && (
-        <div className="modal-backdrop" onClick={() => setPendingDelete(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal__title">発令資料の削除</h3>
-            <p className="modal__body">
+        <ConfirmDialog
+          title="発令資料の削除"
+          message={
+            <>
               この発令資料（{formatPeriodHeading(pendingDelete.period)}）を削除します。よろしいですか？
-            </p>
-            <div className="modal__actions">
-              <button className="btn btn--ghost" onClick={() => setPendingDelete(null)}>
-                キャンセル
-              </button>
-              <button className="btn btn--danger" onClick={confirmDelete}>
-                削除する
-              </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+          confirmLabel="削除する"
+          variant="danger"
+          onConfirm={confirmDelete}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </main>
   );

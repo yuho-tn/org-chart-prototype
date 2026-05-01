@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
+import { ConfirmDialog } from "./ConfirmDialog";
 import type { AppUserRole } from "../lib/supabase";
 
 const ROLE_OPTIONS: { value: AppUserRole; label: string; hint: string }[] = [
@@ -231,23 +232,19 @@ export function UsersPage() {
       )}
 
       {pendingRemove && (
-        <div className="modal-backdrop" onClick={() => setPendingRemove(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal__title">ユーザー削除の確認</h3>
-            <p className="modal__body">
+        <ConfirmDialog
+          title="ユーザー削除の確認"
+          message={
+            <>
               <code>{pendingRemove}</code> を削除します。<br />
               このユーザーが作成した非公開ファイルは、マスター以外からは見えなくなります。
-            </p>
-            <div className="modal__actions">
-              <button className="btn btn--ghost" onClick={() => setPendingRemove(null)}>
-                キャンセル
-              </button>
-              <button className="btn btn--danger" onClick={confirmRemove}>
-                削除する
-              </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+          confirmLabel="削除する"
+          variant="danger"
+          onConfirm={confirmRemove}
+          onCancel={() => setPendingRemove(null)}
+        />
       )}
     </main>
   );

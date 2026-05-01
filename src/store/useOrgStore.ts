@@ -3,8 +3,9 @@ import type { AppState, LogEntry, OrgNode, PersonRole, DeptCategory } from "../l
 import { seedData } from "../lib/seed";
 import { descendantsOf, wouldCreateCycle } from "../lib/layout";
 import { applyMove, cloneSubtree } from "../lib/move";
+import { STORAGE_KEYS } from "../lib/storageKeys";
 
-const STORAGE_KEY = "org-chart-prototype:v2";
+const STORAGE_KEY = STORAGE_KEYS.draft;
 // Bumped from 10 → 50 so the log can serve as a meaningful revision history,
 // not just a recent-actions ribbon. Each entry carries the pre-state so the
 // user can rewind to it (cf. spreadsheet-style version restore).

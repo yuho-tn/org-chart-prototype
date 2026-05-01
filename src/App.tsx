@@ -21,6 +21,7 @@ import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore
 import { useUiStore, sectionOfRoute } from "./store/useUiStore";
 import { useAuthStore } from "./store/useAuthStore";
 import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
+import { STORAGE_KEYS, readStorage, writeStorage } from "./lib/storageKeys";
 
 export default function App() {
   const loadFromStorage = useOrgStore((s) => s.loadFromStorage);
@@ -91,13 +92,7 @@ export default function App() {
       if (cancelled) return;
       const latest = useVersionsStore.getState().versions[0];
       if (!latest) return;
-      const draftRaw = (() => {
-        try {
-          return localStorage.getItem("org-chart-prototype:v2");
-        } catch {
-          return null;
-        }
-      })();
+      const draftRaw = readStorage(STORAGE_KEYS.draft);
       if (draftRaw) {
         useOrgStore.setState({
           currentVersionId: latest.id,
@@ -129,11 +124,7 @@ export default function App() {
   useEffect(() => {
     if (viewOnly) return;
     if (!bootReady) return;
-    try {
-      localStorage.setItem("org-chart-prototype:v2", JSON.stringify({ nodes }));
-    } catch {
-      // ignore quota errors
-    }
+    writeStorage(STORAGE_KEYS.draft, JSON.stringify({ nodes }));
   }, [nodes, bootReady, viewOnly]);
 
   if (viewOnly) return <ViewerLayout view={view} />;

@@ -335,66 +335,66 @@ export function VersionsPanel() {
                 <div className="version-card__menu">
                   {canToggleLock && (
                     <button
-                      className={`vmenu__icon ${isPrivate ? "is-on" : ""}`}
+                      className={`vmenu__btn ${isPrivate ? "is-on" : ""}`}
                       onClick={(e) => togglePrivate(v.id, isPrivate, e)}
                       title={
                         isPrivate
-                          ? "非公開を解除（全員に公開）"
-                          : "鍵をかけて非公開にする（作成者のみ閲覧・編集可）"
+                          ? "現在『非公開』です — クリックで全員に公開"
+                          : "鍵をかけて非公開にする（作成者とマスターのみ閲覧・編集可）"
                       }
-                      aria-label={isPrivate ? "非公開を解除" : "鍵をかけて非公開にする"}
                     >
-                      {isPrivate ? "🔒" : "🔓"}
+                      <span className="vmenu__icon" aria-hidden>{isPrivate ? "🔒" : "🔓"}</span>
+                      <span className="vmenu__label">{isPrivate ? "非公開" : "公開中"}</span>
                     </button>
                   )}
                   {currentUser?.role !== "viewer" && (
                     <button
-                      className="vmenu__icon"
+                      className="vmenu__btn"
                       onClick={(e) => handleDuplicate(v.id, v.name, e)}
                       title={
                         v.is_confirmed
                           ? "確定版を元に下書きを作成して編集を始める"
                           : "このファイルを複製して新しい下書きを作成"
                       }
-                      aria-label="複製"
                     >
-                      🗐
+                      <span className="vmenu__icon" aria-hidden>📋</span>
+                      <span className="vmenu__label">複製</span>
                     </button>
                   )}
                   {canConfirm && !v.is_confirmed && (
                     <button
-                      className="vmenu__icon"
+                      className="vmenu__btn vmenu__btn--accent"
                       onClick={(e) => {
                         e.stopPropagation();
                         setPendingFix({ id: v.id, name: v.name });
                       }}
                       title="このファイルを月次の確定版として登録"
-                      aria-label="確定版にする"
                     >
-                      ✓
+                      <span className="vmenu__icon" aria-hidden>✓</span>
+                      <span className="vmenu__label">確定登録</span>
                     </button>
                   )}
                   {canConfirm && v.is_confirmed && (
                     <button
-                      className="vmenu__icon"
+                      className="vmenu__btn"
                       onClick={(e) => unfix(v.id, e)}
                       title="確定を取り消して下書きに戻す"
-                      aria-label="確定を取り消す"
                     >
-                      ↺
+                      <span className="vmenu__icon" aria-hidden>↺</span>
+                      <span className="vmenu__label">確定解除</span>
                     </button>
                   )}
                   {canDelete && (
                     <button
-                      className="vmenu__icon vmenu__icon--danger"
+                      className="vmenu__btn vmenu__btn--danger"
                       onClick={(e) => {
                         e.stopPropagation();
                         setPendingDelete({ id: v.id, name: v.name });
                       }}
-                      title="削除"
-                      aria-label="削除"
+                      title="ファイルを削除"
                     >
-                      🗑
+                      <span className="vmenu__icon" aria-hidden>🗑</span>
+                      <span className="vmenu__label">削除</span>
                     </button>
                   )}
                 </div>

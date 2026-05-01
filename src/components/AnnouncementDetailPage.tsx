@@ -87,15 +87,15 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
 
   if (loading) {
     return (
-      <div className="emppage">
+      <main className="page">
         <p>読み込み中…</p>
-      </div>
+      </main>
     );
   }
 
   if (!row || !draft) {
     return (
-      <div className="emppage">
+      <main className="page">
         <p>発令資料が見つかりません。</p>
         <button
           className="btn"
@@ -103,7 +103,7 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
         >
           一覧へ戻る
         </button>
-      </div>
+      </main>
     );
   }
 
