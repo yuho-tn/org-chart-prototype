@@ -297,6 +297,11 @@ select.field__input {
   color: var(--primary);
 }
 
+/* Chip enter animation when reflow inserts a chip into a card during preview. */
+.chip {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
 /* Tray (未配置エリア) */
 .tray {
   display: flex;
@@ -1236,6 +1241,16 @@ body.is-dragging * {
   border: none;
   padding: 0;
   background: transparent;
+  /* Smooth position changes during live preview reflow.
+   * RF uses inline transforms; transitioning them lets sibling cards
+   * glide into place instead of jumping when the user is dragging. */
+  transition: transform 0.16s cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* The currently dragged node should NOT lerp — it follows the cursor. */
+.react-flow__node.dragging,
+.react-flow__node:has(.dept-card.is-being-dragged) {
+  transition: none;
 }
 
 .react-flow__node-department {

@@ -5,6 +5,7 @@ import { useOrgStore } from "../store/useOrgStore";
 import { useDndStore } from "../store/useDndStore";
 import { colorAt, ROOT_COLOR, EXE_COLOR } from "../lib/palette";
 import { setDragKind } from "../lib/dndState";
+import { validateMove } from "../lib/move";
 import type { DeptCategory, PersonRole } from "../lib/types";
 
 export type DeptNodeData = {
@@ -71,28 +72,118 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
 
   function handleDragOver(e: DragEvent) {
     const types = e.dataTransfer.types;
-    if (types.includes(PERSON_MIME) || types.includes(DEPT_MIME)) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      e.currentTarget.classList.add("is-chip-drop-over");
-      useDndStore.getState().setHover(data.name, "valid");
+    const isPerson = types.includes(PERSON_MIME);
+    const isDept = types.includes(DEPT_MIME);
+    if (!isPerson && !isDept) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    e.currentTarget.classList.add("is-chip-drop-over");
+
+    const dragging = useDndStore.getState().dragging;
+    if (!dragging) return;
+    const baseNodes = useOrgStore.getState().nodes;
+
+    if (isDept) {
+      // Drop intent: left/right edge → sibling, middle → child.
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const localX = e.clientX - rect.left;
+      const w = rect.width;
+      let intent: "child" | "before" | "after";
+      if (localX < w * 0.25) intent = "before";
+      else if (localX > w * 0.75) intent = "after";
+      else intent = "child";
+
+      const targetMeta = baseNodes.find((n) => n.id === id);
+      let targetParentId: string | null;
+      let atIndex: number;
+      if (intent === "child") {
+        targetParentId = id;
+        atIndex = Number.MAX_SAFE_INTEGER;
+      } else {
+        targetParentId = targetMeta?.parentId ?? null;
+        const sibs = baseNodes.filter(
+          (n) =>
+            n.kind === "department" &&
+            n.parentId === targetParentId &&
+            !n.isUnplaced &&
+            n.id !== dragging.id,
+        );
+        const idx = sibs.findIndex((s) => s.id === id);
+        atIndex = intent === "before" ? Math.max(0, idx) : idx + 1;
+      }
+
+      const reason = validateMove(baseNodes, dragging.id, targetParentId);
+      if (reason) {
+        useDndStore.getState().setHover(data.name, "invalid");
+        useDndStore.getState().setPreview(null);
+        return;
+      }
+      const labelSuffix =
+        intent === "child" ? "（配下に）" : intent === "before" ? "（左隣に）" : "（右隣に）";
+      useDndStore.getState().setHover(`${data.name}${labelSuffix}`, "valid");
+      useDndStore
+        .getState()
+        .setPreview({ sourceId: dragging.id, targetParentId, atIndex });
+      return;
+    }
+
+    if (isPerson) {
+      // Detect insertion position relative to existing chips inside this card.
+      const body = (e.currentTarget as HTMLElement).querySelector(
+        ".dept-card__body",
+      ) as HTMLElement | null;
+      let chipIdx = 0;
+      if (body) {
+        const chips = Array.from(
+          body.querySelectorAll<HTMLElement>(
+            ".chip:not(.chip--editing)",
+          ),
+        );
+        chipIdx = chips.length;
+        for (let i = 0; i < chips.length; i++) {
+          const r = chips[i].getBoundingClientRect();
+          if (e.clientY < r.top + r.height / 2) {
+            chipIdx = i;
+            break;
+          }
+        }
+      }
+      const reason = validateMove(baseNodes, dragging.id, id);
+      if (reason) {
+        useDndStore.getState().setHover(data.name, "invalid");
+        useDndStore.getState().setPreview(null);
+        return;
+      }
+      const total = (data.leaders?.length ?? 0) + (data.members?.length ?? 0);
+      const slot =
+        total === 0
+          ? "（最初のメンバーとして）"
+          : chipIdx === 0
+            ? "（最上部に）"
+            : chipIdx >= total
+              ? "（末尾に）"
+              : `（${chipIdx + 1}番目に）`;
+      useDndStore.getState().setHover(`${data.name}${slot}`, "valid");
+      useDndStore
+        .getState()
+        .setPreview({ sourceId: dragging.id, targetParentId: id, atIndex: chipIdx });
     }
   }
 
   function handleDragLeave(e: DragEvent) {
     e.currentTarget.classList.remove("is-chip-drop-over");
-    useDndStore.getState().setHover(null);
+    // Intentionally do not clear preview here — moving onto another card
+    // will overwrite it. Clearing causes layout flicker between cards.
   }
 
   function handleDrop(e: DragEvent) {
     e.currentTarget.classList.remove("is-chip-drop-over");
-    const personId = e.dataTransfer.getData(PERSON_MIME);
-    const deptId = e.dataTransfer.getData(DEPT_MIME);
-    const draggedId = personId || deptId;
-    if (!draggedId) return;
     e.preventDefault();
     e.stopPropagation();
-    const result = reparent(draggedId, id);
+    const preview = useDndStore.getState().preview;
+    if (!preview) return;
+    const result = reparent(preview.sourceId, preview.targetParentId, preview.atIndex);
+    useDndStore.getState().endDrag();
     if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
       setToast({ kind: "error", message: result.reason });
     }

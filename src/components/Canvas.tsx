@@ -16,6 +16,7 @@ import { ExecutiveNode, type ExecNodeData } from "./ExecutiveNode";
 import { isInExecutiveBand, layoutAll, wouldCreateCycle } from "../lib/layout";
 import { setDragKind } from "../lib/dndState";
 import { useDndStore } from "../store/useDndStore";
+import { applyMove, validateMove } from "../lib/move";
 import { DragStatus } from "./DragStatus";
 import type { OrgNode } from "../lib/types";
 
@@ -38,16 +39,25 @@ type DragState = {
 };
 
 export function Canvas() {
-  const nodes = useOrgStore((s) => s.nodes);
+  const baseNodes = useOrgStore((s) => s.nodes);
   const selectedId = useOrgStore((s) => s.selectedId);
   const setSelected = useOrgStore((s) => s.setSelected);
   const reparent = useOrgStore((s) => s.reparent);
   const setToast = useOrgStore((s) => s.setToast);
+  const preview = useDndStore((s) => s.preview);
   const reactFlow = useReactFlow();
 
   const [drag, setDrag] = useState<DragState>({ draggingId: null, hoverId: null });
   const dragRef = useRef(drag);
   dragRef.current = drag;
+
+  // While a drag preview is active, render nodes after applying the move so
+  // the surrounding tree visually rearranges to make room. The actual store
+  // is committed only on drop.
+  const nodes = useMemo(() => {
+    if (!preview) return baseNodes;
+    return applyMove(baseNodes, preview.sourceId, preview.targetParentId, preview.atIndex);
+  }, [baseNodes, preview]);
 
   const layout = useMemo(() => layoutAll(nodes), [nodes]);
   const { depts: laidOutDepts, execs: laidOutExecs } = layout;
@@ -165,7 +175,11 @@ export function Canvas() {
         x: native.clientX - rect.left,
         y: native.clientY - rect.top,
       });
-      let bestId: string | null = null;
+      // Find the closest dept under the cursor and decide whether the drop
+      // intent is "child of target" (cursor in the middle band) or
+      // "left/right sibling of target" (cursor near the left/right edge).
+      let hoverId: string | null = null;
+      let intent: "child" | "before" | "after" = "child";
       let bestDist = Infinity;
       for (const d of laidOutDepts) {
         if (d.id === node.id) continue;
@@ -173,46 +187,96 @@ export function Canvas() {
         const cy = d.y + d.height / 2;
         const dx = point.x - cx;
         const dy = point.y - cy;
-        if (Math.abs(dx) < d.width / 2 && Math.abs(dy) < d.height / 2) {
+        if (Math.abs(dx) < d.width / 2 + 24 && Math.abs(dy) < d.height / 2) {
           const dist = dx * dx + dy * dy;
           if (dist < bestDist) {
             bestDist = dist;
-            bestId = d.id;
+            hoverId = d.id;
+            const localX = point.x - d.x;
+            if (localX < d.width * 0.25) intent = "before";
+            else if (localX > d.width * 0.75) intent = "after";
+            else intent = "child";
           }
         }
       }
-      if (bestId !== dragRef.current.hoverId) {
-        setDrag({ draggingId: node.id, hoverId: bestId });
-        if (bestId === null) {
+
+      // Compute preview move + hover label
+      if (hoverId === null) {
+        if (dragRef.current.hoverId !== null) {
+          setDrag({ draggingId: node.id, hoverId: null });
           useDndStore.getState().setHover(null);
-        } else {
-          const cycle = wouldCreateCycle(nodes, node.id, bestId);
-          const target = laidOutDepts.find((d) => d.id === bestId);
-          useDndStore.getState().setHover(
-            target?.name ?? bestId,
-            cycle ? "invalid" : "valid",
-          );
+          useDndStore.getState().setPreview(null);
         }
+        return;
+      }
+      const targetMeta = baseNodes.find((n) => n.id === hoverId);
+      if (!targetMeta) return;
+
+      let targetParentId: string | null;
+      let atIndex: number;
+      if (intent === "child") {
+        targetParentId = hoverId;
+        atIndex = Number.MAX_SAFE_INTEGER;
+      } else {
+        targetParentId = targetMeta.parentId;
+        const siblings = baseNodes.filter(
+          (n) =>
+            n.kind === "department" &&
+            n.parentId === targetParentId &&
+            !n.isUnplaced &&
+            n.id !== node.id,
+        );
+        const idx = siblings.findIndex((s) => s.id === hoverId);
+        atIndex = intent === "before" ? Math.max(0, idx) : idx + 1;
+      }
+
+      const reason = validateMove(baseNodes, node.id, targetParentId);
+      if (reason) {
+        useDndStore.getState().setHover(targetMeta.name, "invalid");
+        useDndStore.getState().setPreview(null);
+        if (dragRef.current.hoverId !== hoverId) {
+          setDrag({ draggingId: node.id, hoverId });
+        }
+        return;
+      }
+
+      const labelSuffix =
+        intent === "child"
+          ? "（配下に）"
+          : intent === "before"
+            ? "（左隣に）"
+            : "（右隣に）";
+      useDndStore.getState().setHover(`${targetMeta.name}${labelSuffix}`, "valid");
+      useDndStore
+        .getState()
+        .setPreview({ sourceId: node.id, targetParentId, atIndex });
+      if (dragRef.current.hoverId !== hoverId) {
+        setDrag({ draggingId: node.id, hoverId });
       }
     },
-    [laidOutDepts, nodes, reactFlow],
+    [laidOutDepts, baseNodes, reactFlow],
   );
 
   const onNodeDragStop: NodeMouseHandler = useCallback(
     (_, node) => {
       if (node.type !== "department") return;
-      const { hoverId } = dragRef.current;
+      const finalPreview = useDndStore.getState().preview;
       setDrag({ draggingId: null, hoverId: null });
       setDragKind(null);
       useDndStore.getState().endDrag();
-      if (hoverId === null) {
-        const result = reparent(node.id, null);
+      if (finalPreview) {
+        const result = reparent(
+          finalPreview.sourceId,
+          finalPreview.targetParentId,
+          finalPreview.atIndex,
+        );
         if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
           setToast({ kind: "error", message: result.reason });
         }
         return;
       }
-      const result = reparent(node.id, hoverId);
+      // Fallback when no valid preview was registered (drop on empty canvas)
+      const result = reparent(node.id, null);
       if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
         setToast({ kind: "error", message: result.reason });
       }
@@ -231,6 +295,15 @@ export function Canvas() {
     if (e.dataTransfer.types.includes("application/x-dept-id")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
+      const dragging = useDndStore.getState().dragging;
+      if (dragging?.kind === "dept") {
+        useDndStore.getState().setHover("（最上位／ルート）", "valid");
+        useDndStore.getState().setPreview({
+          sourceId: dragging.id,
+          targetParentId: null,
+          atIndex: Number.MAX_SAFE_INTEGER,
+        });
+      }
     }
   }, []);
 
@@ -239,7 +312,11 @@ export function Canvas() {
       const deptId = e.dataTransfer.getData("application/x-dept-id");
       if (!deptId) return;
       e.preventDefault();
-      const result = reparent(deptId, null);
+      const preview = useDndStore.getState().preview;
+      const result = preview
+        ? reparent(preview.sourceId, preview.targetParentId, preview.atIndex)
+        : reparent(deptId, null);
+      useDndStore.getState().endDrag();
       if (!result.ok && result.reason && result.reason !== "既に同じ親です") {
         setToast({ kind: "error", message: result.reason });
       }
@@ -247,11 +324,21 @@ export function Canvas() {
     [reparent, setToast],
   );
 
+  const onPaneDragLeave = useCallback((e: ReactDragEvent) => {
+    const wrapper = e.currentTarget as HTMLElement;
+    const related = e.relatedTarget as globalThis.Node | null;
+    if (!related || !wrapper.contains(related)) {
+      useDndStore.getState().setPreview(null);
+      useDndStore.getState().setHover(null);
+    }
+  }, []);
+
   return (
     <div
       style={{ width: "100%", height: "100%" }}
       onDragOver={onPaneDragOver}
       onDrop={onPaneDrop}
+      onDragLeave={onPaneDragLeave}
     >
     <ReactFlow
       nodes={rfNodes}
