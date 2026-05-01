@@ -7,11 +7,13 @@ import { Inspector } from "./components/Inspector";
 import { LogPanel } from "./components/LogPanel";
 import { Toast } from "./components/Toast";
 import { AuthorPrompt } from "./components/AuthorPrompt";
+import { UserManagementModal } from "./components/UserManagementModal";
 import { ListView } from "./components/ListView";
 import { ViewTabs } from "./components/ViewTabs";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useUiStore } from "./store/useUiStore";
+import { useAuthStore } from "./store/useAuthStore";
 import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
 
 export default function App() {
@@ -42,6 +44,15 @@ export default function App() {
       setShareInit({ versionId: null, ready: true });
     }
   }, [setView, setViewOnly]);
+
+  // Globally enforce read-only when the signed-in user has 'viewer' role.
+  // Per-version edit/view permissions are still applied by VersionsPanel,
+  // but a viewer should never be able to flip back into edit mode regardless
+  // of which version they happen to be looking at.
+  const currentRole = useAuthStore((s) => s.currentUser?.role);
+  useEffect(() => {
+    if (currentRole === "viewer") setViewOnly(true);
+  }, [currentRole, setViewOnly]);
 
   useEffect(() => {
     if (!shareInit.ready) return;
@@ -149,6 +160,7 @@ export default function App() {
         </div>
         <Toast />
         <LogPanel />
+        <UserManagementModal />
       </div>
     </ReactFlowProvider>
   );

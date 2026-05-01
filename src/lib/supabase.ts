@@ -11,12 +11,27 @@ export const supabase = isSupabaseConfigured
     })
   : null;
 
+export type AppUserRole = "master" | "editor" | "viewer";
+
+export type AppUserRow = {
+  email: string;
+  display_name: string | null;
+  role: AppUserRole;
+  created_at: string;
+};
+
+export type VersionGrants = Record<string, "view" | "edit">;
+
 export type VersionRow = {
   id: string;
   name: string;
   author: string;
   note: string | null;
   created_at: string;
+  /** Optional fields added by migration 0001. May be absent on older rows. */
+  created_by_email?: string | null;
+  is_private?: boolean;
+  grants?: VersionGrants;
 };
 
 export type VersionWithSnapshot = VersionRow & {

@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "../store/useVersionsStore";
+import { useAuthStore, accessForVersion } from "../store/useAuthStore";
+import { useUiStore } from "../store/useUiStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
 
 function timeAgo(iso: string): string {
@@ -35,15 +37,27 @@ export function VersionsPanel() {
   const currentVersionId = useOrgStore((s) => s.currentVersionId);
   const replaceNodes = useOrgStore((s) => s.replaceNodes);
   const setToast = useOrgStore((s) => s.setToast);
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const setViewOnly = useUiStore((s) => s.setViewOnly);
 
   const [showSave, setShowSave] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+
+  /** Versions visible to the current user, with their access level annotated. */
+  const visible = useMemo(() => {
+    return versions
+      .map((v) => ({ v, access: accessForVersion(currentUser, v) }))
+      .filter((x) => x.access !== null) as {
+        v: (typeof versions)[number];
+        access: { view: true; edit: boolean };
+      }[];
+  }, [versions, currentUser]);
 
   useEffect(() => {
     if (isSupabaseConfigured) refresh();
   }, [refresh]);
 
-  async function handleLoad(id: string, name: string) {
+  async function handleLoad(id: string, name: string, canEdit: boolean) {
     if (dirty) {
       const ok = window.confirm(
         "未保存の変更があります。このバージョンを読み込むと変更は失われます。続けますか？",
@@ -55,7 +69,16 @@ export function VersionsPanel() {
       setToast({ kind: "error", message: "バージョンの読み込みに失敗しました" });
       return;
     }
+    // For load-only access we drop the editor into viewOnly so accidental
+    // edits aren't persisted. Editable-access keeps the normal editor.
+    setViewOnly(!canEdit);
     replaceNodes(nodes, { versionId: id, versionLabel: name });
+    if (!canEdit) {
+      setToast({
+        kind: "info",
+        message: "閲覧のみのバージョンを読み込みました（編集は無効）",
+      });
+    }
   }
 
   function handleDelete(id: string, name: string, e: React.MouseEvent) {
@@ -103,44 +126,70 @@ export function VersionsPanel() {
           </button>
         </header>
 
-        <button className="btn btn--primary" onClick={() => setShowSave(true)}>
-          ＋現状をバージョン保存
-        </button>
+        {currentUser?.role !== "viewer" && (
+          <button className="btn btn--primary" onClick={() => setShowSave(true)}>
+            ＋現状をバージョン保存
+          </button>
+        )}
 
         {error && <p className="versions__error">{error}</p>}
 
         <div className="versions__list">
-          {loading && versions.length === 0 && (
+          {loading && visible.length === 0 && (
             <p className="versions__empty">読み込み中…</p>
           )}
-          {!loading && versions.length === 0 && (
+          {!loading && visible.length === 0 && versions.length === 0 && (
             <p className="versions__empty">
               保存済みバージョンはまだありません。
               <br />
               「＋現状をバージョン保存」から最初の一件を作成してください。
             </p>
           )}
-          {versions.map((v) => {
+          {!loading && visible.length === 0 && versions.length > 0 && (
+            <p className="versions__empty">
+              アクセス可能なバージョンがありません。
+              <br />
+              非公開バージョンへのアクセス許可は、作成者かマスター権限のユーザーに依頼してください。
+            </p>
+          )}
+          {visible.map(({ v, access }) => {
             const isActive = currentVersionId === v.id;
+            const isPrivate = !!v.is_private;
+            const canDelete =
+              currentUser?.role === "master" ||
+              v.created_by_email === currentUser?.email;
             return (
               <div
                 key={v.id}
                 className={`version-card ${isActive ? "is-active" : ""}`}
-                onClick={() => handleLoad(v.id, v.name)}
+                onClick={() => handleLoad(v.id, v.name, access.edit)}
                 role="button"
                 tabIndex={0}
                 title={fullDateTime(v.created_at)}
               >
                 <div className="version-card__head">
-                  <span className="version-card__name">{v.name}</span>
-                  <button
-                    className="version-card__delete"
-                    onClick={(e) => handleDelete(v.id, v.name, e)}
-                    aria-label="削除"
-                    title="削除"
-                  >
-                    ✕
-                  </button>
+                  <span className="version-card__name">
+                    {isPrivate && <span className="version-card__lock" title="非公開">🔒</span>}
+                    {v.name}
+                  </span>
+                  {!access.edit && (
+                    <span
+                      className="version-card__readonly"
+                      title="このバージョンに対しては閲覧権限のみあります"
+                    >
+                      閲覧のみ
+                    </span>
+                  )}
+                  {canDelete && (
+                    <button
+                      className="version-card__delete"
+                      onClick={(e) => handleDelete(v.id, v.name, e)}
+                      aria-label="削除"
+                      title="削除"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
                 <div className="version-card__meta">
                   <span className="version-card__author">{v.author}</span>

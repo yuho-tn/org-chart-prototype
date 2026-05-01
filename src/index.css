@@ -1810,7 +1810,174 @@ body.is-dragging .dept-card__add-child {
   padding: 22px;
   width: 460px;
   max-width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+}
+
+.modal--wide {
+  width: 640px;
+}
+
+/* ── User management ─────────────────────────────────────────────── */
+.usermgr__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 4px 0 14px;
+}
+
+.usermgr__table th,
+.usermgr__table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.usermgr__table th {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.usermgr__table code {
+  font-size: 11px;
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.usermgr__empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 18px;
+}
+
+.usermgr__self {
+  font-size: 10px;
+  color: var(--primary);
+  margin-left: 6px;
+}
+
+.usermgr__role {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+.usermgr__role--master { background: #fef3c7; color: #92400e; }
+.usermgr__role--editor { background: #dbeafe; color: #1e3a8a; }
+.usermgr__role--viewer { background: #f1f5f9; color: #475569; }
+
+.usermgr__add {
+  margin-top: 6px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+.usermgr__addTitle {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.usermgr__addRow {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 0.9fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.usermgr__roleHints {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.usermgr__roleHints li {
+  padding-left: 8px;
+  position: relative;
+}
+.usermgr__roleHints li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--primary);
+}
+
+/* ── Per-version permissions in SaveVersionDialog ──────────────────── */
+.versionperms {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 14px 0 0;
+}
+
+.versionperms legend {
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.versionperms__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.versionperms__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.versionperms__user {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.versionperms__user code {
+  font-size: 11px;
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.versionperms__row select {
+  min-width: 140px;
+}
+
+/* ── Version-card extras (privacy lock + readonly badge) ──────────── */
+.version-card__lock {
+  margin-right: 4px;
+}
+
+.version-card__readonly {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
 
 .modal__title {
