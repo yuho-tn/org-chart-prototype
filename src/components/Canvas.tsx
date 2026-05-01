@@ -11,6 +11,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useOrgStore } from "../store/useOrgStore";
+import { useUiStore } from "../store/useUiStore";
 import { DepartmentNode, type DeptNodeData } from "./DepartmentNode";
 import { ExecutiveNode, type ExecNodeData } from "./ExecutiveNode";
 import { isInExecutiveBand, layoutAll, wouldCreateCycle } from "../lib/layout";
@@ -45,6 +46,7 @@ export function Canvas() {
   const reparent = useOrgStore((s) => s.reparent);
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setToast = useOrgStore((s) => s.setToast);
+  const viewOnly = useUiStore((s) => s.viewOnly);
   const preview = useDndStore((s) => s.preview);
   const reactFlow = useReactFlow();
 
@@ -116,8 +118,9 @@ export function Canvas() {
           dropState,
           leaders,
           members,
+          viewOnly,
         },
-        draggable: true,
+        draggable: !viewOnly,
         selectable: true,
       };
     });
@@ -373,12 +376,18 @@ export function Canvas() {
       }}
       onNodeClick={onNodeClick}
       onPaneClick={onPaneClick}
-      onNodeDragStart={onNodeDragStart}
-      onNodeDrag={onNodeDrag}
-      onNodeDragStop={onNodeDragStop}
+      onNodeDragStart={viewOnly ? undefined : onNodeDragStart}
+      onNodeDrag={viewOnly ? undefined : onNodeDrag}
+      onNodeDragStop={viewOnly ? undefined : onNodeDragStop}
+      nodesDraggable={!viewOnly}
       nodesConnectable={false}
       edgesFocusable={false}
       nodeDragThreshold={6}
+      panActivationKeyCode="Space"
+      panOnDrag
+      selectionOnDrag={false}
+      zoomOnScroll
+      zoomOnPinch
       proOptions={{ hideAttribution: true }}
       defaultEdgeOptions={{ type: "smoothstep", style: { strokeWidth: 1.5 } }}
     >

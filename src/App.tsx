@@ -7,25 +7,74 @@ import { Inspector } from "./components/Inspector";
 import { LogPanel } from "./components/LogPanel";
 import { Toast } from "./components/Toast";
 import { AuthorPrompt } from "./components/AuthorPrompt";
+import { ListView } from "./components/ListView";
+import { ViewTabs } from "./components/ViewTabs";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
+import { useUiStore } from "./store/useUiStore";
+import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
 
 export default function App() {
   const loadFromStorage = useOrgStore((s) => s.loadFromStorage);
   const replaceNodes = useOrgStore((s) => s.replaceNodes);
   const refreshVersions = useVersionsStore((s) => s.refresh);
   const getSnapshot = useVersionsStore((s) => s.getSnapshot);
+  const setView = useUiStore((s) => s.setView);
+  const setViewOnly = useUiStore((s) => s.setViewOnly);
+  const setSharedVersionLabel = useUiStore((s) => s.setSharedVersionLabel);
+  const view = useUiStore((s) => s.view);
+  const viewOnly = useUiStore((s) => s.viewOnly);
 
   const [bootReady, setBootReady] = useState(false);
+  const [shareInit, setShareInit] = useState<{ versionId: string | null; ready: boolean }>({
+    versionId: null,
+    ready: false,
+  });
+
+  // Parse share URL params once on mount.
+  useEffect(() => {
+    const params = parseShareParams();
+    if (params.versionId) {
+      setViewOnly(true);
+      setView(params.view);
+      setShareInit({ versionId: params.versionId, ready: true });
+    } else {
+      setShareInit({ versionId: null, ready: true });
+    }
+  }, [setView, setViewOnly]);
 
   useEffect(() => {
-    if (!bootReady) return;
+    if (!shareInit.ready) return;
+    if (!viewOnly && !bootReady) return; // editor mode waits for AuthorPrompt
     let cancelled = false;
     (async () => {
-      // 1. Hydrate the optimistic local cache so the UI is immediate.
+      if (viewOnly && shareInit.versionId) {
+        // Shared link: load that specific version directly. No localStorage.
+        if (!isSupabaseConfigured) return;
+        await refreshVersions();
+        if (cancelled) return;
+        const versions = useVersionsStore.getState().versions;
+        const meta = versions.find((v) => v.id === shareInit.versionId);
+        const nodes = await getSnapshot(shareInit.versionId);
+        if (cancelled) return;
+        if (!nodes) {
+          useOrgStore.getState().setToast({
+            kind: "error",
+            message:
+              "共有リンクのバージョンが見つかりません。リンクが古いか削除された可能性があります。",
+          });
+          return;
+        }
+        setSharedVersionLabel(meta?.name ?? null);
+        replaceNodes(nodes, {
+          versionId: shareInit.versionId,
+          versionLabel: meta?.name ?? "共有バージョン",
+        });
+        return;
+      }
+
+      // Editor boot: hydrate optimistic cache then load latest server version.
       loadFromStorage();
-      // 2. If Supabase is configured, fetch the latest version metadata and
-      //    auto-load the most recent server snapshot.
       if (!isSupabaseConfigured) return;
       await refreshVersions();
       if (cancelled) return;
@@ -39,8 +88,6 @@ export default function App() {
         }
       })();
       if (draftRaw) {
-        // Local draft exists; keep it but record the latest version label
-        // so the dirty/saved badge is informative.
         useOrgStore.setState({
           currentVersionId: latest.id,
           currentVersionLabel: latest.name,
@@ -56,35 +103,91 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [bootReady, loadFromStorage, refreshVersions, getSnapshot, replaceNodes]);
+  }, [
+    shareInit,
+    viewOnly,
+    bootReady,
+    loadFromStorage,
+    refreshVersions,
+    getSnapshot,
+    replaceNodes,
+    setSharedVersionLabel,
+  ]);
 
-  // Persist a draft to localStorage whenever nodes change.
+  // Persist a draft to localStorage whenever nodes change (editor mode only).
   const nodes = useOrgStore((s) => s.nodes);
   useEffect(() => {
+    if (viewOnly) return;
     if (!bootReady) return;
     try {
-      localStorage.setItem(
-        "org-chart-prototype:v2",
-        JSON.stringify({ nodes }),
-      );
+      localStorage.setItem("org-chart-prototype:v2", JSON.stringify({ nodes }));
     } catch {
       // ignore quota errors
     }
-  }, [nodes, bootReady]);
+  }, [nodes, bootReady, viewOnly]);
+
+  if (viewOnly) return <ViewerLayout view={view} />;
 
   return (
     <ReactFlowProvider>
       <AuthorPrompt onReady={() => setBootReady(true)} />
-      <div className="app">
+      <div className={`app app--editor app--view-${view}`}>
         <TopBar />
+        <ViewTabs />
         <div className="app__main">
           <Sidebar />
-          <div className="app__canvas">
-            <Canvas />
+          <div className="app__content">
+            {view === "tree" ? (
+              <div className="app__canvas">
+                <Canvas />
+              </div>
+            ) : (
+              <ListView />
+            )}
           </div>
           <Inspector />
         </div>
         <LogPanel />
+        <Toast />
+      </div>
+    </ReactFlowProvider>
+  );
+}
+
+function ViewerLayout({ view }: { view: "tree" | "list" }) {
+  const sharedLabel = useUiStore((s) => s.sharedVersionLabel);
+
+  function openInEditor() {
+    clearShareParamsFromUrl();
+    window.location.reload();
+  }
+
+  return (
+    <ReactFlowProvider>
+      <div className={`app app--viewer app--view-${view}`}>
+        <header className="topbar topbar--viewer">
+          <div className="topbar__brand">OrgChart Studio</div>
+          <span className="topbar__badge is-saved">閲覧モード</span>
+          {sharedLabel && (
+            <span className="topbar__viewer-version">{sharedLabel}</span>
+          )}
+          <div className="topbar__spacer" />
+          <button className="btn" onClick={openInEditor} title="編集モードで開く">
+            編集モードで開く
+          </button>
+        </header>
+        <ViewTabs />
+        <div className="app__main app__main--viewer">
+          <div className="app__content">
+            {view === "tree" ? (
+              <div className="app__canvas">
+                <Canvas />
+              </div>
+            ) : (
+              <ListView />
+            )}
+          </div>
+        </div>
         <Toast />
       </div>
     </ReactFlowProvider>

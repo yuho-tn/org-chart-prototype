@@ -23,6 +23,7 @@ export type DeptNodeData = {
     isExecutive: boolean;
   }[];
   members: { id: string; name: string; selected: boolean }[];
+  viewOnly?: boolean;
 };
 
 const PERSON_MIME = "application/x-person-id";
@@ -72,6 +73,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
     .join(" ");
 
   function handleDragOver(e: DragEvent) {
+    if (data.viewOnly) return;
     const types = e.dataTransfer.types;
     const isPerson = types.includes(PERSON_MIME);
     const isDept = types.includes(DEPT_MIME);
@@ -179,6 +181,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   }
 
   function handleDrop(e: DragEvent) {
+    if (data.viewOnly) return;
     e.currentTarget.classList.remove("is-chip-drop-over");
     e.currentTarget.classList.remove("is-copy-target");
     e.preventDefault();
@@ -200,6 +203,10 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   }
 
   function startChipDrag(e: DragEvent, personId: string, personName: string) {
+    if (data.viewOnly) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.setData(PERSON_MIME, personId);
     e.dataTransfer.effectAllowed = "move";
     e.currentTarget.classList.add("is-being-dragged");
@@ -224,6 +231,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   }
 
   function startChipEdit(e: React.MouseEvent, personId: string, current: string) {
+    if (data.viewOnly) return;
     e.stopPropagation();
     setEditingChipId(personId);
     setDraft(current);
@@ -241,6 +249,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   }
 
   function startDeptNameEdit(e: React.MouseEvent) {
+    if (data.viewOnly) return;
     if (data.category === "ROOT") return;
     e.stopPropagation();
     setEditingDeptName(true);
@@ -333,7 +342,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
               key={p.id}
               className={`chip chip--leader nodrag ${p.selected ? "is-selected" : ""} ${p.isExecutive ? "chip--exec" : ""}`}
               style={{ background: color.leaderStrip, color: color.leaderText }}
-              draggable
+              draggable={!data.viewOnly}
               onDragStart={(e) => startChipDrag(e, p.id, p.name)}
               onDragEnd={endChipDrag}
               onClick={(e) => selectChip(e, p.id)}
@@ -370,7 +379,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
             <div
               key={p.id}
               className={`chip chip--member nodrag ${p.selected ? "is-selected" : ""}`}
-              draggable
+              draggable={!data.viewOnly}
               onDragStart={(e) => startChipDrag(e, p.id, p.name)}
               onDragEnd={endChipDrag}
               onClick={(e) => selectChip(e, p.id)}
