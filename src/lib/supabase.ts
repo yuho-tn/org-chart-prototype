@@ -38,11 +38,12 @@ export type VersionWithSnapshot = VersionRow & {
   snapshot: { nodes: unknown[] };
 };
 
-/** Row shape of public.employees (migration 0002). */
+/** Row shape of public.employees (migrations 0002 + 0003).
+ *  full_name combines what the CSV may carry as 姓 + 名 OR 氏名 OR
+ *  the English equivalents — see useEmployeesStore for the mapping. */
 export type EmployeeRow = {
   employee_number: string;
-  last_name: string | null;
-  first_name: string | null;
+  full_name: string | null;
   email: string | null;
   employment_type: string | null;
   department: string | null;

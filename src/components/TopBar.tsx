@@ -31,7 +31,7 @@ export function TopBar() {
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setShowLog = useUiStore((s) => s.setShowLog);
   const setShowUsers = useUiStore((s) => s.setShowUsers);
-  const setShowEmployees = useUiStore((s) => s.setShowEmployees);
+  const navigate = useUiStore((s) => s.navigate);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -178,8 +178,8 @@ export function TopBar() {
         </button>
         <button
           className="btn btn--ghost"
-          onClick={() => setShowEmployees(true)}
-          title="従業員名簿（マスター管理）を開く"
+          onClick={() => navigate("employees")}
+          title="従業員名簿（マスター管理）ページを開く"
         >
           従業員
         </button>

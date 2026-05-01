@@ -1,6 +1,36 @@
 import { create } from "zustand";
 
 export type OrgView = "tree" | "list";
+/**
+ * Top-level pages of the app. We don't pull in a routing library — there
+ * are only two views and we want the URL hash to reflect which one is
+ * active so browser back/forward and reload still land in the right place.
+ */
+export type Route = "editor" | "employees";
+
+const HASH_TO_ROUTE: Record<string, Route> = {
+  "": "editor",
+  "#": "editor",
+  "#/": "editor",
+  "#/employees": "employees",
+};
+
+function readRouteFromHash(): Route {
+  if (typeof window === "undefined") return "editor";
+  return HASH_TO_ROUTE[window.location.hash] ?? "editor";
+}
+
+function writeRouteToHash(r: Route) {
+  if (typeof window === "undefined") return;
+  const next = r === "editor" ? "" : "#/employees";
+  if (window.location.hash !== next) {
+    // Use replaceState for the initial sync (no extra history entry); the
+    // navigate() action below uses pushState semantics by writing hash
+    // directly which DOES create one.
+    if (next === "") window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    else window.location.hash = next.slice(1); // hash includes the leading '#'
+  }
+}
 
 type UiState = {
   view: OrgView;
@@ -12,14 +42,15 @@ type UiState = {
   showLog: boolean;
   /** User management modal open state. */
   showUsers: boolean;
-  /** Employee master modal open state. */
-  showEmployees: boolean;
+  /** Top-level route. */
+  route: Route;
   setView: (v: OrgView) => void;
   setViewOnly: (b: boolean) => void;
   setSharedVersionLabel: (label: string | null) => void;
   setShowLog: (b: boolean) => void;
   setShowUsers: (b: boolean) => void;
-  setShowEmployees: (b: boolean) => void;
+  /** Navigate. Pass `pushHistory: false` to update the URL without a new history entry. */
+  navigate: (r: Route, opts?: { pushHistory?: boolean }) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -28,11 +59,32 @@ export const useUiStore = create<UiState>((set) => ({
   sharedVersionLabel: null,
   showLog: false,
   showUsers: false,
-  showEmployees: false,
+  route: readRouteFromHash(),
   setView: (view) => set({ view }),
   setViewOnly: (viewOnly) => set({ viewOnly }),
   setSharedVersionLabel: (sharedVersionLabel) => set({ sharedVersionLabel }),
   setShowLog: (showLog) => set({ showLog }),
   setShowUsers: (showUsers) => set({ showUsers }),
-  setShowEmployees: (showEmployees) => set({ showEmployees }),
+  navigate: (route, opts) => {
+    set({ route });
+    if (opts?.pushHistory === false) {
+      // Replace the current entry instead of pushing a new one.
+      const next = route === "editor"
+        ? window.location.pathname + window.location.search
+        : window.location.pathname + window.location.search + "#/employees";
+      window.history.replaceState(null, "", next);
+    } else {
+      writeRouteToHash(route);
+    }
+  },
 }));
+
+// Keep state and URL hash in sync when the user uses browser back / forward.
+if (typeof window !== "undefined") {
+  window.addEventListener("hashchange", () => {
+    const next = readRouteFromHash();
+    if (useUiStore.getState().route !== next) {
+      useUiStore.setState({ route: next });
+    }
+  });
+}

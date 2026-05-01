@@ -8,7 +8,7 @@ import { LogPanel } from "./components/LogPanel";
 import { Toast } from "./components/Toast";
 import { AuthorPrompt } from "./components/AuthorPrompt";
 import { UserManagementModal } from "./components/UserManagementModal";
-import { EmployeeManagementModal } from "./components/EmployeeManagementModal";
+import { EmployeesPage } from "./components/EmployeesPage";
 import { ListView } from "./components/ListView";
 import { ViewTabs } from "./components/ViewTabs";
 import { useOrgStore } from "./store/useOrgStore";
@@ -27,6 +27,7 @@ export default function App() {
   const setSharedVersionLabel = useUiStore((s) => s.setSharedVersionLabel);
   const view = useUiStore((s) => s.view);
   const viewOnly = useUiStore((s) => s.viewOnly);
+  const route = useUiStore((s) => s.route);
 
   const [bootReady, setBootReady] = useState(false);
   const [shareInit, setShareInit] = useState<{ versionId: string | null; ready: boolean }>({
@@ -140,6 +141,22 @@ export default function App() {
 
   if (viewOnly) return <ViewerLayout view={view} />;
 
+  // The Employees page is a sibling top-level view of the editor — both live
+  // inside the editor app shell so the AuthorPrompt / global modals etc. are
+  // shared, but the main pane swaps based on route.
+  if (route === "employees") {
+    return (
+      <ReactFlowProvider>
+        <AuthorPrompt onReady={() => setBootReady(true)} />
+        <div className="app app--page">
+          <EmployeesPage />
+          <Toast />
+          <UserManagementModal />
+        </div>
+      </ReactFlowProvider>
+    );
+  }
+
   return (
     <ReactFlowProvider>
       <AuthorPrompt onReady={() => setBootReady(true)} />
@@ -162,7 +179,6 @@ export default function App() {
         <Toast />
         <LogPanel />
         <UserManagementModal />
-        <EmployeeManagementModal />
       </div>
     </ReactFlowProvider>
   );

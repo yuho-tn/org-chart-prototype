@@ -16,7 +16,7 @@ export function UnplacedEmployeesPanel() {
   const error = useEmployeesStore((s) => s.error);
   const nodes = useOrgStore((s) => s.nodes);
   const addPersonFromEmployee = useOrgStore((s) => s.addPersonFromEmployee);
-  const setShowEmployees = useUiStore((s) => s.setShowEmployees);
+  const navigate = useUiStore((s) => s.navigate);
 
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -43,8 +43,7 @@ export function UnplacedEmployeesPanel() {
       .filter((e) => {
         if (!q) return true;
         const blob = [
-          e.last_name,
-          e.first_name,
+          e.full_name,
           e.email,
           e.department,
           e.position_title,
@@ -82,7 +81,7 @@ export function UnplacedEmployeesPanel() {
               従業員名簿が空です。
               <button
                 className="btn btn--ghost btn--xs"
-                onClick={() => setShowEmployees(true)}
+                onClick={() => navigate("employees")}
               >
                 名簿を開く
               </button>
@@ -103,7 +102,7 @@ export function UnplacedEmployeesPanel() {
               ) : (
                 <ul className="unplaced__list">
                   {candidates.slice(0, 50).map((e) => {
-                    const fullName = `${e.last_name ?? ""} ${e.first_name ?? ""}`.trim() || e.employee_number;
+                    const fullName = (e.full_name ?? "").trim() || e.employee_number;
                     return (
                       <li key={e.employee_number} className="unplaced__item">
                         <div className="unplaced__name">{fullName}</div>

@@ -7,17 +7,51 @@ const SHEET_URL_KEY = "org-chart-prototype:sheet-csv-url";
 /**
  * Header synonyms accepted in CSV imports. The first hit wins.
  * SmartHR / Google Sheets templates vary slightly, so we cast a wide net.
+ *
+ * Name handling: we accept either a single combined column (氏名 / Name)
+ * OR separate 姓 / 名 columns (joined with a space). The mapping is in
+ * csvRowToEmployee below — this map only declares the synonyms.
  */
 const HEADER_MAP = {
-  employee_number: ["社員番号", "従業員番号", "ID", "employee_number"],
-  last_name: ["姓", "苗字", "氏", "last_name"],
-  first_name: ["名", "下の名前", "first_name"],
-  email: ["メールアドレス", "メール", "email", "Email", "Mail"],
-  employment_type: ["雇用形態", "雇用区分", "employment_type"],
-  department: ["部署", "所属部署", "department", "部門"],
-  position_title: ["役職", "役職名", "position", "title", "position_title"],
-  hired_at: ["入社日", "hire_date", "入社年月日"],
-  left_at: ["退職日", "leave_date", "退職年月日", "退社日"],
+  employee_number: [
+    "社員番号", "従業員番号", "社員ID", "従業員ID",
+    "ID", "id", "Id", "employee_number", "employeeNumber", "EmployeeId",
+  ],
+  full_name: [
+    "氏名", "フルネーム", "名前", "従業員名", "社員名",
+    "name", "Name", "full_name", "FullName",
+  ],
+  last_name: [
+    "姓", "苗字", "性", "myouji",
+    "last_name", "lastName", "LastName", "Surname", "Family Name", "family_name",
+  ],
+  first_name: [
+    "名", "下の名前", "namae",
+    "first_name", "firstName", "FirstName", "GivenName", "given_name", "Given Name",
+  ],
+  email: [
+    "メールアドレス", "メール", "Eメール", "e-mail",
+    "email", "Email", "EMail", "Mail", "mail",
+  ],
+  employment_type: [
+    "雇用形態", "雇用区分", "雇用",
+    "employment_type", "employmentType", "EmploymentType",
+  ],
+  department: [
+    "部署", "所属部署", "所属", "部門", "department", "Department", "dept",
+  ],
+  position_title: [
+    "役職", "役職名", "ポジション", "肩書",
+    "position", "Position", "title", "Title", "position_title",
+  ],
+  hired_at: [
+    "入社日", "入社年月日", "入社",
+    "hire_date", "hireDate", "HireDate", "hired_at", "hire_at",
+  ],
+  left_at: [
+    "退職日", "退社日", "退職年月日", "退職",
+    "leave_date", "leaveDate", "LeaveDate", "left_at", "leave_at",
+  ],
 } as const;
 
 export type ImportSummary = {
@@ -69,10 +103,22 @@ function csvRowToEmployee(row: Record<string, string>): Partial<EmployeeRow> & {
 } | null {
   const num = pick(row, [...HEADER_MAP.employee_number]);
   if (!num) return null;
+
+  // Name resolution: if the CSV has a single combined column (氏名 etc.) use
+  // that as-is. Otherwise concat 姓 + ' ' + 名. This handles all three common
+  // SmartHR / Sheets layouts. Trim & null-coalesce so empty cells don't
+  // produce stray whitespace.
+  const combined = pick(row, [...HEADER_MAP.full_name]).trim();
+  const last = pick(row, [...HEADER_MAP.last_name]).trim();
+  const first = pick(row, [...HEADER_MAP.first_name]).trim();
+  const fullName =
+    combined ||
+    [last, first].filter(Boolean).join(" ") ||
+    null;
+
   return {
     employee_number: num,
-    last_name: pick(row, [...HEADER_MAP.last_name]) || null,
-    first_name: pick(row, [...HEADER_MAP.first_name]) || null,
+    full_name: fullName,
     email: pick(row, [...HEADER_MAP.email]).toLowerCase() || null,
     employment_type: pick(row, [...HEADER_MAP.employment_type]) || null,
     department: pick(row, [...HEADER_MAP.department]) || null,
