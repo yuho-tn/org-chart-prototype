@@ -147,8 +147,8 @@ export default function App() {
           </div>
           <Inspector />
         </div>
-        <LogPanel />
         <Toast />
+        <LogPanel />
       </div>
     </ReactFlowProvider>
   );

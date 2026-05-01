@@ -5,7 +5,10 @@ import { descendantsOf, wouldCreateCycle } from "../lib/layout";
 import { applyMove, cloneSubtree } from "../lib/move";
 
 const STORAGE_KEY = "org-chart-prototype:v2";
-const LOG_LIMIT = 10;
+// Bumped from 10 → 50 so the log can serve as a meaningful revision history,
+// not just a recent-actions ribbon. Each entry carries the pre-state so the
+// user can rewind to it (cf. spreadsheet-style version restore).
+const LOG_LIMIT = 50;
 const HISTORY_LIMIT = 50;
 
 type DeleteWithChildrenStrategy = "cascade" | "promoteToRoot";
@@ -61,6 +64,8 @@ type Store = AppState & {
   undo: () => void;
   redo: () => void;
   reset: () => void;
+  /** Rewind nodes to the snapshot captured before the given log entry. */
+  restoreToLog: (logId: string) => { ok: boolean; reason?: string };
   saveDraft: () => void;
   loadFromStorage: () => void;
   replaceNodes: (nodes: OrgNode[], meta?: { versionId?: string; versionLabel?: string }) => void;
@@ -71,8 +76,12 @@ function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36).slice(-4)}`;
 }
 
-function makeLog(action: LogEntry["action"], detail: string): LogEntry {
-  return { id: uid("log"), ts: Date.now(), action, detail };
+function makeLog(
+  action: LogEntry["action"],
+  detail: string,
+  snapshotBefore?: OrgNode[],
+): LogEntry {
+  return { id: uid("log"), ts: Date.now(), action, detail, snapshotBefore };
 }
 
 function pushLog(log: LogEntry[], entry: LogEntry): LogEntry[] {
@@ -81,6 +90,22 @@ function pushLog(log: LogEntry[], entry: LogEntry): LogEntry[] {
 
 function snapshot(state: Pick<AppState, "nodes">): Snapshot {
   return { nodes: state.nodes.map((n) => ({ ...n })) };
+}
+
+/**
+ * Build a log entry that carries the pre-state. Convenience wrapper used by
+ * every action that mutates `nodes` — keeps "snapshot-before" capture in one
+ * place instead of repeated `state.nodes.map(...)` boilerplate at call sites.
+ */
+function logEntry(
+  state: Pick<AppState, "nodes" | "log">,
+  action: LogEntry["action"],
+  detail: string,
+): LogEntry[] {
+  return pushLog(
+    state.log,
+    makeLog(action, detail, state.nodes.map((n) => ({ ...n }))),
+  );
 }
 
 /** Person nodes always belong to a department; if a non-dept target is given, walk up to the nearest dept. */
@@ -144,14 +169,12 @@ export const useOrgStore = create<Store>((set, get) => ({
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(
-        state.log,
-        makeLog(
-          "add",
-          placed
-            ? `部署「${newNode.name}」（${inferred}）を「${hintParent?.name ?? ""}」配下に追加`
-            : `部署「${newNode.name}」（${inferred}）を未配置で追加`,
-        ),
+      log: logEntry(
+        state,
+        "add",
+        placed
+          ? `部署「${newNode.name}」（${inferred}）を「${hintParent?.name ?? ""}」配下に追加`
+          : `部署「${newNode.name}」（${inferred}）を未配置で追加`,
       ),
       dirty: true,
       toast: placed
@@ -186,14 +209,12 @@ export const useOrgStore = create<Store>((set, get) => ({
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(
-        state.log,
-        makeLog(
-          "add",
-          placed
-            ? `人員「${newNode.name}」を「${parentMeta?.name ?? ""}」に追加`
-            : `人員「${newNode.name}」を未配置で追加`,
-        ),
+      log: logEntry(
+        state,
+        "add",
+        placed
+          ? `人員「${newNode.name}」を「${parentMeta?.name ?? ""}」に追加`
+          : `人員「${newNode.name}」を未配置で追加`,
       ),
       dirty: true,
       toast: placed
@@ -222,7 +243,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(state.log, makeLog("add", `役員「${newNode.name}」（${role}）を未配置で追加`)),
+      log: logEntry(state, "add", `役員「${newNode.name}」（${role}）を未配置で追加`),
       dirty: true,
       toast: { kind: "info", message: "未配置エリアに追加しました。Exe部署にドラッグして配置してください" },
     });
@@ -253,9 +274,10 @@ export const useOrgStore = create<Store>((set, get) => ({
       nodes: state.nodes.map((n) =>
         n.id === id ? { ...n, isExecutive, parentId: nextParentId } : n,
       ),
-      log: pushLog(
-        state.log,
-        makeLog("role", `「${target.name}」を${isExecutive ? "役員" : "通常メンバー"}に変更`),
+      log: logEntry(
+        state,
+        "role",
+        `「${target.name}」を${isExecutive ? "役員" : "通常メンバー"}に変更`,
       ),
       dirty: true,
     });
@@ -283,7 +305,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       future: [],
       nodes: nextNodes,
       selectedId: state.selectedId === id ? null : state.selectedId,
-      log: pushLog(state.log, makeLog("delete", detail)),
+      log: logEntry(state, "delete", detail),
       dirty: true,
     });
   },
@@ -296,7 +318,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, name } : n)),
-      log: pushLog(state.log, makeLog("rename", `「${target.name}」→「${name}」`)),
+      log: logEntry(state, "rename", `「${target.name}」→「${name}」`),
       dirty: true,
     });
   },
@@ -310,7 +332,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, roleLabel } : n)),
-      log: pushLog(state.log, makeLog("role", `「${target.name}」の役職を ${roleLabel ?? "メンバー"} に変更`)),
+      log: logEntry(state, "role", `「${target.name}」の役職を ${roleLabel ?? "メンバー"} に変更`),
       dirty: true,
     });
   },
@@ -324,7 +346,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, category } : n)),
-      log: pushLog(state.log, makeLog("rename", `「${target.name}」の種別を ${category} に変更`)),
+      log: logEntry(state, "rename", `「${target.name}」の種別を ${category} に変更`),
       dirty: true,
     });
   },
@@ -394,7 +416,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: nextNodes,
-      log: pushLog(state.log, makeLog("move", detail)),
+      log: logEntry(state, "move", detail),
       dirty: true,
     });
     return { ok: true };
@@ -409,12 +431,10 @@ export const useOrgStore = create<Store>((set, get) => ({
     }));
     set({
       clipboard: { snapshot: subtree, rootId: id },
-      log: pushLog(
-        state.log,
-        makeLog(
-          "add",
-          `「${target.name}」をコピー（${subtree.length}件）`,
-        ),
+      log: logEntry(
+        state,
+        "add",
+        `「${target.name}」をコピー（${subtree.length}件）`,
       ),
       toast: {
         kind: "info",
@@ -451,12 +471,10 @@ export const useOrgStore = create<Store>((set, get) => ({
       future: [],
       nodes: [...state.nodes, ...stamped],
       selectedId: newRootId,
-      log: pushLog(
-        state.log,
-        makeLog(
-          "add",
-          `「${stamped[0].name}」を貼り付け（未配置に${stamped.length}件）`,
-        ),
+      log: logEntry(
+        state,
+        "add",
+        `「${stamped[0].name}」を貼り付け（未配置に${stamped.length}件）`,
       ),
       toast: {
         kind: "info",
@@ -496,14 +514,12 @@ export const useOrgStore = create<Store>((set, get) => ({
       future: [],
       nodes: next,
       selectedId: newRootId,
-      log: pushLog(
-        state.log,
-        makeLog(
-          "add",
-          targetMeta
-            ? `「${source.name}」を「${targetMeta.name}」配下に複製（${clones.length}件）`
-            : `「${source.name}」をルートに複製（${clones.length}件）`,
-        ),
+      log: logEntry(
+        state,
+        "add",
+        targetMeta
+          ? `「${source.name}」を「${targetMeta.name}」配下に複製（${clones.length}件）`
+          : `「${source.name}」をルートに複製（${clones.length}件）`,
       ),
       toast: {
         kind: "info",
@@ -550,9 +566,31 @@ export const useOrgStore = create<Store>((set, get) => ({
       selectedId: null,
       currentVersionId: null,
       currentVersionLabel: null,
-      log: pushLog(state.log, makeLog("reset", "初期データへリセット")),
+      log: logEntry(state, "reset", "初期データへリセット"),
       dirty: true,
     });
+  },
+
+  restoreToLog: (logId) => {
+    const state = get();
+    const entry = state.log.find((e) => e.id === logId);
+    if (!entry) return { ok: false, reason: "ログが見つかりません" };
+    if (!entry.snapshotBefore) {
+      return { ok: false, reason: "このログには復元用の状態が記録されていません" };
+    }
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: entry.snapshotBefore.map((n) => ({ ...n })),
+      selectedId: null,
+      log: logEntry(state, "restore", `「${entry.detail}」の直前へ復元`),
+      dirty: true,
+      toast: {
+        kind: "info",
+        message: `${entry.detail} の直前の状態に戻しました`,
+      },
+    });
+    return { ok: true };
   },
 
   saveDraft: () => {
@@ -574,26 +612,25 @@ export const useOrgStore = create<Store>((set, get) => ({
       currentVersionId: meta?.versionId ?? null,
       currentVersionLabel: meta?.versionLabel ?? null,
       dirty: false,
-      log: pushLog(
-        state.log,
-        makeLog(
-          "reset",
-          meta?.versionLabel
-            ? `バージョン「${meta.versionLabel}」を読み込みました`
-            : "ノードを置き換えました",
-        ),
+      log: logEntry(
+        state,
+        "reset",
+        meta?.versionLabel
+          ? `バージョン「${meta.versionLabel}」を読み込みました`
+          : "ノードを置き換えました",
       ),
     });
   },
 
   markClean: (meta) => {
+    const state = get();
     set({
       dirty: false,
-      currentVersionId: meta?.versionId ?? get().currentVersionId,
-      currentVersionLabel: meta?.versionLabel ?? get().currentVersionLabel,
+      currentVersionId: meta?.versionId ?? state.currentVersionId,
+      currentVersionLabel: meta?.versionLabel ?? state.currentVersionLabel,
       log: meta?.versionLabel
-        ? pushLog(get().log, makeLog("save", `バージョン「${meta.versionLabel}」を保存`))
-        : get().log,
+        ? logEntry(state, "save", `バージョン「${meta.versionLabel}」を保存`)
+        : state.log,
     });
   },
 

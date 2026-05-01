@@ -4,6 +4,7 @@ import { useUiStore } from "../store/useUiStore";
 import { useDndStore } from "../store/useDndStore";
 import { validateMove } from "../lib/move";
 import { setDragKind } from "../lib/dndState";
+import { colorAt, ROOT_COLOR, EXE_COLOR } from "../lib/palette";
 import type { OrgNode } from "../lib/types";
 
 const PERSON_MIME = "application/x-person-id";
@@ -55,21 +56,16 @@ function buildTree(nodes: OrgNode[]): Tree[] {
   return roots;
 }
 
-function categoryColor(cat: string | undefined): string {
-  switch (cat) {
-    case "ROOT":
-      return "#0b1220";
-    case "Exe":
-      return "#a16207";
-    case "DIV":
-      return "#1e40af";
-    case "TM":
-      return "#15803d";
-    case "Unit":
-      return "#7e22ce";
-    default:
-      return "#475569";
-  }
+/**
+ * Resolve the same color a tree-view dept card would render with. Keeping the
+ * single source of truth in `lib/palette.ts` lets us guarantee the list view
+ * and the canvas always agree on which color belongs to which dept — the
+ * user has been clear that the two views must be visually consistent.
+ */
+function nodeColor(node: OrgNode): string {
+  if (node.category === "ROOT") return ROOT_COLOR.header;
+  if (node.category === "Exe") return EXE_COLOR.header;
+  return colorAt(node.colorIndex).header;
 }
 
 /* ───────────────────── Inline-editable chip ───────────────────── */
@@ -78,10 +74,13 @@ function PersonChip({
   person,
   parentId,
   viewOnly,
+  parentAccent,
 }: {
   person: OrgNode;
   parentId: string | null;
   viewOnly: boolean;
+  /** Used to color the leader role-badge so it matches the containing dept. */
+  parentAccent: string;
 }) {
   const setSelected = useOrgStore((s) => s.setSelected);
   const selectedId = useOrgStore((s) => s.selectedId);
@@ -94,7 +93,7 @@ function PersonChip({
   const [draft, setDraft] = useState(person.name);
 
   const isLeader = !!person.roleLabel;
-  const accent = isLeader ? categoryColor("DIV") : "transparent";
+  const accent = isLeader ? parentAccent : "transparent";
 
   function startDrag(e: DragEvent) {
     if (viewOnly) {
@@ -283,10 +282,15 @@ function DeptCard({
   const [editingName, setEditingName] = useState(false);
   const [draft, setDraft] = useState(node.name);
   const cardRef = useRef<HTMLDivElement>(null);
+  // Default open for ROOT so the top-level depts are immediately visible;
+  // every other card defaults closed so the user can drill down at their own
+  // pace ("少しずつ開いていって中身を確認できる").
+  const [open, setOpen] = useState(node.category === "ROOT");
 
-  const accent = categoryColor(node.category);
+  const accent = nodeColor(node);
   const isRoot = node.category === "ROOT";
   const sizeClass = `lv-card--${(node.category ?? "DEPT").toLowerCase()}`;
+  const hasContent = leaders.length > 0 || members.length > 0 || children.length > 0;
 
   function startDrag(e: DragEvent) {
     if (viewOnly || isRoot) {
@@ -473,13 +477,19 @@ function DeptCard({
   return (
     <div
       ref={cardRef}
-      className={`lv-card ${sizeClass} ${selectedId === node.id ? "is-selected" : ""}`}
+      className={`lv-card ${sizeClass} ${selectedId === node.id ? "is-selected" : ""} ${open ? "is-open" : "is-closed"}`}
       style={{ ["--lv-accent" as string]: accent }}
       data-depth={depth}
       draggable={!viewOnly && !isRoot}
       onDragStart={startDrag}
       onDragEnd={endDrag}
-      onDragOver={handleDragOver}
+      onDragOver={(e) => {
+        // Auto-expand on drag-hover so the user can drop into a collapsed
+        // dept without manually opening it first. We only auto-open; we
+        // never auto-close (would be jumpy).
+        if (!open && hasContent) setOpen(true);
+        handleDragOver(e);
+      }}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={(e) => {
@@ -488,6 +498,20 @@ function DeptCard({
       }}
     >
       <div className="lv-card__header">
+        <button
+          type="button"
+          className="lv-card__chevron"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (hasContent) setOpen((v) => !v);
+          }}
+          aria-label={open ? "閉じる" : "開く"}
+          aria-expanded={open}
+          disabled={!hasContent}
+          title={hasContent ? (open ? "閉じる" : "開く") : "（配下なし）"}
+        >
+          <span className={`lv-card__chevron-icon ${open ? "is-open" : ""}`}>▸</span>
+        </button>
         <span className="lv-card__category" style={{ background: accent }}>
           {node.category ?? "DEPT"}
         </span>
@@ -524,7 +548,7 @@ function DeptCard({
         </span>
       </div>
 
-      <div className="lv-card__body">
+      <div className="lv-card__body" hidden={!open}>
         {showPeopleRow && (
           <div className="lv-card__people">
             {leaders.map((p) => (
@@ -533,6 +557,7 @@ function DeptCard({
                 person={p}
                 parentId={node.id}
                 viewOnly={viewOnly}
+                parentAccent={accent}
               />
             ))}
             {members.map((p) => (
@@ -541,6 +566,7 @@ function DeptCard({
                 person={p}
                 parentId={node.id}
                 viewOnly={viewOnly}
+                parentAccent={accent}
               />
             ))}
             {!viewOnly && (
@@ -612,18 +638,26 @@ export function ListView() {
         </header>
 
         <div className="list-view__legend">
-          {(["ROOT", "Exe", "DIV", "TM", "Unit"] as const).map((c) => (
-            <span
-              key={c}
-              className="lv-legend__chip"
-              style={{ background: categoryColor(c) }}
-            >
-              {c}
-            </span>
-          ))}
+          <span
+            className="lv-legend__chip"
+            style={{ background: ROOT_COLOR.header }}
+            title="会社/組織のルート"
+          >
+            ROOT
+          </span>
+          <span
+            className="lv-legend__chip"
+            style={{ background: EXE_COLOR.header }}
+            title="役員レイヤー"
+          >
+            Exe
+          </span>
+          <span className="list-view__hint">
+            DIV／TM／Unit はインスペクターで設定したカラーがツリービューと連動して表示されます。
+          </span>
           {!viewOnly && (
             <span className="list-view__hint">
-              ・カードや人員チップをドラッグして並び替え／移動 ・ダブルクリックで名前編集
+              ・ヘッダーをクリックで開閉 ・チップをドラッグで並び替え ・ダブルクリックで名前編集
             </span>
           )}
         </div>

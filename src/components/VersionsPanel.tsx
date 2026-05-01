@@ -37,6 +37,7 @@ export function VersionsPanel() {
   const setToast = useOrgStore((s) => s.setToast);
 
   const [showSave, setShowSave] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (isSupabaseConfigured) refresh();
@@ -57,10 +58,15 @@ export function VersionsPanel() {
     replaceNodes(nodes, { versionId: id, versionLabel: name });
   }
 
-  async function handleDelete(id: string, name: string, e: React.MouseEvent) {
+  function handleDelete(id: string, name: string, e: React.MouseEvent) {
     e.stopPropagation();
-    const ok = window.confirm(`バージョン「${name}」を削除しますか？この操作は取り消せません。`);
-    if (!ok) return;
+    setPendingDelete({ id, name });
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const { id, name } = pendingDelete;
+    setPendingDelete(null);
     const success = await remove(id);
     setToast(
       success
@@ -150,6 +156,73 @@ export function VersionsPanel() {
       </section>
 
       {showSave && <SaveVersionDialog onClose={() => setShowSave(false)} />}
+      {pendingDelete && (
+        <DeleteVersionModal
+          name={pendingDelete.name}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Type-to-confirm delete dialog. The user has to retype the version name
+ * exactly, which makes accidental deletes (single-click misfires) effectively
+ * impossible. Versions are server-persisted and not undoable, so paying this
+ * small friction at delete time is worthwhile.
+ */
+function DeleteVersionModal({
+  name,
+  onCancel,
+  onConfirm,
+}: {
+  name: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const matches = draft === name;
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3 className="modal__title">バージョンの削除</h3>
+        <p className="modal__body">
+          バージョン <strong>「{name}」</strong> を完全に削除します。
+          <br />
+          この操作は取り消せません。
+          <br />
+          <br />
+          確認のため、バージョン名 <code>{name}</code> を下に入力してください。
+        </p>
+        <input
+          className="field__input"
+          value={draft}
+          autoFocus
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={name}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && matches) onConfirm();
+            if (e.key === "Escape") onCancel();
+          }}
+          style={{ width: "100%", marginBottom: 14 }}
+        />
+        <div className="modal__actions">
+          <button className="btn btn--ghost" onClick={onCancel}>
+            キャンセル
+          </button>
+          <button
+            className="btn btn--danger"
+            onClick={onConfirm}
+            disabled={!matches}
+            title={matches ? "削除する" : "バージョン名と完全一致が必要です"}
+          >
+            完全に削除する
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

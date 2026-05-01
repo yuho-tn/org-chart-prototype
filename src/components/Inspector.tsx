@@ -1,23 +1,17 @@
 import { useEffect, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { descendantsOf } from "../lib/layout";
+import { ALL_ROLES, ROLE_DESCRIPTIONS } from "../lib/types";
 import type { DeptCategory, OrgNode, PersonRole } from "../lib/types";
 import { PALETTE } from "../lib/palette";
 
 const CATEGORIES: DeptCategory[] = ["ROOT", "Exe", "DIV", "TM", "Unit", "DEPT"];
 const ROLES: { value: PersonRole; label: string }[] = [
   { value: null, label: "メンバー（役職なし）" },
-  { value: "CEO", label: "CEO（最高経営責任者）" },
-  { value: "COO", label: "COO（最高執行責任者）" },
-  { value: "CFO", label: "CFO（最高財務責任者）" },
-  { value: "CTO", label: "CTO（最高技術責任者）" },
-  { value: "CMO", label: "CMO（最高マーケティング責任者）" },
-  { value: "CHRO", label: "CHRO（最高人事責任者）" },
-  { value: "DM", label: "DM（DIVマネージャー）" },
-  { value: "TM", label: "TM（チームマネージャー）" },
-  { value: "UL", label: "UL（ユニットリーダー）" },
-  { value: "CTL", label: "CTL（副リーダー）" },
-  { value: "TL", label: "TL（チームリーダー）" },
+  ...ALL_ROLES.map((r) => ({
+    value: r as PersonRole,
+    label: `${r}（${ROLE_DESCRIPTIONS[r]}）`,
+  })),
 ];
 
 function breadcrumb(nodes: OrgNode[], node: OrgNode): string {

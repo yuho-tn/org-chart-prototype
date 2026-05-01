@@ -54,12 +54,11 @@ select.field__input {
 
 .app {
   display: grid;
-  grid-template-rows: 52px 38px 1fr 168px;
-  height: 100vh;
-}
-
-.app--viewer {
+  /* Topbar / view tabs / main. The operation-history panel was previously a
+   * permanent bottom row but is now a button-toggled drawer, so the grid is
+   * the same shape in editor and viewer modes. */
   grid-template-rows: 52px 38px 1fr;
+  height: 100vh;
 }
 
 .app__main {
@@ -387,6 +386,46 @@ select.field__input {
   font-size: 12px;
   color: var(--text);
   user-select: none;
+}
+
+/* Accordion chevron — clicking toggles the body. Disabled (greyed) when
+ * a dept has no children/members so it can't open into anything. */
+.lv-card__chevron {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+
+.lv-card__chevron:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text);
+}
+
+.lv-card__chevron:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.lv-card__chevron-icon {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
+}
+
+.lv-card__chevron-icon.is-open {
+  transform: rotate(90deg);
 }
 
 .lv-card--root > .lv-card__header {
@@ -1798,73 +1837,142 @@ body.is-dragging .dept-card__add-child {
   align-items: stretch;
 }
 
-/* Log */
-.logpanel {
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  padding: 10px 18px;
-  overflow-y: auto;
-  font-size: 12px;
+/* ── Operation history drawer ───────────────────────────────────────
+ * Hidden by default; the TopBar 「履歴」 button toggles it via uiStore.
+ * Slides in from the right. Each row offers a 復元 button that rewinds
+ * the tree to the snapshot captured before that operation. */
+.logdrawer__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.32);
+  z-index: 80;
+  animation: fade-in 0.15s ease-out;
 }
 
-.logpanel__title {
-  margin: 0 0 6px;
+.logdrawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(520px, 92vw);
+  background: var(--panel);
+  z-index: 81;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.18);
+  animation: slide-in-right 0.22s cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.logdrawer__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.logdrawer__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.logdrawer__hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.logdrawer__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 14px 16px;
+}
+
+.logdrawer__empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px;
+  font-size: 13px;
+}
+
+.logdrawer__group {
+  margin-bottom: 8px;
+}
+
+.logdrawer__day {
+  margin: 14px 0 4px;
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--text-muted);
+  text-transform: uppercase;
 }
 
-.logpanel__list {
+.logdrawer__group ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.logpanel__row {
-  display: flex;
-  gap: 10px;
-  padding: 2px 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.logdrawer__row {
+  display: grid;
+  grid-template-columns: 56px 76px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: background 0.1s;
 }
 
-.logpanel__time {
+.logdrawer__row:hover {
+  background: #f8fafc;
+}
+
+.logdrawer__time {
   color: var(--text-muted);
-  width: 64px;
-  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
 }
 
-.logpanel__action {
-  width: 76px;
-  flex-shrink: 0;
+.logdrawer__action {
   font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.04em;
 }
 
-.logpanel__row--add .logpanel__action {
-  color: var(--ok);
-}
-.logpanel__row--delete .logpanel__action {
-  color: var(--danger);
-}
-.logpanel__row--move .logpanel__action {
-  color: var(--primary);
-}
-.logpanel__row--rename .logpanel__action,
-.logpanel__row--role .logpanel__action {
-  color: var(--warn);
-}
-.logpanel__row--reset .logpanel__action,
-.logpanel__row--save .logpanel__action {
-  color: var(--text-muted);
-}
+.logdrawer__row--add .logdrawer__action { color: var(--ok); }
+.logdrawer__row--delete .logdrawer__action { color: var(--danger); }
+.logdrawer__row--move .logdrawer__action { color: var(--primary); }
+.logdrawer__row--rename .logdrawer__action,
+.logdrawer__row--role .logdrawer__action { color: var(--warn); }
+.logdrawer__row--reset .logdrawer__action,
+.logdrawer__row--save .logdrawer__action { color: var(--text-muted); }
+.logdrawer__row--restore .logdrawer__action { color: #7c3aed; }
 
-.logpanel__detail {
+.logdrawer__detail {
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.logpanel__empty {
-  color: var(--text-muted);
+.logdrawer__restore {
+  flex-shrink: 0;
 }
 
 /* Toast */

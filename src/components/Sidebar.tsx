@@ -3,7 +3,7 @@ import { useReactFlow } from "reactflow";
 import { useOrgStore } from "../store/useOrgStore";
 import { VersionsPanel } from "./VersionsPanel";
 import { TrayPanel } from "./TrayPanel";
-import { EXECUTIVE_ROLES } from "../lib/types";
+import { EXECUTIVE_ROLES, ROLE_DESCRIPTIONS } from "../lib/types";
 
 export function Sidebar() {
   const addDepartment = useOrgStore((s) => s.addDepartment);
@@ -42,7 +42,7 @@ export function Sidebar() {
           <button
             className="btn btn--ghost btn--xs"
             onClick={() => setExecMenuOpen((v) => !v)}
-            title="役員（COO/CFO/CTO/CMO/CHRO）を未配置で追加"
+            title="役員（CEO/COO/CTO/CFO/CHRO/CMO）を未配置で追加"
           >
             ＋役員 ▾
           </button>
@@ -63,6 +63,7 @@ export function Sidebar() {
                   addExecutive(role);
                   setExecMenuOpen(false);
                 }}
+                title={`${role}（${ROLE_DESCRIPTIONS[role]}）を未配置で追加`}
               >
                 ＋{role}
               </button>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
+import { useUiStore } from "../store/useUiStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
 import { ShareDialog } from "./ShareDialog";
 import { getAuthor, setAuthor } from "../lib/author";
@@ -28,6 +29,8 @@ export function TopBar() {
   const [showShare, setShowShare] = useState(false);
   const deleteNode = useOrgStore((s) => s.deleteNode);
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
+  const setShowLog = useUiStore((s) => s.setShowLog);
+  const setShowUsers = useUiStore((s) => s.setShowUsers);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -164,6 +167,20 @@ export function TopBar() {
           title="Cmd/Ctrl+Shift+Z"
         >
           Redo
+        </button>
+        <button
+          className="btn btn--ghost"
+          onClick={() => setShowLog(true)}
+          title="操作履歴を開く（任意の操作の直前の状態に復元できます）"
+        >
+          履歴
+        </button>
+        <button
+          className="btn btn--ghost"
+          onClick={() => setShowUsers(true)}
+          title="このツールの利用ユーザーを管理"
+        >
+          ユーザー
         </button>
         <button className="btn btn--ghost" onClick={handleReset}>
           リセット
