@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
+import { ShareDialog } from "./ShareDialog";
 import { getAuthor, setAuthor } from "../lib/author";
 
 function isFromTextField(target: EventTarget | null): boolean {
@@ -24,6 +25,9 @@ export function TopBar() {
   const setToast = useOrgStore((s) => s.setToast);
 
   const [showSave, setShowSave] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const deleteNode = useOrgStore((s) => s.deleteNode);
+  const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -53,11 +57,48 @@ export function TopBar() {
       } else if (key === "v") {
         e.preventDefault();
         pasteFromClipboard();
+      } else if (key === "d") {
+        // Cmd+D : duplicate selected next to itself.
+        if (!selectedId) return;
+        e.preventDefault();
+        const node = useOrgStore.getState().nodes.find((n) => n.id === selectedId);
+        if (!node) return;
+        const sameKindSiblings = useOrgStore
+          .getState()
+          .nodes.filter(
+            (n) =>
+              n.kind === node.kind &&
+              n.parentId === node.parentId &&
+              !n.isUnplaced,
+          );
+        const idx = sameKindSiblings.findIndex((s) => s.id === selectedId);
+        duplicateAtPosition(selectedId, node.parentId, idx + 1);
+      }
+    }
+    function onPlainKey(e: KeyboardEvent) {
+      if (isFromTextField(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if ((e.key === "Backspace" || e.key === "Delete") && selectedId) {
+        e.preventDefault();
+        deleteNode(selectedId, "cascade");
       }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, selectedId, copyToClipboard, pasteFromClipboard, setToast]);
+    window.addEventListener("keydown", onPlainKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onPlainKey);
+    };
+  }, [
+    undo,
+    redo,
+    selectedId,
+    copyToClipboard,
+    pasteFromClipboard,
+    setToast,
+    duplicateAtPosition,
+    deleteNode,
+  ]);
 
   function handleReset() {
     if (confirm("初期データへリセットします。未保存の変更は破棄されます。よろしいですか？")) {
@@ -134,8 +175,16 @@ export function TopBar() {
         >
           バージョン保存
         </button>
+        <button
+          className="btn"
+          onClick={() => setShowShare(true)}
+          title="閲覧専用の共有URLを発行"
+        >
+          🔗 共有
+        </button>
       </header>
       {showSave && <SaveVersionDialog onClose={() => setShowSave(false)} />}
+      {showShare && <ShareDialog onClose={() => setShowShare(false)} />}
     </>
   );
 }
