@@ -22,10 +22,15 @@ const HEADER_MAP = {
     "name", "Name", "full_name", "FullName",
   ],
   last_name: [
+    // SmartHR's typical export uses full-width parens — `氏名（姓）`. Keep
+    // both width variants and the older "fields-only" headers so older
+    // sheets still import.
+    "氏名（姓）", "氏名(姓)",
     "姓", "苗字", "性", "myouji",
     "last_name", "lastName", "LastName", "Surname", "Family Name", "family_name",
   ],
   first_name: [
+    "氏名（名）", "氏名(名)",
     "名", "下の名前", "namae",
     "first_name", "firstName", "FirstName", "GivenName", "given_name", "Given Name",
   ],
