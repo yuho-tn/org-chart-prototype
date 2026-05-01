@@ -75,6 +75,9 @@ type Store = AppState & {
   undo: () => void;
   redo: () => void;
   reset: () => void;
+  /** Start a fresh file: clears nodes to seed and detaches from any loaded
+   *  version. Used by the "＋新規作成" flow. */
+  newFile: () => void;
   /** Rewind nodes to the snapshot captured before the given log entry. */
   restoreToLog: (logId: string) => { ok: boolean; reason?: string };
   saveDraft: () => void;
@@ -621,6 +624,24 @@ export const useOrgStore = create<Store>((set, get) => ({
       currentVersionLabel: null,
       log: logEntry(state, "reset", "初期データへリセット"),
       dirty: true,
+    });
+  },
+
+  newFile: () => {
+    const state = get();
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: seedData(),
+      selectedId: null,
+      currentVersionId: null,
+      currentVersionLabel: null,
+      log: logEntry(state, "reset", "新規ファイルを作成"),
+      dirty: true,
+      toast: {
+        kind: "info",
+        message: "新規ファイルを開きました。保存するとサーバに登録されます。",
+      },
     });
   },
 

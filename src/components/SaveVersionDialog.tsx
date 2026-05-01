@@ -81,19 +81,20 @@ export function SaveVersionDialog({ onClose }: { onClose: () => void }) {
         className="modal modal--wide"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="modal__title">バージョンとして保存</h3>
+        <h3 className="modal__title">新規ファイルとして保存</h3>
         <p className="modal__body" style={{ margin: "0 0 12px" }}>
-          現在の組織図をサーバに保存します。後でこのバージョンに戻れるようになります。
+          現在の組織図を新しいファイルとしてサーバに保存します。
+          後で開き直すと、このファイルを上書き保存しながら編集できます。
         </p>
 
         <label className="field">
-          <span className="field__label">バージョン名（必須）</span>
+          <span className="field__label">ファイル名（必須）</span>
           <input
             className="field__input"
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="例：2026春・新体制"
+            placeholder="例：2026春・新体制／検討案A"
           />
         </label>
 

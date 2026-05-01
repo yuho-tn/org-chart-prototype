@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
+import { useVersionsStore } from "../store/useVersionsStore";
+import { useAuthStore } from "../store/useAuthStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
 import { ShareDialog } from "./ShareDialog";
 import { getAuthor, setAuthor } from "../lib/author";
@@ -14,6 +16,10 @@ function isFromTextField(target: EventTarget | null): boolean {
 export function TopBar() {
   const dirty = useOrgStore((s) => s.dirty);
   const versionLabel = useOrgStore((s) => s.currentVersionLabel);
+  const currentVersionId = useOrgStore((s) => s.currentVersionId);
+  const nodes = useOrgStore((s) => s.nodes);
+  const newFile = useOrgStore((s) => s.newFile);
+  const markClean = useOrgStore((s) => s.markClean);
   const selectedId = useOrgStore((s) => s.selectedId);
   const clipboard = useOrgStore((s) => s.clipboard);
   const past = useOrgStore((s) => s.past);
@@ -25,13 +31,28 @@ export function TopBar() {
   const pasteFromClipboard = useOrgStore((s) => s.pasteFromClipboard);
   const setToast = useOrgStore((s) => s.setToast);
 
+  const updateSnapshot = useVersionsStore((s) => s.updateSnapshot);
+  const versions = useVersionsStore((s) => s.versions);
+  const viewOnly = useUiStore((s) => s.viewOnly);
+  const currentUser = useAuthStore((s) => s.currentUser);
+
   const [showSave, setShowSave] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [saving, setSaving] = useState(false);
   const deleteNode = useOrgStore((s) => s.deleteNode);
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setShowLog = useUiStore((s) => s.setShowLog);
   const setShowUsers = useUiStore((s) => s.setShowUsers);
   const navigate = useUiStore((s) => s.navigate);
+
+  // Resolve the loaded file's metadata so we can refuse to overwrite a
+  // confirmed snapshot. Confirmed files are immutable by spec — the user
+  // 複製s them to make a draft.
+  const currentFile = currentVersionId
+    ? versions.find((v) => v.id === currentVersionId)
+    : null;
+  const isConfirmedFile = !!currentFile?.is_confirmed;
+  const canOverwrite = !!currentVersionId && !isConfirmedFile && !viewOnly && currentUser?.role !== "viewer";
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -50,7 +71,14 @@ export function TopBar() {
         redo();
       } else if (key === "s") {
         e.preventDefault();
-        setShowSave(true);
+        // Cmd/Ctrl+S now overwrites the current file when possible; if no
+        // file is loaded (or the loaded one is confirmed/read-only) it falls
+        // back to the "save as" dialog.
+        if (canOverwrite) {
+          handleOverwrite();
+        } else {
+          setShowSave(true);
+        }
       } else if (key === "c") {
         if (!selectedId) {
           setToast({ kind: "error", message: "コピーするノードを選択してください" });
@@ -125,12 +153,41 @@ export function TopBar() {
     copyToClipboard(selectedId);
   }
 
+  async function handleOverwrite() {
+    if (!currentVersionId || !canOverwrite) return;
+    setSaving(true);
+    const row = await updateSnapshot(currentVersionId, nodes);
+    setSaving(false);
+    if (!row) {
+      setToast({ kind: "error", message: "保存に失敗しました" });
+      return;
+    }
+    markClean({ versionId: row.id, versionLabel: row.name });
+    setToast({ kind: "info", message: `「${row.name}」を上書き保存しました` });
+  }
+
+  function handleNewFile() {
+    if (dirty) {
+      const ok = window.confirm(
+        "未保存の変更があります。新規ファイルを開くと変更は失われます。続けますか？",
+      );
+      if (!ok) return;
+    }
+    newFile();
+  }
+
   return (
     <>
       <header className="topbar">
         <div className="topbar__brand">OrgChart Studio</div>
         <span className={`topbar__badge ${dirty ? "is-dirty" : "is-saved"}`}>
-          {dirty ? "編集中（未保存）" : versionLabel ? `保存済：${versionLabel}` : "未保存"}
+          {dirty
+            ? versionLabel
+              ? `編集中：${versionLabel}（未保存）`
+              : "編集中（新規ファイル・未保存）"
+            : versionLabel
+              ? `保存済：${versionLabel}${isConfirmedFile ? "（確定版）" : ""}`
+              : "新規ファイル"}
         </span>
         <div className="topbar__spacer" />
         <button
@@ -197,16 +254,52 @@ export function TopBar() {
         >
           ユーザー
         </button>
-        <button className="btn btn--ghost" onClick={handleReset}>
-          リセット
+        <button
+          className="btn btn--ghost"
+          onClick={handleNewFile}
+          title="新規ファイルを開く（保存するとサーバに登録されます）"
+        >
+          ＋新規
         </button>
         <button
-          className="btn btn--primary"
-          onClick={() => setShowSave(true)}
-          title="Cmd/Ctrl+S"
+          className="btn btn--ghost"
+          onClick={handleReset}
+          title="現在のファイルをシードデータに戻す"
         >
-          バージョン保存
+          リセット
         </button>
+        {canOverwrite ? (
+          <>
+            <button
+              className="btn btn--primary"
+              onClick={handleOverwrite}
+              disabled={saving || !dirty}
+              title="現在のファイルに上書き保存（Cmd/Ctrl+S）"
+            >
+              {saving ? "保存中…" : "保存"}
+            </button>
+            <button
+              className="btn"
+              onClick={() => setShowSave(true)}
+              title="現在の内容を別の新しいファイルとして保存"
+            >
+              別名で保存
+            </button>
+          </>
+        ) : (
+          <button
+            className="btn btn--primary"
+            onClick={() => setShowSave(true)}
+            disabled={currentUser?.role === "viewer"}
+            title={
+              isConfirmedFile
+                ? "確定版は上書きできません。サイドバーの「複製」から下書きを作成してください"
+                : "新しいファイルとして保存（Cmd/Ctrl+S）"
+            }
+          >
+            新規ファイルとして保存
+          </button>
+        )}
         <button
           className="btn"
           onClick={() => setShowShare(true)}

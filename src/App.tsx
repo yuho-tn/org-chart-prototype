@@ -11,6 +11,7 @@ import { UserManagementModal } from "./components/UserManagementModal";
 import { EmployeesPage } from "./components/EmployeesPage";
 import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
 import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
+import { ConfirmedBanner } from "./components/ConfirmedBanner";
 import { ListView } from "./components/ListView";
 import { ViewTabs } from "./components/ViewTabs";
 import { useOrgStore } from "./store/useOrgStore";
@@ -190,6 +191,7 @@ export default function App() {
       <AuthorPrompt onReady={() => setBootReady(true)} />
       <div className={`app app--editor app--view-${view}`}>
         <TopBar />
+        <ConfirmedBanner />
         <ViewTabs />
         <div className="app__main">
           <Sidebar />

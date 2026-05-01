@@ -28,6 +28,8 @@ export type VersionRow = {
   author: string;
   note: string | null;
   created_at: string;
+  /** Migration 0006: set whenever the row's snapshot is overwritten. */
+  updated_at?: string;
   /** Optional fields added by migration 0001. May be absent on older rows. */
   created_by_email?: string | null;
   is_private?: boolean;

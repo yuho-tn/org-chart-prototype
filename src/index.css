@@ -53,17 +53,19 @@ select.field__input {
 }
 
 .app {
-  display: grid;
-  /* Topbar / view tabs / main. The operation-history panel was previously a
-   * permanent bottom row but is now a button-toggled drawer, so the grid is
-   * the same shape in editor and viewer modes. */
-  grid-template-rows: 52px 38px 1fr;
+  /* Used to be a fixed 3-row grid (topbar / tabs / main). Optional rows
+   * (e.g. ConfirmedBanner) come and go, so flex-column with the main row
+   * stretching to fill is simpler and keeps the grid from breaking when
+   * intermediate rows mount/unmount. */
+  display: flex;
+  flex-direction: column;
   height: 100vh;
 }
 
 .app__main {
   display: grid;
   grid-template-columns: 300px 1fr 300px;
+  flex: 1;
   min-height: 0;
 }
 
@@ -170,6 +172,27 @@ select.field__input {
 .topbar__viewer-version {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* ── Confirmed-file lock banner (between TopBar and ViewTabs) ────── */
+.confirmed-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  background: linear-gradient(180deg, #fff7ed 0%, #fed7aa 100%);
+  border-bottom: 1px solid #fb923c;
+  font-size: 12px;
+  color: #7c2d12;
+}
+
+.confirmed-banner__label {
+  font-weight: 700;
+}
+
+.confirmed-banner__hint {
+  flex: 1;
+  color: #9a3412;
 }
 
 /* ── View tabs (between TopBar and main) ───────────────────────────── */
@@ -1320,6 +1343,18 @@ select.field__input {
   position: absolute;
   bottom: 8px;
   right: 10px;
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+.version-card__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.version-card__actions .btn {
   font-size: 10px;
   padding: 3px 8px;
 }

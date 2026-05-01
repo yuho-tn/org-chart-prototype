@@ -8,7 +8,7 @@ import {
 import type { OrgNode } from "../lib/types";
 
 const VERSION_SELECT =
-  "id, name, author, note, created_at, created_by_email, is_private, grants, is_confirmed, confirmed_period";
+  "id, name, author, note, created_at, updated_at, created_by_email, is_private, grants, is_confirmed, confirmed_period";
 
 type VersionsState = {
   versions: VersionRow[];
@@ -27,6 +27,23 @@ type VersionsState = {
     is_private?: boolean;
     grants?: VersionGrants;
   }) => Promise<VersionRow | null>;
+  /** Overwrite an existing file's nodes (the file-model "保存"). The row's
+   *  metadata is preserved; only the snapshot + updated_at change. Returns
+   *  the refreshed VersionRow on success. */
+  updateSnapshot: (
+    id: string,
+    nodes: OrgNode[],
+    optionalPatch?: Partial<Pick<VersionRow, "name" | "note">>,
+  ) => Promise<VersionRow | null>;
+  /** Duplicate an existing file: copies snapshot+name and inserts as a fresh
+   *  row owned by the current user. Confirmation flags are NOT copied — the
+   *  duplicate always lands as a draft. */
+  duplicate: (
+    id: string,
+    nameOverride: string,
+    author: string,
+    created_by_email: string | null,
+  ) => Promise<VersionRow | null>;
   /** Updates only the permission columns for a version. */
   updatePermissions: (
     id: string,
@@ -112,6 +129,85 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     }
     if (resp.error || !resp.data) {
       set({ error: resp.error?.message ?? "保存に失敗しました" });
+      return null;
+    }
+    const row = resp.data as VersionRow;
+    set({ versions: [row, ...get().versions] });
+    return row;
+  },
+
+  updateSnapshot: async (id, nodes, optionalPatch) => {
+    if (!supabase) return null;
+    const patch: Record<string, unknown> = { snapshot: { nodes } };
+    if (optionalPatch?.name !== undefined) patch.name = optionalPatch.name;
+    if (optionalPatch?.note !== undefined) patch.note = optionalPatch.note;
+    const { data, error } = await supabase
+      .from("org_versions")
+      .update(patch)
+      .eq("id", id)
+      .select(VERSION_SELECT)
+      .single();
+    if (error || !data) {
+      set({ error: error?.message ?? "更新に失敗しました" });
+      return null;
+    }
+    const row = data as VersionRow;
+    set({
+      versions: get().versions.map((v) => (v.id === id ? row : v)),
+    });
+    return row;
+  },
+
+  duplicate: async (id, nameOverride, author, created_by_email) => {
+    if (!supabase) return null;
+    // Pull the source's snapshot + note.
+    const { data: src, error: srcErr } = await supabase
+      .from("org_versions")
+      .select("snapshot, note")
+      .eq("id", id)
+      .single();
+    if (srcErr || !src) {
+      set({ error: srcErr?.message ?? "複製元の取得に失敗しました" });
+      return null;
+    }
+    const insertPayload: Record<string, unknown> = {
+      name: nameOverride,
+      author,
+      note: (src as { note: string | null }).note,
+      snapshot: (src as { snapshot: unknown }).snapshot,
+      // Duplicates land as fresh drafts owned by the current user.
+      created_by_email,
+      is_confirmed: false,
+      confirmed_period: null,
+      is_private: false,
+      grants: {},
+    };
+    let resp = (await supabase
+      .from("org_versions")
+      .insert(insertPayload)
+      .select(VERSION_SELECT)
+      .single()) as { data: unknown; error: { message: string } | null };
+    // Legacy schema fallback (no permission columns) — retry with the
+    // minimal column set.
+    if (
+      resp.error &&
+      /column .*(created_by_email|is_private|grants|is_confirmed|confirmed_period).* does not exist/i.test(
+        resp.error.message,
+      )
+    ) {
+      resp = (await supabase
+        .from("org_versions")
+        .insert({
+          name: nameOverride,
+          author,
+          note: (src as { note: string | null }).note,
+          snapshot: (src as { snapshot: unknown }).snapshot,
+        })
+        .select("id, name, author, note, created_at")
+        .single()) as { data: unknown; error: { message: string } | null };
+    }
+    if (resp.error || !resp.data) {
+      set({ error: resp.error?.message ?? "複製に失敗しました" });
       return null;
     }
     const row = resp.data as VersionRow;

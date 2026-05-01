@@ -4,6 +4,7 @@ import { useVersionsStore, isSupabaseConfigured } from "../store/useVersionsStor
 import { useAuthStore, accessForVersion } from "../store/useAuthStore";
 import { useUiStore } from "../store/useUiStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
+import { getAuthor } from "../lib/author";
 
 function timeAgo(iso: string): string {
   const d = new Date(iso);
@@ -33,6 +34,7 @@ export function VersionsPanel() {
   const getSnapshot = useVersionsStore((s) => s.getSnapshot);
   const remove = useVersionsStore((s) => s.remove);
   const setConfirmation = useVersionsStore((s) => s.setConfirmation);
+  const duplicate = useVersionsStore((s) => s.duplicate);
 
   const dirty = useOrgStore((s) => s.dirty);
   const currentVersionId = useOrgStore((s) => s.currentVersionId);
@@ -80,28 +82,78 @@ export function VersionsPanel() {
     if (isSupabaseConfigured) refresh();
   }, [refresh]);
 
-  async function handleLoad(id: string, name: string, canEdit: boolean) {
+  async function handleLoad(
+    id: string,
+    name: string,
+    canEdit: boolean,
+    isConfirmed: boolean,
+  ) {
     if (dirty) {
       const ok = window.confirm(
-        "未保存の変更があります。このバージョンを読み込むと変更は失われます。続けますか？",
+        "未保存の変更があります。このファイルを開くと現在の変更は失われます。続けますか？",
       );
       if (!ok) return;
     }
     const nodes = await getSnapshot(id);
     if (!nodes) {
-      setToast({ kind: "error", message: "バージョンの読み込みに失敗しました" });
+      setToast({ kind: "error", message: "ファイルの読み込みに失敗しました" });
       return;
     }
-    // For load-only access we drop the editor into viewOnly so accidental
-    // edits aren't persisted. Editable-access keeps the normal editor.
-    setViewOnly(!canEdit);
+    // Confirmed files are immutable. Per-version edit-grants don't override
+    // that — so a confirmed file always loads in viewOnly. Per-version
+    // permission only kicks in for drafts.
+    const lockEdits = !canEdit || isConfirmed;
+    setViewOnly(lockEdits);
     replaceNodes(nodes, { versionId: id, versionLabel: name });
-    if (!canEdit) {
+    if (isConfirmed) {
       setToast({
         kind: "info",
-        message: "閲覧のみのバージョンを読み込みました（編集は無効）",
+        message: "確定版を開きました（閲覧のみ）。編集する場合は「複製」してください。",
+      });
+    } else if (!canEdit) {
+      setToast({
+        kind: "info",
+        message: "閲覧のみのファイルを開きました（編集は無効）",
       });
     }
+  }
+
+  async function handleDuplicate(id: string, sourceName: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const author = getAuthor() ?? currentUser?.display_name ?? "";
+    const dupName = window.prompt(
+      "複製したファイルの名前を入力してください",
+      `${sourceName} のコピー`,
+    );
+    if (dupName === null) return;
+    const trimmed = dupName.trim();
+    if (!trimmed) {
+      setToast({ kind: "error", message: "ファイル名を入力してください" });
+      return;
+    }
+    const row = await duplicate(id, trimmed, author, currentUser?.email ?? null);
+    if (!row) {
+      setToast({ kind: "error", message: "複製に失敗しました" });
+      return;
+    }
+    // Open the new file immediately so the user can start editing.
+    if (dirty) {
+      // We just complicated state — keep the user where they are; tell them
+      // the duplicate is ready in the list.
+      setToast({
+        kind: "info",
+        message: `「${trimmed}」を作成しました（下書きタブから開けます）`,
+      });
+      setTab("draft");
+      return;
+    }
+    const nodes = await getSnapshot(row.id);
+    if (nodes) {
+      setViewOnly(false);
+      replaceNodes(nodes, { versionId: row.id, versionLabel: row.name });
+    }
+    setTab("draft");
+    setToast({ kind: "info", message: `「${trimmed}」を複製しました` });
   }
 
   function handleDelete(id: string, name: string, e: React.MouseEvent) {
@@ -168,7 +220,7 @@ export function VersionsPanel() {
     <>
       <section className="versions">
         <header className="versions__header">
-          <h2 className="sidebar__title" style={{ margin: 0 }}>バージョン履歴</h2>
+          <h2 className="sidebar__title" style={{ margin: 0 }}>組織図ファイル</h2>
           <button
             className="btn btn--ghost btn--xs"
             onClick={() => refresh()}
@@ -179,8 +231,12 @@ export function VersionsPanel() {
         </header>
 
         {currentUser?.role !== "viewer" && (
-          <button className="btn btn--primary" onClick={() => setShowSave(true)}>
-            ＋現状をバージョン保存
+          <button
+            className="btn btn--primary"
+            onClick={() => setShowSave(true)}
+            title="現在の組織図を新しいファイルとしてサーバに保存"
+          >
+            ＋新規ファイルとして保存
           </button>
         )}
 
@@ -211,9 +267,9 @@ export function VersionsPanel() {
           )}
           {!loading && tabList.length === 0 && versions.length === 0 && (
             <p className="versions__empty">
-              保存済みバージョンはまだありません。
+              保存済みファイルはまだありません。
               <br />
-              「＋現状をバージョン保存」から最初の一件を作成してください。
+              「＋新規ファイルとして保存」から最初の一件を作成してください。
             </p>
           )}
           {!loading && tabList.length === 0 && versions.length > 0 && (
@@ -236,7 +292,7 @@ export function VersionsPanel() {
               <div
                 key={v.id}
                 className={`version-card ${isActive ? "is-active" : ""} ${v.is_confirmed ? "is-confirmed" : ""}`}
-                onClick={() => handleLoad(v.id, v.name, access.edit)}
+                onClick={() => handleLoad(v.id, v.name, access.edit, !!v.is_confirmed)}
                 role="button"
                 tabIndex={0}
                 title={fullDateTime(v.created_at)}
@@ -273,31 +329,50 @@ export function VersionsPanel() {
                 <div className="version-card__meta">
                   <span className="version-card__author">{v.author}</span>
                   <span className="version-card__sep">·</span>
-                  <span className="version-card__time">{timeAgo(v.created_at)}</span>
+                  <span className="version-card__time">
+                    {v.updated_at && v.updated_at !== v.created_at
+                      ? `更新 ${timeAgo(v.updated_at)}`
+                      : timeAgo(v.created_at)}
+                  </span>
                 </div>
                 {v.note && <div className="version-card__note">{v.note}</div>}
                 {isActive && <div className="version-card__active">読み込み中</div>}
-                {canConfirm && !v.is_confirmed && (
-                  <button
-                    className="btn btn--xs version-card__fix"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPendingFix({ id: v.id, name: v.name });
-                    }}
-                    title="このバージョンを月次の確定版として登録"
-                  >
-                    FIX登録
-                  </button>
-                )}
-                {canConfirm && v.is_confirmed && (
-                  <button
-                    className="btn btn--ghost btn--xs version-card__fix"
-                    onClick={(e) => unfix(v.id, e)}
-                    title="確定を取り消して下書きに戻す"
-                  >
-                    確定を取消
-                  </button>
-                )}
+                <div className="version-card__actions">
+                  {currentUser?.role !== "viewer" && (
+                    <button
+                      className="btn btn--ghost btn--xs"
+                      onClick={(e) => handleDuplicate(v.id, v.name, e)}
+                      title={
+                        v.is_confirmed
+                          ? "確定版を元に下書きを作成して編集を始める"
+                          : "このファイルを複製して新しい下書きを作成"
+                      }
+                    >
+                      複製
+                    </button>
+                  )}
+                  {canConfirm && !v.is_confirmed && (
+                    <button
+                      className="btn btn--xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPendingFix({ id: v.id, name: v.name });
+                      }}
+                      title="このファイルを月次の確定版として登録"
+                    >
+                      FIX登録
+                    </button>
+                  )}
+                  {canConfirm && v.is_confirmed && (
+                    <button
+                      className="btn btn--ghost btn--xs"
+                      onClick={(e) => unfix(v.id, e)}
+                      title="確定を取り消して下書きに戻す"
+                    >
+                      確定を取消
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
