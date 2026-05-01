@@ -25,8 +25,14 @@ type Store = AppState & {
   /** in-memory clipboard for Cmd+C / Cmd+V */
   clipboard: Clipboard;
 
-  addDepartment: (parentId: string | null, opts?: { category?: DeptCategory; colorIndex?: number }) => void;
-  addPerson: (parentId: string | null, opts?: { roleLabel?: PersonRole }) => void;
+  addDepartment: (
+    parentId: string | null,
+    opts?: { category?: DeptCategory; colorIndex?: number; placed?: boolean },
+  ) => void;
+  addPerson: (
+    parentId: string | null,
+    opts?: { roleLabel?: PersonRole; placed?: boolean },
+  ) => void;
   addExecutive: (role: NonNullable<PersonRole>) => void;
   deleteNode: (id: string, strategy?: DeleteWithChildrenStrategy) => void;
   rename: (id: string, name: string) => void;
@@ -105,9 +111,9 @@ export const useOrgStore = create<Store>((set, get) => ({
   addDepartment: (parentId, opts) => {
     const state = get();
     const id = uid("d");
-    // New nodes always land in the tray (isUnplaced=true). The user drags
-    // them onto the canvas to commit a parent. parentId here is treated as a
-    // *hint* for the default category and color when they eventually drop.
+    // When `placed` is true, the new dept attaches directly under the given
+    // parent (used by the in-place "+" button on each card). Otherwise it
+    // lands in the tray, and parentId is just a hint for the default category.
     const hintParent = parentId ? state.nodes.find((n) => n.id === parentId) : null;
     const inferred: DeptCategory = (() => {
       if (opts?.category) return opts.category;
@@ -123,48 +129,80 @@ export const useOrgStore = create<Store>((set, get) => ({
       (hintParent?.colorIndex !== undefined && hintParent.category !== "ROOT"
         ? hintParent.colorIndex
         : state.nodes.filter((n) => n.kind === "department").length % 8);
+    const placed = !!opts?.placed && parentId !== null;
     const newNode: OrgNode = {
       id,
       kind: "department",
       name: "新規部署",
-      parentId: null,
+      parentId: placed ? parentId : null,
       category: inferred,
       colorIndex,
-      isUnplaced: true,
+      isUnplaced: !placed,
     };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(state.log, makeLog("add", `部署「${newNode.name}」（${inferred}）を未配置で追加`)),
+      log: pushLog(
+        state.log,
+        makeLog(
+          "add",
+          placed
+            ? `部署「${newNode.name}」（${inferred}）を「${hintParent?.name ?? ""}」配下に追加`
+            : `部署「${newNode.name}」（${inferred}）を未配置で追加`,
+        ),
+      ),
       dirty: true,
-      toast: { kind: "info", message: "未配置エリアに追加しました。ドラッグで配置先を指定してください" },
+      toast: placed
+        ? null
+        : { kind: "info", message: "未配置エリアに追加しました。ドラッグで配置先を指定してください" },
     });
   },
 
   addPerson: (parentId, opts) => {
     const state = get();
     const id = uid("p");
+    // `placed` direct-adds the person to the named department; otherwise the
+    // person is left in the tray for the user to drag into place.
+    const resolvedParent =
+      opts?.placed && parentId
+        ? nearestDeptAncestor(state.nodes, parentId)
+        : null;
+    const placed = !!opts?.placed && resolvedParent !== null;
+    const parentMeta = resolvedParent
+      ? state.nodes.find((n) => n.id === resolvedParent)
+      : null;
     const newNode: OrgNode = {
       id,
       kind: "person",
       name: "新規メンバー",
-      parentId: null,
+      parentId: placed ? resolvedParent : null,
       roleLabel: opts?.roleLabel ?? null,
-      isUnplaced: true,
+      isUnplaced: !placed,
     };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: pushLog(state.log, makeLog("add", `人員「${newNode.name}」を未配置で追加`)),
+      log: pushLog(
+        state.log,
+        makeLog(
+          "add",
+          placed
+            ? `人員「${newNode.name}」を「${parentMeta?.name ?? ""}」に追加`
+            : `人員「${newNode.name}」を未配置で追加`,
+        ),
+      ),
       dirty: true,
-      toast: { kind: "info", message: "未配置エリアに追加しました。ドラッグで配置先の部署を指定してください" },
+      toast: placed
+        ? null
+        : {
+            kind: "info",
+            message: "未配置エリアに追加しました。ドラッグで配置先の部署を指定してください",
+          },
     });
-    // touch parentId to silence unused warning in dev
-    void parentId;
   },
 
   addExecutive: (role) => {

@@ -52,6 +52,8 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const rename = useOrgStore((s) => s.rename);
   const setToast = useOrgStore((s) => s.setToast);
+  const addDepartment = useOrgStore((s) => s.addDepartment);
+  const addPerson = useOrgStore((s) => s.addPerson);
 
   const [editingChipId, setEditingChipId] = useState<string | null>(null);
   const [editingDeptName, setEditingDeptName] = useState(false);
@@ -392,11 +394,40 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
             </div>
           );
         })}
-        {data.leaders.length === 0 && data.members.length === 0 && (
+        {data.leaders.length === 0 && data.members.length === 0 && data.viewOnly && (
           <div className="dept-card__empty">メンバーなし</div>
+        )}
+        {!data.viewOnly && (
+          <button
+            className="nodrag dept-card__add-member"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              addPerson(id, { placed: true });
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            title="この部署に人員を追加"
+          >
+            ＋ 人員を追加
+          </button>
         )}
       </div>
       <Handle type="source" position={Position.Bottom} />
+      {!data.viewOnly && (
+        <button
+          className="nodrag dept-card__add-child"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            addDepartment(id, { placed: true });
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          title="この部署の配下に子部署を追加"
+          style={{ borderColor: color.border, color: color.border }}
+        >
+          ＋
+        </button>
+      )}
     </div>
   );
 }

@@ -319,15 +319,21 @@ select.field__input {
   margin-left: 8px;
 }
 
-/* ── Framed dept card (list view) ─────────────────────────────────── */
+/* ── Subtle dept card (list view) ─────────────────────────────────────
+ * Goal: communicate hierarchy with light visual weight — no full borders.
+ * A 3-4px colored left bar identifies the dept; children get an indented
+ * dashed guide line. Hover/selection adds a translucent bg, not a frame.
+ * ──────────────────────────────────────────────────────────────────── */
 .lv-card {
-  background: #fff;
-  border: 2px solid;
-  border-radius: 6px;
-  overflow: hidden;
-  margin-bottom: 4px;
+  --lv-accent: var(--border-strong);
+  background: transparent;
+  border: none;
+  border-left: 3px solid var(--lv-accent);
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 0 0 4px;
   cursor: grab;
-  transition: box-shadow 0.12s, transform 0.06s;
+  transition: background 0.12s;
   position: relative;
 }
 
@@ -336,36 +342,35 @@ select.field__input {
 }
 
 .lv-card:hover {
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  background: rgba(15, 23, 42, 0.025);
 }
 
 .lv-card.is-selected {
-  box-shadow: 0 0 0 2px var(--primary);
+  background: rgba(37, 99, 235, 0.06);
 }
 
 .lv-card.is-being-dragged {
-  opacity: 0.5;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+  opacity: 0.45;
 }
 
-/* Drop indicators painted via classes set in onDragOver */
+/* Drop indicators: thin colored lines instead of heavy outlines */
 .lv-card.is-drop-before {
-  box-shadow: 0 -4px 0 var(--primary), 0 0 0 2px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 -2px 0 var(--primary);
 }
 .lv-card.is-drop-after {
-  box-shadow: 0 4px 0 var(--primary), 0 0 0 2px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 2px 0 var(--primary);
 }
 .lv-card.is-drop-child {
-  box-shadow: 0 0 0 3px var(--primary), 0 0 0 6px rgba(37, 99, 235, 0.18);
+  background: rgba(37, 99, 235, 0.08);
 }
 
-/* Per-category sizing: ROOT/Exe/DIV/TM/Unit get progressively lighter framing. */
-.lv-card--root { border-width: 3px; }
-.lv-card--exe { border-width: 3px; }
-.lv-card--div { border-width: 2px; }
-.lv-card--tm { border-width: 2px; }
-.lv-card--unit { border-width: 1px; }
-.lv-card--dept { border-width: 1px; }
+/* Left-bar thickness scales with depth importance. */
+.lv-card--root { border-left-width: 4px; }
+.lv-card--exe { border-left-width: 4px; }
+.lv-card--div { border-left-width: 3px; }
+.lv-card--tm { border-left-width: 3px; }
+.lv-card--unit { border-left-width: 2px; }
+.lv-card--dept { border-left-width: 2px; }
 
 .lv-card__header {
   display: flex;
@@ -374,21 +379,28 @@ select.field__input {
   padding: 5px 10px;
   font-weight: 600;
   font-size: 12px;
+  color: var(--text);
   user-select: none;
 }
 
-.lv-card--root > .lv-card__header,
+.lv-card--root > .lv-card__header {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 10px 6px;
+}
+
 .lv-card--exe > .lv-card__header,
 .lv-card--div > .lv-card__header {
   font-size: 13px;
-  padding: 6px 12px;
+  padding: 6px 10px;
 }
 
 .lv-card__category {
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  background: rgba(255, 255, 255, 0.22);
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: var(--lv-accent);
   padding: 2px 6px;
   border-radius: 3px;
   flex-shrink: 0;
@@ -406,7 +418,7 @@ select.field__input {
 .lv-card__nameInput {
   flex: 1;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.95);
+  background: #fff;
   color: var(--text);
   border: 2px solid var(--primary);
   border-radius: 4px;
@@ -419,19 +431,18 @@ select.field__input {
 
 .lv-card__counts {
   font-size: 10px;
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  background: rgba(255, 255, 255, 0.18);
-  padding: 1px 6px;
-  border-radius: 3px;
   flex-shrink: 0;
   letter-spacing: 0.02em;
+  font-weight: 500;
 }
 
 .lv-card__body {
-  padding: 6px 10px 8px;
+  padding: 0 10px 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .lv-card__people {
@@ -439,23 +450,43 @@ select.field__input {
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
+  padding: 0 0 4px;
 }
 
 .lv-card__children {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 0 0;
-  border-top: 1px dashed var(--border);
-  margin-top: 2px;
+  gap: 0;
+  margin: 4px 0 0 8px;
+  padding: 2px 0 0 8px;
+  border-left: 1px dashed var(--border-strong);
 }
 
-.lv-card--root > .lv-card__body > .lv-card__children,
-.lv-card--exe > .lv-card__body > .lv-card__children {
-  background: #f8fafc;
-  margin: 4px -10px -8px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border);
+/* Add-member chip button inside list view */
+.lv-add-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.lv-add-chip:hover {
+  background: #eff6ff;
+  border-color: var(--primary);
+  border-style: solid;
+  color: var(--primary);
 }
 
 /* Person chip in list view */
@@ -1455,6 +1486,82 @@ body.is-dragging * {
   color: var(--text-muted);
   text-align: center;
   padding: 6px;
+}
+
+/* Inline "+ 人員を追加" button at the end of a dept body. */
+.dept-card__add-member {
+  margin: 4px 4px 0;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px dashed rgba(15, 23, 42, 0.18);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.dept-card__add-member:hover {
+  background: #fff;
+  border-style: solid;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Round "+" button below the card replacing the bottom handle dot, used to
+ * append a child dept directly underneath. Always visible (matches the
+ * resting visibility of the dot it replaces) but dims on hover to invite
+ * clicks without competing with the rest of the card. */
+.dept-card__add-child {
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid;
+  background: var(--panel);
+  color: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+  opacity: 0.7;
+  transition: opacity 0.12s, transform 0.12s, background 0.12s;
+}
+
+.react-flow__node:hover .dept-card__add-child,
+.dept-card.is-selected .dept-card__add-child {
+  opacity: 1;
+}
+
+/* While a drag is in progress, hide so it doesn't get in the way. */
+body.is-dragging .dept-card__add-child {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.dept-card__add-child:hover {
+  background: var(--primary);
+  color: #fff !important;
+  border-color: var(--primary) !important;
+  transform: translateX(-50%) scale(1.15);
+  opacity: 1;
+}
+
+/* Hide the small RF handle dot at the bottom — the "+" button visually
+ * replaces it. The handle stays in the DOM so edges still attach to it. */
+.react-flow__handle-bottom {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Executive cards (rendered as RF nodes in the band between ROOT and DIVs) */

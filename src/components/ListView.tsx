@@ -258,11 +258,13 @@ function DeptCard({
   parentId,
   indexInParent,
   viewOnly,
+  depth = 0,
 }: {
   tree: Tree;
   parentId: string | null;
   indexInParent: number;
   viewOnly: boolean;
+  depth?: number;
 }) {
   const { node, leaders, members, children, totalMembers } = tree;
   const setSelected = useOrgStore((s) => s.setSelected);
@@ -271,6 +273,7 @@ function DeptCard({
   const reparent = useOrgStore((s) => s.reparent);
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setToast = useOrgStore((s) => s.setToast);
+  const addPerson = useOrgStore((s) => s.addPerson);
 
   const [editingName, setEditingName] = useState(false);
   const [draft, setDraft] = useState(node.name);
@@ -456,11 +459,15 @@ function DeptCard({
   // doesn't need it directly (it's used by parent component).
   void indexInParent;
 
+  const directCount = leaders.length + members.length;
+  const showPeopleRow = directCount > 0 || !viewOnly;
+
   return (
     <div
       ref={cardRef}
       className={`lv-card ${sizeClass} ${selectedId === node.id ? "is-selected" : ""}`}
-      style={{ borderColor: accent }}
+      style={{ ["--lv-accent" as string]: accent }}
+      data-depth={depth}
       draggable={!viewOnly && !isRoot}
       onDragStart={startDrag}
       onDragEnd={endDrag}
@@ -472,11 +479,10 @@ function DeptCard({
         setSelected(node.id);
       }}
     >
-      <div
-        className="lv-card__header"
-        style={{ background: accent, color: "#fff" }}
-      >
-        <span className="lv-card__category">{node.category ?? "DEPT"}</span>
+      <div className="lv-card__header">
+        <span className="lv-card__category" style={{ background: accent }}>
+          {node.category ?? "DEPT"}
+        </span>
         {editingName ? (
           <input
             className="lv-card__nameInput"
@@ -506,12 +512,12 @@ function DeptCard({
           </span>
         )}
         <span className="lv-card__counts">
-          直{leaders.length + members.length}・配下計{totalMembers}
+          直{directCount}・配下計{totalMembers}
         </span>
       </div>
 
       <div className="lv-card__body">
-        {(leaders.length > 0 || members.length > 0) && (
+        {showPeopleRow && (
           <div className="lv-card__people">
             {leaders.map((p) => (
               <PersonChip
@@ -529,6 +535,19 @@ function DeptCard({
                 viewOnly={viewOnly}
               />
             ))}
+            {!viewOnly && (
+              <button
+                type="button"
+                className="lv-add-chip"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  addPerson(node.id, { placed: true });
+                }}
+                title="この部署に人員を追加"
+              >
+                ＋
+              </button>
+            )}
           </div>
         )}
 
@@ -541,6 +560,7 @@ function DeptCard({
                 parentId={node.id}
                 indexInParent={i}
                 viewOnly={viewOnly}
+                depth={depth + 1}
               />
             ))}
           </div>

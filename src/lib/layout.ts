@@ -5,9 +5,14 @@ export const HEADER_H = 40;
 export const LEADER_ROW_H = 26;
 export const MEMBER_ROW_H = 24;
 export const CARD_PAD_TOP = 4;
-export const CARD_PAD_BOTTOM = 10;
+// Reserve space at the bottom of every dept card for the inline "+ 人員を追加"
+// button. Viewer mode renders one less element here but the extra padding is
+// harmless (the card just feels a touch airier).
+export const CARD_PAD_BOTTOM = 32;
 export const CARD_GAP_X = 28;
-export const CARD_GAP_Y = 56;
+// Slightly larger vertical gap so the "+" pill sitting just below each card
+// (used to add a child dept) doesn't visually collide with the row beneath.
+export const CARD_GAP_Y = 64;
 
 export const EXEC_CARD_W = 144;
 export const EXEC_CARD_H = 52;
