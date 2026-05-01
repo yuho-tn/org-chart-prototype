@@ -37,3 +37,17 @@ export type VersionRow = {
 export type VersionWithSnapshot = VersionRow & {
   snapshot: { nodes: unknown[] };
 };
+
+/** Row shape of public.employees (migration 0002). */
+export type EmployeeRow = {
+  employee_number: string;
+  last_name: string | null;
+  first_name: string | null;
+  email: string | null;
+  employment_type: string | null;
+  department: string | null;
+  position_title: string | null;
+  hired_at: string | null;
+  left_at: string | null;
+  updated_at: string;
+};

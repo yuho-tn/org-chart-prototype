@@ -282,10 +282,16 @@ function DeptCard({
   const [editingName, setEditingName] = useState(false);
   const [draft, setDraft] = useState(node.name);
   const cardRef = useRef<HTMLDivElement>(null);
-  // Default open for ROOT so the top-level depts are immediately visible;
-  // every other card defaults closed so the user can drill down at their own
-  // pace ("少しずつ開いていって中身を確認できる").
-  const [open, setOpen] = useState(node.category === "ROOT");
+  // Default-open levels: ROOT / Exe / DIV / TM. Anything below TM (Unit, plain
+  // DEPT, etc.) starts collapsed so the user opens individual teams to see
+  // member-level detail. This matches the user's directive about default
+  // depth ("TMまではデフォルトで開いており、TM以下は閉じている").
+  const defaultOpen =
+    node.category === "ROOT" ||
+    node.category === "Exe" ||
+    node.category === "DIV" ||
+    node.category === "TM";
+  const [open, setOpen] = useState(defaultOpen);
 
   const accent = nodeColor(node);
   const isRoot = node.category === "ROOT";
@@ -501,6 +507,12 @@ function DeptCard({
         <button
           type="button"
           className="lv-card__chevron"
+          draggable={false}
+          onMouseDown={(e) => {
+            // Prevent the parent .lv-card draggable from starting a drag when
+            // the user is just trying to toggle the accordion.
+            e.stopPropagation();
+          }}
           onClick={(e) => {
             e.stopPropagation();
             if (hasContent) setOpen((v) => !v);
@@ -548,7 +560,8 @@ function DeptCard({
         </span>
       </div>
 
-      <div className="lv-card__body" hidden={!open}>
+      {open && (
+      <div className="lv-card__body">
         {showPeopleRow && (
           <div className="lv-card__people">
             {leaders.map((p) => (
@@ -600,6 +613,7 @@ function DeptCard({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

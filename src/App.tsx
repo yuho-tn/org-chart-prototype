@@ -8,6 +8,7 @@ import { LogPanel } from "./components/LogPanel";
 import { Toast } from "./components/Toast";
 import { AuthorPrompt } from "./components/AuthorPrompt";
 import { UserManagementModal } from "./components/UserManagementModal";
+import { EmployeeManagementModal } from "./components/EmployeeManagementModal";
 import { ListView } from "./components/ListView";
 import { ViewTabs } from "./components/ViewTabs";
 import { useOrgStore } from "./store/useOrgStore";
@@ -161,6 +162,7 @@ export default function App() {
         <Toast />
         <LogPanel />
         <UserManagementModal />
+        <EmployeeManagementModal />
       </div>
     </ReactFlowProvider>
   );

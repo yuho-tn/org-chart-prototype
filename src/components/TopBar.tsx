@@ -31,6 +31,7 @@ export function TopBar() {
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setShowLog = useUiStore((s) => s.setShowLog);
   const setShowUsers = useUiStore((s) => s.setShowUsers);
+  const setShowEmployees = useUiStore((s) => s.setShowEmployees);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -174,6 +175,13 @@ export function TopBar() {
           title="操作履歴を開く（任意の操作の直前の状態に復元できます）"
         >
           履歴
+        </button>
+        <button
+          className="btn btn--ghost"
+          onClick={() => setShowEmployees(true)}
+          title="従業員名簿（マスター管理）を開く"
+        >
+          従業員
         </button>
         <button
           className="btn btn--ghost"

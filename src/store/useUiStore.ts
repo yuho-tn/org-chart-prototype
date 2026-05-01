@@ -12,11 +12,14 @@ type UiState = {
   showLog: boolean;
   /** User management modal open state. */
   showUsers: boolean;
+  /** Employee master modal open state. */
+  showEmployees: boolean;
   setView: (v: OrgView) => void;
   setViewOnly: (b: boolean) => void;
   setSharedVersionLabel: (label: string | null) => void;
   setShowLog: (b: boolean) => void;
   setShowUsers: (b: boolean) => void;
+  setShowEmployees: (b: boolean) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -25,9 +28,11 @@ export const useUiStore = create<UiState>((set) => ({
   sharedVersionLabel: null,
   showLog: false,
   showUsers: false,
+  showEmployees: false,
   setView: (view) => set({ view }),
   setViewOnly: (viewOnly) => set({ viewOnly }),
   setSharedVersionLabel: (sharedVersionLabel) => set({ sharedVersionLabel }),
   setShowLog: (showLog) => set({ showLog }),
   setShowUsers: (showUsers) => set({ showUsers }),
+  setShowEmployees: (showEmployees) => set({ showEmployees }),
 }));

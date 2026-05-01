@@ -97,6 +97,13 @@ export type OrgNode = {
   isExecutive?: boolean;
   /** when true, this node has been created but not yet placed in the tree — it lives in the left tray until the user drags it onto the canvas. */
   isUnplaced?: boolean;
+  /**
+   * person-only: optional foreign key into the public.employees master.
+   * When set, this person node represents a specific registered employee —
+   * used to compute "unplaced employees" per version (i.e. employees on the
+   * roster who are NOT yet referenced by any node in the current chart).
+   */
+  employeeNumber?: string;
 };
 
 export type LogEntry = {

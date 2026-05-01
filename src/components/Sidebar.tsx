@@ -3,6 +3,7 @@ import { useReactFlow } from "reactflow";
 import { useOrgStore } from "../store/useOrgStore";
 import { VersionsPanel } from "./VersionsPanel";
 import { TrayPanel } from "./TrayPanel";
+import { UnplacedEmployeesPanel } from "./UnplacedEmployeesPanel";
 import { EXECUTIVE_ROLES, ROLE_DESCRIPTIONS } from "../lib/types";
 
 export function Sidebar() {
@@ -73,6 +74,7 @@ export function Sidebar() {
       </section>
 
       <TrayPanel />
+      <UnplacedEmployeesPanel />
       <VersionsPanel />
     </aside>
   );

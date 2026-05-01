@@ -36,6 +36,17 @@ type Store = AppState & {
     parentId: string | null,
     opts?: { roleLabel?: PersonRole; placed?: boolean },
   ) => void;
+  /**
+   * Create a person node from an employee master record. The new node lands
+   * in the tray (isUnplaced=true) so the user can drag it into position.
+   * Linked back to the master via employeeNumber so we can later compute
+   * "unplaced employees" per version.
+   */
+  addPersonFromEmployee: (input: {
+    employee_number: string;
+    name: string;
+    roleLabel?: PersonRole;
+  }) => void;
   addExecutive: (role: NonNullable<PersonRole>) => void;
   deleteNode: (id: string, strategy?: DeleteWithChildrenStrategy) => void;
   rename: (id: string, name: string) => void;
@@ -223,6 +234,48 @@ export const useOrgStore = create<Store>((set, get) => ({
             kind: "info",
             message: "未配置エリアに追加しました。ドラッグで配置先の部署を指定してください",
           },
+    });
+  },
+
+  addPersonFromEmployee: ({ employee_number, name, roleLabel }) => {
+    const state = get();
+    // Don't double-add if this employee is already in the chart for the
+    // current version. The "unplaced employees" UI filters out placed ones,
+    // but a defensive check here prevents accidental duplicates from any
+    // other code path.
+    const already = state.nodes.find(
+      (n) => n.kind === "person" && n.employeeNumber === employee_number && !n.isUnplaced,
+    );
+    if (already) {
+      set({
+        toast: {
+          kind: "info",
+          message: `${name} は既に配置済みです`,
+        },
+      });
+      return;
+    }
+    const id = uid("p");
+    const newNode: OrgNode = {
+      id,
+      kind: "person",
+      name,
+      parentId: null,
+      roleLabel: roleLabel ?? null,
+      isUnplaced: true,
+      employeeNumber: employee_number,
+    };
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: [...state.nodes, newNode],
+      selectedId: id,
+      log: logEntry(state, "add", `${name}（${employee_number}）を未配置に追加`),
+      dirty: true,
+      toast: {
+        kind: "info",
+        message: `${name} を未配置に追加しました。ドラッグで配置してください`,
+      },
     });
   },
 

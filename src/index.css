@@ -1819,6 +1819,207 @@ body.is-dragging .dept-card__add-child {
   width: 640px;
 }
 
+.modal--xwide {
+  width: 1080px;
+  max-width: 96vw;
+}
+
+/* ── Employee management modal ───────────────────────────────────── */
+.empmgr__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 10px;
+}
+
+.empmgr__tableWrap {
+  max-height: 50vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.empmgr__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.empmgr__table th,
+.empmgr__table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.empmgr__table th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.empmgr__table tr.is-inactive {
+  opacity: 0.5;
+}
+
+.empmgr__table tr.is-inactive td:nth-child(2) {
+  text-decoration: line-through;
+}
+
+.empmgr__leftBadge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.empmgr__editRow input {
+  font-size: 11px;
+}
+
+.field__input--xs {
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.empmgr__import {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.empmgr__importRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.empmgr__importResult {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-left: 3px solid var(--primary);
+  font-size: 12px;
+}
+
+.empmgr__importResult ul {
+  list-style: disc;
+  margin: 6px 0 0 18px;
+  padding: 0;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+/* ── Unplaced employees sidebar panel ─────────────────────────────── */
+.unplaced {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  max-height: 320px;
+  overflow: hidden;
+}
+
+.unplaced__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.unplaced__count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.unplaced__hint,
+.unplaced__empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0;
+  line-height: 1.55;
+}
+
+.unplaced__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.unplaced__item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  align-items: center;
+}
+
+.unplaced__name {
+  grid-column: 1;
+  grid-row: 1;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.unplaced__meta {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.unplaced__meta code {
+  font-size: 10px;
+  background: var(--panel);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.unplaced__item .btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.unplaced__more {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 4px;
+  text-align: center;
+}
+
 /* ── User management ─────────────────────────────────────────────── */
 .usermgr__table {
   width: 100%;
