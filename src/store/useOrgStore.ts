@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { AppState, LogEntry, OrgNode, PersonRole, DeptCategory } from "../lib/types";
 import { seedData } from "../lib/seed";
 import { descendantsOf, wouldCreateCycle } from "../lib/layout";
+import { applyMove } from "../lib/move";
 
 const STORAGE_KEY = "org-chart-prototype:v2";
 const LOG_LIMIT = 10;
@@ -29,7 +30,11 @@ type Store = AppState & {
   setExecutive: (id: string, isExecutive: boolean) => void;
   setCategory: (id: string, category: DeptCategory) => void;
   setColor: (id: string, colorIndex: number) => void;
-  reparent: (nodeId: string, newParentId: string | null) => { ok: boolean; reason?: string };
+  reparent: (
+    nodeId: string,
+    newParentId: string | null,
+    atIndex?: number,
+  ) => { ok: boolean; reason?: string };
   setSelected: (id: string | null) => void;
   setToast: (toast: AppState["toast"]) => void;
 
@@ -284,7 +289,7 @@ export const useOrgStore = create<Store>((set, get) => ({
     });
   },
 
-  reparent: (nodeId, newParentId) => {
+  reparent: (nodeId, newParentId, atIndex) => {
     const state = get();
     const node = state.nodes.find((n) => n.id === nodeId);
     if (!node) return { ok: false, reason: "対象ノードが見つかりません" };
@@ -292,29 +297,37 @@ export const useOrgStore = create<Store>((set, get) => ({
     let resolvedParentId: string | null = newParentId;
 
     if (node.kind === "person") {
-      // Persons can only belong to departments. Walk up to nearest dept ancestor.
       resolvedParentId = nearestDeptAncestor(state.nodes, newParentId);
       if (newParentId !== null && resolvedParentId === null) {
         return { ok: false, reason: "人員は部署の中にのみ配置できます" };
       }
-    } else {
-      // Departments can be parented by departments or be root.
-      if (newParentId !== null) {
-        const target = state.nodes.find((n) => n.id === newParentId);
-        if (!target) return { ok: false, reason: "ドロップ先が見つかりません" };
-        if (target.kind === "person") {
-          return { ok: false, reason: "部署を人員の下に置くことはできません" };
-        }
+    } else if (newParentId !== null) {
+      const target = state.nodes.find((n) => n.id === newParentId);
+      if (!target) return { ok: false, reason: "ドロップ先が見つかりません" };
+      if (target.kind === "person") {
+        return { ok: false, reason: "部署を人員の下に置くことはできません" };
       }
     }
 
-    if (node.parentId === resolvedParentId && !node.isUnplaced) {
-      return { ok: false, reason: "既に同じ親です" };
-    }
     if (wouldCreateCycle(state.nodes, nodeId, resolvedParentId)) {
       return { ok: false, reason: "循環参照になるため移動できません" };
     }
-    const newParent = resolvedParentId ? state.nodes.find((n) => n.id === resolvedParentId) : null;
+
+    // No-op: same parent, no atIndex specified, and node already placed.
+    if (
+      atIndex === undefined &&
+      node.parentId === resolvedParentId &&
+      !node.isUnplaced
+    ) {
+      return { ok: false, reason: "既に同じ親です" };
+    }
+
+    const desiredIndex = atIndex ?? Number.MAX_SAFE_INTEGER;
+    const nextNodes = applyMove(state.nodes, nodeId, resolvedParentId, desiredIndex);
+
+    const newParent = resolvedParentId
+      ? state.nodes.find((n) => n.id === resolvedParentId)
+      : null;
     const wasUnplaced = !!node.isUnplaced;
     const detail = wasUnplaced
       ? newParent
@@ -323,14 +336,11 @@ export const useOrgStore = create<Store>((set, get) => ({
       : newParent
         ? `「${node.name}」を「${newParent.name}」配下に移動`
         : `「${node.name}」をルートへ移動`;
+
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
-      nodes: state.nodes.map((n) =>
-        n.id === nodeId
-          ? { ...n, parentId: resolvedParentId, isUnplaced: false }
-          : n,
-      ),
+      nodes: nextNodes,
       log: pushLog(state.log, makeLog("move", detail)),
       dirty: true,
     });
