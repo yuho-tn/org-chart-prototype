@@ -96,21 +96,15 @@ export function AnnouncementsListPage() {
   }
 
   return (
-    <div className="emppage">
-      <header className="emppage__head">
-        <button
-          className="btn btn--ghost"
-          onClick={() => navigate({ name: "editor" })}
-        >
-          ← エディタに戻る
-        </button>
-        <div className="emppage__title">
-          <h1>人事発令資料</h1>
-          <p className="emppage__subtitle">
+    <main className="page">
+      <div className="page__header">
+        <div>
+          <h1 className="page__title">人事発令</h1>
+          <p className="page__subtitle">
             月次の確定版を比較して人事発令の通知資料を生成します。
           </p>
         </div>
-        <div className="emppage__headRight">
+        <div className="page__actions">
           {isMaster && (
             <button
               className="btn btn--primary"
@@ -120,7 +114,7 @@ export function AnnouncementsListPage() {
             </button>
           )}
         </div>
-      </header>
+      </div>
 
       {error && <p className="versions__error">{error}</p>}
 
@@ -196,7 +190,7 @@ export function AnnouncementsListPage() {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
 

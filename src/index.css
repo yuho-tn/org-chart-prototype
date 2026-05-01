@@ -1,19 +1,41 @@
 :root {
-  --bg: #f1f5f9;
+  /* Surfaces */
+  --bg: #f9fafb;
+  --bg-soft: #f3f4f6;
   --panel: #ffffff;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --text: #0f172a;
-  --text-muted: #64748b;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+
+  /* Text */
+  --text: #111827;
+  --text-strong: #0b1220;
+  --text-muted: #6b7280;
+  --text-subtle: #9ca3af;
+
+  /* Brand / accents */
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
+  --primary-soft: #dbeafe;
+  --secondary: #7c3aed;
   --danger: #dc2626;
   --danger-hover: #b91c1c;
+  --danger-soft: #fee2e2;
   --warn: #d97706;
-  --ok: #16a34a;
+  --warn-soft: #fef3c7;
+  --ok: #059669;
+  --ok-soft: #d1fae5;
 
-  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
-    "Noto Sans JP", sans-serif;
+  /* Layout */
+  --header-h: 56px;
+  --subheader-h: 48px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-2: 0 4px 14px rgba(15, 23, 42, 0.08);
+
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
   color: var(--text);
   background: var(--bg);
   font-size: 14px;
@@ -53,13 +75,18 @@ select.field__input {
 }
 
 .app {
-  /* Used to be a fixed 3-row grid (topbar / tabs / main). Optional rows
-   * (e.g. ConfirmedBanner) come and go, so flex-column with the main row
-   * stretching to fill is simpler and keeps the grid from breaking when
-   * intermediate rows mount/unmount. */
+  /* Top-level shell: GlobalHeader + section content stack vertically. The
+   * section content (e.g. .orgshell) takes care of its own internal rows. */
   display: flex;
   flex-direction: column;
   height: 100vh;
+}
+
+.orgshell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .app__main {
@@ -2939,3 +2966,570 @@ body.is-dragging .dept-card__add-child {
 .react-flow__minimap {
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+ * v2 — Talent Hub-aligned design system
+ * Components below are the new global header / sub-nav / page shell.
+ * Older selectors above are kept for back-compat where still referenced.
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* ── Global header (top tier, always visible) ─────────────────────── */
+.ghdr {
+  height: var(--header-h);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 24px;
+  flex-shrink: 0;
+  z-index: 50;
+}
+
+.ghdr__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ghdr__brandMark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ghdr__brandName {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-strong);
+  letter-spacing: 0.01em;
+}
+
+.ghdr__brandSub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.ghdr__tabs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 100%;
+}
+
+.ghdr__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.ghdr__tab:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.ghdr__tab.is-active {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+  border-color: rgba(37, 99, 235, 0.2);
+  font-weight: 600;
+}
+
+.ghdr__tabIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.ghdr__spacer {
+  flex: 1;
+}
+
+.ghdr__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px 4px 4px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.ghdr__user:hover {
+  background: var(--bg-soft);
+  border-color: var(--border-strong);
+}
+
+.ghdr__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ghdr__userInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+
+.ghdr__userName {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ghdr__userRole {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ghdr__userRole--master { color: var(--secondary); }
+.ghdr__userRole--editor { color: var(--primary); }
+.ghdr__userRole--viewer { color: var(--text-muted); }
+
+/* ── Org sub-nav (under global header in 組織図 section) ──────────── */
+.orgsub {
+  display: flex;
+  gap: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  flex-shrink: 0;
+}
+
+.orgsub__tab {
+  position: relative;
+  background: transparent;
+  border: none;
+  padding: 12px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s;
+}
+
+.orgsub__tab:hover {
+  color: var(--text);
+}
+
+.orgsub__tab.is-active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.orgsub__tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 2px;
+}
+
+/* ── Editor toolbar (under OrgSubNav, only when route=editor) ─────── */
+.toolbar {
+  height: var(--subheader-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.toolbar__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-weight: 500;
+}
+
+.toolbar__badgeDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.toolbar__badge.is-dirty {
+  background: var(--warn-soft);
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.toolbar__badge.is-saved {
+  background: var(--ok-soft);
+  color: #065f46;
+  border-color: #86efac;
+}
+
+.toolbar__spacer {
+  flex: 1;
+}
+
+.toolbar__divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+/* ── Page wrapper (used by Employees / Users / Announcements) ─────── */
+.page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px clamp(16px, 4vw, 32px);
+  background: var(--bg);
+}
+
+.page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.page__title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+}
+
+.page__subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.page__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.page__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+/* ── Card primitive ───────────────────────────────────────────────── */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.card__sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.card__body {
+  padding: 18px;
+}
+
+.card__body--flush {
+  padding: 0;
+}
+
+/* ── Data table ───────────────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tr:hover td {
+  background: var(--bg-soft);
+}
+
+.data-table__empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+}
+
+.field__input--inline {
+  height: 32px;
+  padding: 4px 28px 4px 10px;
+  font-size: 12.5px;
+}
+
+/* ── File-card icon menu (replaces text-button row) ───────────────── */
+.version-card {
+  position: relative;
+}
+
+.version-card.is-private {
+  border-style: dashed;
+  border-color: #c084fc;
+  background: linear-gradient(180deg, #faf5ff, #fff);
+}
+
+.version-card.is-private:hover {
+  border-color: #a855f7;
+}
+
+.version-card__menu {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.vmenu__icon {
+  flex: 1;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.vmenu__icon:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.vmenu__icon.is-on {
+  background: #fae8ff;
+  color: #86198f;
+  border-color: #d8b4fe;
+}
+
+.vmenu__icon.is-on:hover {
+  background: #f5d0fe;
+}
+
+.vmenu__icon--danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: #fca5a5;
+}
+
+/* ── Hold-to-confirm slider ───────────────────────────────────────── */
+.hold {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hold__btn {
+  position: relative;
+  height: 48px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-soft);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: border-color 0.12s, transform 0.06s;
+}
+
+.hold__btn:hover {
+  border-color: var(--text-muted);
+}
+
+.hold__btn.is-holding {
+  transform: scale(0.995);
+}
+
+.hold__btn--danger {
+  border-color: #fca5a5;
+  background: var(--danger-soft);
+  color: #7f1d1d;
+}
+
+.hold__btn--danger:hover {
+  border-color: var(--danger);
+}
+
+.hold__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, #fecaca, var(--danger));
+  transition: width 0.06s linear;
+  z-index: 0;
+}
+
+.hold__btn--primary .hold__fill {
+  background: linear-gradient(90deg, #93c5fd, var(--primary));
+}
+
+.hold__label {
+  position: relative;
+  z-index: 1;
+}
+
+.hold__btn.is-holding .hold__label {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.hold__hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.hold__cancel {
+  align-self: center;
+  margin-top: 4px;
+}
+
+/* ── Section-shell layout adjustments ─────────────────────────────── */
+.app--employees,
+.app--users {
+  background: var(--bg);
+}
+
+/* The org section's editor still wants the existing 3-column main grid;
+ * announcements / users / employees use .page instead. */
+.app--org .orgshell .app__main {
+  background: var(--panel);
+}
+
+/* Sidebar gets a soft right divider */
+.sidebar {
+  border-right: 1px solid var(--border);
+}
+
+/* ── Modal refresh (subtle but Talent Hub-leaning) ────────────────── */
+.modal {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+}
+
+.modal__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin: 0 0 8px;
+}
+
+/* ── Buttons: tighten radii to match Talent Hub ───────────────────── */
+.btn {
+  border-radius: var(--radius);
+}
+
+.btn--xs {
+  border-radius: 5px;
+}
+
+/* ── usermgr / data-table hybrid ──────────────────────────────────── */
+.usermgr__addRow {
+  display: grid;
+  grid-template-columns: 2fr 1.4fr 1fr auto;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 720px) {
+  .usermgr__addRow {
+    grid-template-columns: 1fr;
+  }
+}
+

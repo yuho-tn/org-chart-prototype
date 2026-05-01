@@ -5,7 +5,6 @@ import { useVersionsStore } from "../store/useVersionsStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
 import { ShareDialog } from "./ShareDialog";
-import { getAuthor, setAuthor } from "../lib/author";
 
 function isFromTextField(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -13,6 +12,14 @@ function isFromTextField(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
 }
 
+/**
+ * Editor sub-toolbar — shown directly under the global header when the user
+ * is in the 組織図 → 編集 view. Owns the file-state badge and all editor-level
+ * actions (undo/redo, copy/paste, history, share, save).
+ *
+ * The primary navigation lives in GlobalHeader; the section sub-tabs in
+ * OrgSubNav. This component is intentionally limited to the active document.
+ */
 export function TopBar() {
   const dirty = useOrgStore((s) => s.dirty);
   const versionLabel = useOrgStore((s) => s.currentVersionLabel);
@@ -26,7 +33,6 @@ export function TopBar() {
   const future = useOrgStore((s) => s.future);
   const undo = useOrgStore((s) => s.undo);
   const redo = useOrgStore((s) => s.redo);
-  const reset = useOrgStore((s) => s.reset);
   const copyToClipboard = useOrgStore((s) => s.copyToClipboard);
   const pasteFromClipboard = useOrgStore((s) => s.pasteFromClipboard);
   const setToast = useOrgStore((s) => s.setToast);
@@ -42,8 +48,6 @@ export function TopBar() {
   const deleteNode = useOrgStore((s) => s.deleteNode);
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setShowLog = useUiStore((s) => s.setShowLog);
-  const setShowUsers = useUiStore((s) => s.setShowUsers);
-  const navigate = useUiStore((s) => s.navigate);
 
   // Resolve the loaded file's metadata so we can refuse to overwrite a
   // confirmed snapshot. Confirmed files are immutable by spec — the user
@@ -52,14 +56,13 @@ export function TopBar() {
     ? versions.find((v) => v.id === currentVersionId)
     : null;
   const isConfirmedFile = !!currentFile?.is_confirmed;
-  const canOverwrite = !!currentVersionId && !isConfirmedFile && !viewOnly && currentUser?.role !== "viewer";
+  const canOverwrite =
+    !!currentVersionId && !isConfirmedFile && !viewOnly && currentUser?.role !== "viewer";
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
       if (!meta) return;
-      // Skip when the user is typing in an input / textarea / chip rename — let
-      // the browser handle the native clipboard behavior on text content.
       if (isFromTextField(e.target)) return;
 
       const key = e.key.toLowerCase();
@@ -71,9 +74,6 @@ export function TopBar() {
         redo();
       } else if (key === "s") {
         e.preventDefault();
-        // Cmd/Ctrl+S now overwrites the current file when possible; if no
-        // file is loaded (or the loaded one is confirmed/read-only) it falls
-        // back to the "save as" dialog.
         if (canOverwrite) {
           handleOverwrite();
         } else {
@@ -90,7 +90,6 @@ export function TopBar() {
         e.preventDefault();
         pasteFromClipboard();
       } else if (key === "d") {
-        // Cmd+D : duplicate selected next to itself.
         if (!selectedId) return;
         e.preventDefault();
         const node = useOrgStore.getState().nodes.find((n) => n.id === selectedId);
@@ -132,19 +131,6 @@ export function TopBar() {
     deleteNode,
   ]);
 
-  function handleReset() {
-    if (confirm("初期データへリセットします。未保存の変更は破棄されます。よろしいですか？")) {
-      reset();
-    }
-  }
-
-  function handleChangeAuthor() {
-    const current = getAuthor() ?? "";
-    const next = window.prompt("作成者の表示名を変更します", current);
-    if (next === null) return;
-    if (next.trim()) setAuthor(next.trim());
-  }
-
   function handleCopy() {
     if (!selectedId) {
       setToast({ kind: "error", message: "コピーするノードを選択してください" });
@@ -178,26 +164,20 @@ export function TopBar() {
 
   return (
     <>
-      <header className="topbar">
-        <div className="topbar__brand">OrgChart Studio</div>
-        <span className={`topbar__badge ${dirty ? "is-dirty" : "is-saved"}`}>
+      <div className="toolbar">
+        <span className={`toolbar__badge ${dirty ? "is-dirty" : "is-saved"}`}>
+          <span className="toolbar__badgeDot" aria-hidden />
           {dirty
             ? versionLabel
               ? `編集中：${versionLabel}（未保存）`
-              : "編集中（新規ファイル・未保存）"
+              : "新規ファイル（未保存）"
             : versionLabel
               ? `保存済：${versionLabel}${isConfirmedFile ? "（確定版）" : ""}`
               : "新規ファイル"}
         </span>
-        <div className="topbar__spacer" />
-        <button
-          className="btn btn--ghost btn--xs"
-          onClick={handleChangeAuthor}
-          title="作成者の名前を変更"
-        >
-          {getAuthor() ?? "名前未設定"} ▾
-        </button>
-        <div className="topbar__divider" aria-hidden />
+
+        <div className="toolbar__spacer" />
+
         <button
           className="btn btn--ghost"
           onClick={handleCopy}
@@ -214,9 +194,14 @@ export function TopBar() {
         >
           貼り付け
         </button>
-        <div className="topbar__divider" aria-hidden />
-        <button className="btn btn--ghost" onClick={undo} disabled={past.length === 0} title="Cmd/Ctrl+Z">
-          Undo
+        <div className="toolbar__divider" aria-hidden />
+        <button
+          className="btn btn--ghost"
+          onClick={undo}
+          disabled={past.length === 0}
+          title="Cmd/Ctrl+Z"
+        >
+          ← 戻す
         </button>
         <button
           className="btn btn--ghost"
@@ -224,7 +209,7 @@ export function TopBar() {
           disabled={future.length === 0}
           title="Cmd/Ctrl+Shift+Z"
         >
-          Redo
+          進む →
         </button>
         <button
           className="btn btn--ghost"
@@ -233,27 +218,7 @@ export function TopBar() {
         >
           履歴
         </button>
-        <button
-          className="btn btn--ghost"
-          onClick={() => navigate({ name: "employees" })}
-          title="従業員名簿（マスター管理）ページを開く"
-        >
-          従業員
-        </button>
-        <button
-          className="btn btn--ghost"
-          onClick={() => navigate({ name: "announcements" })}
-          title="人事発令資料を作成・閲覧"
-        >
-          発令
-        </button>
-        <button
-          className="btn btn--ghost"
-          onClick={() => setShowUsers(true)}
-          title="このツールの利用ユーザーを管理"
-        >
-          ユーザー
-        </button>
+        <div className="toolbar__divider" aria-hidden />
         <button
           className="btn btn--ghost"
           onClick={handleNewFile}
@@ -261,15 +226,15 @@ export function TopBar() {
         >
           ＋新規
         </button>
-        <button
-          className="btn btn--ghost"
-          onClick={handleReset}
-          title="現在のファイルをシードデータに戻す"
-        >
-          リセット
-        </button>
         {canOverwrite ? (
           <>
+            <button
+              className="btn"
+              onClick={() => setShowSave(true)}
+              title="現在の内容を別の新しいファイルとして保存"
+            >
+              別名で保存
+            </button>
             <button
               className="btn btn--primary"
               onClick={handleOverwrite}
@@ -277,13 +242,6 @@ export function TopBar() {
               title="現在のファイルに上書き保存（Cmd/Ctrl+S）"
             >
               {saving ? "保存中…" : "保存"}
-            </button>
-            <button
-              className="btn"
-              onClick={() => setShowSave(true)}
-              title="現在の内容を別の新しいファイルとして保存"
-            >
-              別名で保存
             </button>
           </>
         ) : (
@@ -307,7 +265,7 @@ export function TopBar() {
         >
           🔗 共有
         </button>
-      </header>
+      </div>
       {showSave && <SaveVersionDialog onClose={() => setShowSave(false)} />}
       {showShare && <ShareDialog onClose={() => setShowShare(false)} />}
     </>

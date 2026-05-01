@@ -17,6 +17,7 @@ export type PersonRole =
   | "CTO"
   | "CFO"
   | "CHRO"
+  | "CSO"
   | "CMO"
   | "DM"
   | "CDM"
@@ -34,6 +35,7 @@ export const EXECUTIVE_ROLES: ReadonlyArray<NonNullable<PersonRole>> = [
   "CTO",
   "CFO",
   "CHRO",
+  "CSO",
   "CMO",
 ];
 
@@ -44,6 +46,7 @@ export const ALL_ROLES: ReadonlyArray<NonNullable<PersonRole>> = [
   "CTO",
   "CFO",
   "CHRO",
+  "CSO",
   "CMO",
   "DM",
   "CDM",
@@ -61,6 +64,7 @@ export const ROLE_DESCRIPTIONS: Record<NonNullable<PersonRole>, string> = {
   CTO: "最高技術責任者",
   CFO: "最高財務責任者",
   CHRO: "最高人事責任者",
+  CSO: "最高営業責任者",
   CMO: "最高マーケティング責任者",
   DM: "DIVマネージャー",
   CDM: "チャレンジDIVマネージャー",

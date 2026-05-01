@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useUiStore } from "../store/useUiStore";
 import { useEmployeesStore, isCasualEmployment } from "../store/useEmployeesStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
@@ -34,7 +33,6 @@ const EMPTY_DRAFT: Partial<EmployeeRow> & { employee_number: string } = {
  * and the URL hash #/employees so reload + back/forward work correctly.
  */
 export function EmployeesPage() {
-  const navigate = useUiStore((s) => s.navigate);
   const employees = useEmployeesStore((s) => s.employees);
   const loading = useEmployeesStore((s) => s.loading);
   const error = useEmployeesStore((s) => s.error);
@@ -216,18 +214,11 @@ export function EmployeesPage() {
   }
 
   return (
-    <div className="emppage">
-      <header className="emppage__head">
-        <button
-          className="btn btn--ghost"
-          onClick={() => navigate({ name: "editor" })}
-          title="組織図エディタに戻る"
-        >
-          ← エディタに戻る
-        </button>
-        <div className="emppage__title">
-          <h1>従業員名簿</h1>
-          <p className="emppage__subtitle">
+    <main className="page">
+      <div className="page__header">
+        <div>
+          <h1 className="page__title">従業員マスター</h1>
+          <p className="page__subtitle">
             登録 {employees.length} 名 ／ 在籍 {headcounts.total} 名（
             <span className="emppage__chip">正社員 {headcounts.seishain}</span>
             <span className="emppage__chip">限定正社員 {headcounts.limited}</span>
@@ -235,7 +226,7 @@ export function EmployeesPage() {
             ） ／ 退職 {employees.length - headcounts.total} 名
           </p>
         </div>
-        <div className="emppage__headRight">
+        <div className="page__actions">
           {isMaster && (
             <button
               className="btn btn--ghost"
@@ -250,7 +241,7 @@ export function EmployeesPage() {
             </button>
           )}
         </div>
-      </header>
+      </div>
 
       {error && <p className="versions__error">{error}</p>}
 
@@ -524,7 +515,7 @@ export function EmployeesPage() {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
 

@@ -30,6 +30,22 @@ export const PALETTE: ColorSlot[] = [
   { header: "#be123c", headerText: "#fff", leaderStrip: "#fecdd3", leaderText: "#881337", body: "#fff1f2", border: "#f43f5e" },
   // 7: indigo
   { header: "#4338ca", headerText: "#fff", leaderStrip: "#c7d2fe", leaderText: "#312e81", body: "#eef2ff", border: "#6366f1" },
+  // 8: cyan
+  { header: "#0e7490", headerText: "#fff", leaderStrip: "#cffafe", leaderText: "#155e75", body: "#ecfeff", border: "#06b6d4" },
+  // 9: lime
+  { header: "#4d7c0f", headerText: "#fff", leaderStrip: "#ecfccb", leaderText: "#365314", body: "#f7fee7", border: "#84cc16" },
+  // 10: amber
+  { header: "#b45309", headerText: "#fff", leaderStrip: "#fef3c7", leaderText: "#78350f", body: "#fffbeb", border: "#f59e0b" },
+  // 11: emerald
+  { header: "#047857", headerText: "#fff", leaderStrip: "#d1fae5", leaderText: "#064e3b", body: "#ecfdf5", border: "#10b981" },
+  // 12: violet
+  { header: "#6d28d9", headerText: "#fff", leaderStrip: "#ddd6fe", leaderText: "#4c1d95", body: "#f5f3ff", border: "#8b5cf6" },
+  // 13: fuchsia
+  { header: "#a21caf", headerText: "#fff", leaderStrip: "#fae8ff", leaderText: "#701a75", body: "#fdf4ff", border: "#d946ef" },
+  // 14: sky
+  { header: "#0369a1", headerText: "#fff", leaderStrip: "#e0f2fe", leaderText: "#0c4a6e", body: "#f0f9ff", border: "#0ea5e9" },
+  // 15: slate
+  { header: "#334155", headerText: "#fff", leaderStrip: "#e2e8f0", leaderText: "#1e293b", body: "#f8fafc", border: "#64748b" },
 ];
 
 export const ROOT_COLOR: ColorSlot = {

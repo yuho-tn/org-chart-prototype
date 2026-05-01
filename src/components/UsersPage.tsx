@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useUiStore } from "../store/useUiStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import type { AppUserRole } from "../lib/supabase";
@@ -8,12 +7,12 @@ const ROLE_OPTIONS: { value: AppUserRole; label: string; hint: string }[] = [
   {
     value: "master",
     label: "マスター",
-    hint: "すべてのバージョン（非公開含む）を閲覧・編集できる",
+    hint: "すべてのファイル（非公開含む）を閲覧・編集できる管理者",
   },
   {
     value: "editor",
     label: "編集",
-    hint: "非公開でない・または明示的に許可されたバージョンを閲覧・編集",
+    hint: "非公開でない、または明示的に許可されたファイルを閲覧・編集",
   },
   {
     value: "viewer",
@@ -22,9 +21,11 @@ const ROLE_OPTIONS: { value: AppUserRole; label: string; hint: string }[] = [
   },
 ];
 
-export function UserManagementModal() {
-  const open = useUiStore((s) => s.showUsers);
-  const setOpen = useUiStore((s) => s.setShowUsers);
+/**
+ * Full-page user management view (was previously a modal).
+ * Lives at the top-level "ユーザー" section of the global header.
+ */
+export function UsersPage() {
   const users = useAuthStore((s) => s.users);
   const currentUser = useAuthStore((s) => s.currentUser);
   const refresh = useAuthStore((s) => s.refresh);
@@ -41,27 +42,19 @@ export function UserManagementModal() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (open) refresh();
-  }, [open, refresh]);
+    refresh();
+  }, [refresh]);
 
   const isMaster = currentUser?.role === "master";
 
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) => {
-      // Master(s) first, then editors, then viewers; tie-break by created_at.
       const order: Record<AppUserRole, number> = { master: 0, editor: 1, viewer: 2 };
       const d = order[a.role] - order[b.role];
       if (d !== 0) return d;
       return a.created_at.localeCompare(b.created_at);
     });
   }, [users]);
-
-  if (!open) return null;
-
-  function close() {
-    setPendingRemove(null);
-    setOpen(false);
-  }
 
   async function submitNew() {
     if (!draftEmail.trim() || !draftName.trim()) return;
@@ -100,25 +93,26 @@ export function UserManagementModal() {
   }
 
   return (
-    <>
-      <div className="modal-backdrop" onClick={close}>
-        <div
-          className="modal modal--wide"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 className="modal__title">ユーザー管理</h3>
-          <p className="modal__body">
-            登録されたメールアドレスのみがこのツールにアクセスできます。
-            権限はバージョンごとの公開設定とあわせて閲覧・編集の可否を決定します。
+    <main className="page">
+      <div className="page__header">
+        <div>
+          <h1 className="page__title">ユーザー</h1>
+          <p className="page__subtitle">
+            このツールにアクセスできるユーザーを管理します。
+            権限はファイル単位の公開設定とあわせて閲覧・編集の可否を決定します。
           </p>
+        </div>
+      </div>
 
-          {error && (
-            <p className="versions__error" style={{ marginBottom: 10 }}>
-              {error}
-            </p>
-          )}
+      {error && <p className="versions__error" style={{ marginBottom: 16 }}>{error}</p>}
 
-          <table className="usermgr__table">
+      <section className="card">
+        <header className="card__head">
+          <h2 className="card__title">登録ユーザー</h2>
+          <span className="card__sub">{sortedUsers.length}名</span>
+        </header>
+        <div className="card__body card__body--flush">
+          <table className="data-table">
             <thead>
               <tr>
                 <th>メールアドレス</th>
@@ -130,7 +124,7 @@ export function UserManagementModal() {
             <tbody>
               {sortedUsers.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="usermgr__empty">
+                  <td colSpan={4} className="data-table__empty">
                     まだユーザーが登録されていません。
                   </td>
                 </tr>
@@ -147,7 +141,7 @@ export function UserManagementModal() {
                     <td>
                       {isMaster && !isSelf ? (
                         <select
-                          className="field__input"
+                          className="field__input field__input--inline"
                           value={u.role}
                           onChange={(e) => changeRole(u.email, e.target.value as AppUserRole)}
                         >
@@ -179,71 +173,70 @@ export function UserManagementModal() {
               })}
             </tbody>
           </table>
-
-          {isMaster ? (
-            <div className="usermgr__add">
-              <h4 className="usermgr__addTitle">＋新規ユーザーを追加</h4>
-              <div className="usermgr__addRow">
-                <input
-                  className="field__input"
-                  placeholder="email@example.com"
-                  value={draftEmail}
-                  onChange={(e) => setDraftEmail(e.target.value)}
-                  type="email"
-                />
-                <input
-                  className="field__input"
-                  placeholder="表示名"
-                  value={draftName}
-                  onChange={(e) => setDraftName(e.target.value)}
-                />
-                <select
-                  className="field__input"
-                  value={draftRole}
-                  onChange={(e) => setDraftRole(e.target.value as AppUserRole)}
-                >
-                  {ROLE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="btn btn--primary"
-                  disabled={busy || !draftEmail.trim() || !draftName.trim()}
-                  onClick={submitNew}
-                >
-                  追加
-                </button>
-              </div>
-              <ul className="usermgr__roleHints">
-                {ROLE_OPTIONS.map((opt) => (
-                  <li key={opt.value}>
-                    <strong>{opt.label}</strong>：{opt.hint}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <p className="modal__body" style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              ユーザーの追加・削除・権限変更はマスター権限を持つユーザーのみが行えます。
-            </p>
-          )}
-
-          <div className="modal__actions">
-            <button className="btn" onClick={close}>
-              閉じる
-            </button>
-          </div>
         </div>
-      </div>
+      </section>
+
+      {isMaster ? (
+        <section className="card" style={{ marginTop: 20 }}>
+          <header className="card__head">
+            <h2 className="card__title">新規ユーザーを追加</h2>
+          </header>
+          <div className="card__body">
+            <div className="usermgr__addRow">
+              <input
+                className="field__input"
+                placeholder="email@example.com"
+                value={draftEmail}
+                onChange={(e) => setDraftEmail(e.target.value)}
+                type="email"
+              />
+              <input
+                className="field__input"
+                placeholder="表示名"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+              />
+              <select
+                className="field__input"
+                value={draftRole}
+                onChange={(e) => setDraftRole(e.target.value as AppUserRole)}
+              >
+                {ROLE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="btn btn--primary"
+                disabled={busy || !draftEmail.trim() || !draftName.trim()}
+                onClick={submitNew}
+              >
+                追加
+              </button>
+            </div>
+            <ul className="usermgr__roleHints">
+              {ROLE_OPTIONS.map((opt) => (
+                <li key={opt.value}>
+                  <strong>{opt.label}</strong>：{opt.hint}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : (
+        <p className="page__hint" style={{ marginTop: 20 }}>
+          ユーザーの追加・削除・権限変更はマスター権限を持つユーザーのみが行えます。
+        </p>
+      )}
+
       {pendingRemove && (
         <div className="modal-backdrop" onClick={() => setPendingRemove(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3 className="modal__title">ユーザー削除の確認</h3>
             <p className="modal__body">
               <code>{pendingRemove}</code> を削除します。<br />
-              このユーザーが作成した非公開バージョンは、マスター以外からは見えなくなります。
+              このユーザーが作成した非公開ファイルは、マスター以外からは見えなくなります。
             </p>
             <div className="modal__actions">
               <button className="btn btn--ghost" onClick={() => setPendingRemove(null)}>
@@ -256,6 +249,6 @@ export function UserManagementModal() {
           </div>
         </div>
       )}
-    </>
+    </main>
   );
 }

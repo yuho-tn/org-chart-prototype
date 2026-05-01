@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { ReactFlowProvider } from "reactflow";
+import { GlobalHeader } from "./components/GlobalHeader";
+import { OrgSubNav } from "./components/OrgSubNav";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { Canvas } from "./components/Canvas";
@@ -7,8 +9,8 @@ import { Inspector } from "./components/Inspector";
 import { LogPanel } from "./components/LogPanel";
 import { Toast } from "./components/Toast";
 import { AuthorPrompt } from "./components/AuthorPrompt";
-import { UserManagementModal } from "./components/UserManagementModal";
 import { EmployeesPage } from "./components/EmployeesPage";
+import { UsersPage } from "./components/UsersPage";
 import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
 import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
 import { ConfirmedBanner } from "./components/ConfirmedBanner";
@@ -16,7 +18,7 @@ import { ListView } from "./components/ListView";
 import { ViewTabs } from "./components/ViewTabs";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
-import { useUiStore } from "./store/useUiStore";
+import { useUiStore, sectionOfRoute } from "./store/useUiStore";
 import { useAuthStore } from "./store/useAuthStore";
 import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
 
@@ -38,7 +40,6 @@ export default function App() {
     ready: false,
   });
 
-  // Parse share URL params once on mount.
   useEffect(() => {
     const params = parseShareParams();
     if (params.versionId) {
@@ -50,10 +51,6 @@ export default function App() {
     }
   }, [setView, setViewOnly]);
 
-  // Globally enforce read-only when the signed-in user has 'viewer' role.
-  // Per-version edit/view permissions are still applied by VersionsPanel,
-  // but a viewer should never be able to flip back into edit mode regardless
-  // of which version they happen to be looking at.
   const currentRole = useAuthStore((s) => s.currentUser?.role);
   useEffect(() => {
     if (currentRole === "viewer") setViewOnly(true);
@@ -61,11 +58,10 @@ export default function App() {
 
   useEffect(() => {
     if (!shareInit.ready) return;
-    if (!viewOnly && !bootReady) return; // editor mode waits for AuthorPrompt
+    if (!viewOnly && !bootReady) return;
     let cancelled = false;
     (async () => {
       if (viewOnly && shareInit.versionId) {
-        // Shared link: load that specific version directly. No localStorage.
         if (!isSupabaseConfigured) return;
         await refreshVersions();
         if (cancelled) return;
@@ -89,7 +85,6 @@ export default function App() {
         return;
       }
 
-      // Editor boot: hydrate optimistic cache then load latest server version.
       loadFromStorage();
       if (!isSupabaseConfigured) return;
       await refreshVersions();
@@ -130,7 +125,6 @@ export default function App() {
     setSharedVersionLabel,
   ]);
 
-  // Persist a draft to localStorage whenever nodes change (editor mode only).
   const nodes = useOrgStore((s) => s.nodes);
   useEffect(() => {
     if (viewOnly) return;
@@ -144,73 +138,78 @@ export default function App() {
 
   if (viewOnly) return <ViewerLayout view={view} />;
 
-  // The Employees page is a sibling top-level view of the editor — both live
-  // inside the editor app shell so the AuthorPrompt / global modals etc. are
-  // shared, but the main pane swaps based on route.
+  // Render the editor shell or a dedicated section page based on the route.
+  // GlobalHeader is constant across all sections; what's *under* it changes.
+  return (
+    <ReactFlowProvider>
+      <AuthorPrompt onReady={() => setBootReady(true)} />
+      <div className={`app app--${sectionOfRoute(route)} app--view-${view}`}>
+        <GlobalHeader />
+        <SectionContent route={route} />
+        <Toast />
+      </div>
+    </ReactFlowProvider>
+  );
+}
+
+function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getState>["route"] }) {
   if (route.name === "employees") {
     return (
-      <ReactFlowProvider>
-        <AuthorPrompt onReady={() => setBootReady(true)} />
-        <div className="app app--page">
-          <EmployeesPage />
-          <Toast />
-          <UserManagementModal />
-        </div>
-      </ReactFlowProvider>
+      <>
+        <EmployeesPage />
+      </>
     );
+  }
+
+  if (route.name === "users") {
+    return <UsersPage />;
   }
 
   if (route.name === "announcements") {
     return (
-      <ReactFlowProvider>
-        <AuthorPrompt onReady={() => setBootReady(true)} />
-        <div className="app app--page">
-          <AnnouncementsListPage />
-          <Toast />
-          <UserManagementModal />
-        </div>
-      </ReactFlowProvider>
+      <div className="orgshell">
+        <OrgSubNav />
+        <AnnouncementsListPage />
+      </div>
     );
   }
 
   if (route.name === "announcement") {
     return (
-      <ReactFlowProvider>
-        <AuthorPrompt onReady={() => setBootReady(true)} />
-        <div className="app app--page">
-          <AnnouncementDetailPage id={route.id} />
-          <Toast />
-          <UserManagementModal />
-        </div>
-      </ReactFlowProvider>
+      <div className="orgshell">
+        <OrgSubNav />
+        <AnnouncementDetailPage id={route.id} />
+      </div>
     );
   }
 
+  // Default: org → editor
+  return <EditorShell />;
+}
+
+function EditorShell() {
+  const view = useUiStore((s) => s.view);
   return (
-    <ReactFlowProvider>
-      <AuthorPrompt onReady={() => setBootReady(true)} />
-      <div className={`app app--editor app--view-${view}`}>
-        <TopBar />
-        <ConfirmedBanner />
-        <ViewTabs />
-        <div className="app__main">
-          <Sidebar />
-          <div className="app__content">
-            {view === "tree" ? (
-              <div className="app__canvas">
-                <Canvas />
-              </div>
-            ) : (
-              <ListView />
-            )}
-          </div>
-          <Inspector />
+    <div className="orgshell">
+      <OrgSubNav />
+      <TopBar />
+      <ConfirmedBanner />
+      <ViewTabs />
+      <div className="app__main">
+        <Sidebar />
+        <div className="app__content">
+          {view === "tree" ? (
+            <div className="app__canvas">
+              <Canvas />
+            </div>
+          ) : (
+            <ListView />
+          )}
         </div>
-        <Toast />
-        <LogPanel />
-        <UserManagementModal />
+        <Inspector />
       </div>
-    </ReactFlowProvider>
+      <LogPanel />
+    </div>
   );
 }
 
@@ -226,7 +225,7 @@ function ViewerLayout({ view }: { view: "tree" | "list" }) {
     <ReactFlowProvider>
       <div className={`app app--viewer app--view-${view}`}>
         <header className="topbar topbar--viewer">
-          <div className="topbar__brand">OrgChart Studio</div>
+          <div className="topbar__brand">TalentHub</div>
           <span className="topbar__badge is-saved">閲覧モード</span>
           {sharedLabel && (
             <span className="topbar__viewer-version">{sharedLabel}</span>

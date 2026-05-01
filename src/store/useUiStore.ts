@@ -1,22 +1,59 @@
 import { create } from "zustand";
 
 export type OrgView = "tree" | "list";
+
 /**
- * Top-level pages of the app. We don't pull in a routing library — there
- * are only two views and we want the URL hash to reflect which one is
- * active so browser back/forward and reload still land in the right place.
+ * Primary navigation sections, shown as the top-tier of the global header.
+ * Each section corresponds to one or more concrete routes (e.g. the "org"
+ * section covers the chart editor, the announcements list, and an
+ * announcement detail page).
+ */
+export type Section = "org" | "employees" | "users";
+
+/**
+ * Concrete routes. Most routes belong to exactly one section — see
+ * sectionOfRoute(). We don't pull in a routing library; the URL hash
+ * reflects which page is active so browser back/forward and reload land
+ * in the right place.
  */
 export type Route =
   | { name: "editor" }
-  | { name: "employees" }
   | { name: "announcements" }
-  | { name: "announcement"; id: string };
+  | { name: "announcement"; id: string }
+  | { name: "employees" }
+  | { name: "users" };
+
+export function sectionOfRoute(r: Route): Section {
+  switch (r.name) {
+    case "editor":
+    case "announcements":
+    case "announcement":
+      return "org";
+    case "employees":
+      return "employees";
+    case "users":
+      return "users";
+  }
+}
+
+/** Default landing route for a section when the user clicks its primary tab. */
+export function defaultRouteForSection(s: Section): Route {
+  switch (s) {
+    case "org":
+      return { name: "editor" };
+    case "employees":
+      return { name: "employees" };
+    case "users":
+      return { name: "users" };
+  }
+}
 
 function readRouteFromHash(): Route {
   if (typeof window === "undefined") return { name: "editor" };
   const h = window.location.hash;
   if (h === "" || h === "#" || h === "#/") return { name: "editor" };
   if (h === "#/employees") return { name: "employees" };
+  if (h === "#/users") return { name: "users" };
   if (h === "#/announcements") return { name: "announcements" };
   const m = /^#\/announcements\/([0-9a-f-]+)$/i.exec(h);
   if (m) return { name: "announcement", id: m[1] };
@@ -29,6 +66,8 @@ function routeToHash(r: Route): string {
       return "";
     case "employees":
       return "#/employees";
+    case "users":
+      return "#/users";
     case "announcements":
       return "#/announcements";
     case "announcement":
@@ -56,15 +95,12 @@ type UiState = {
   sharedVersionLabel: string | null;
   /** Operation-history drawer open state. Defaults closed; shown via TopBar button. */
   showLog: boolean;
-  /** User management modal open state. */
-  showUsers: boolean;
   /** Top-level route. */
   route: Route;
   setView: (v: OrgView) => void;
   setViewOnly: (b: boolean) => void;
   setSharedVersionLabel: (label: string | null) => void;
   setShowLog: (b: boolean) => void;
-  setShowUsers: (b: boolean) => void;
   /** Navigate. Pass `pushHistory: false` to update the URL without a new history entry. */
   navigate: (r: Route, opts?: { pushHistory?: boolean }) => void;
 };
@@ -74,13 +110,11 @@ export const useUiStore = create<UiState>((set) => ({
   viewOnly: false,
   sharedVersionLabel: null,
   showLog: false,
-  showUsers: false,
   route: readRouteFromHash(),
   setView: (view) => set({ view }),
   setViewOnly: (viewOnly) => set({ viewOnly }),
   setSharedVersionLabel: (sharedVersionLabel) => set({ sharedVersionLabel }),
   setShowLog: (showLog) => set({ showLog }),
-  setShowUsers: (showUsers) => set({ showUsers }),
   navigate: (route, opts) => {
     set({ route });
     if (opts?.pushHistory === false) {

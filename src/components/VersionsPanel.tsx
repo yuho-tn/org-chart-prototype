@@ -4,6 +4,7 @@ import { useVersionsStore, isSupabaseConfigured } from "../store/useVersionsStor
 import { useAuthStore, accessForVersion } from "../store/useAuthStore";
 import { useUiStore } from "../store/useUiStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
+import { HoldToConfirm } from "./HoldToConfirm";
 import { getAuthor } from "../lib/author";
 
 function timeAgo(iso: string): string {
@@ -35,6 +36,7 @@ export function VersionsPanel() {
   const remove = useVersionsStore((s) => s.remove);
   const setConfirmation = useVersionsStore((s) => s.setConfirmation);
   const duplicate = useVersionsStore((s) => s.duplicate);
+  const updatePermissions = useVersionsStore((s) => s.updatePermissions);
 
   const dirty = useOrgStore((s) => s.dirty);
   const currentVersionId = useOrgStore((s) => s.currentVersionId);
@@ -48,7 +50,6 @@ export function VersionsPanel() {
   const [pendingFix, setPendingFix] = useState<{ id: string; name: string } | null>(null);
   const [tab, setTab] = useState<"draft" | "confirmed">("draft");
 
-  /** Versions visible to the current user, with their access level annotated. */
   const visible = useMemo(() => {
     return versions
       .map((v) => ({ v, access: accessForVersion(currentUser, v) }))
@@ -58,8 +59,6 @@ export function VersionsPanel() {
       }[];
   }, [versions, currentUser]);
 
-  // Split into the two tabs. Confirmed versions are sorted newest-period
-  // first; drafts keep their default created_at-desc order.
   const confirmedList = useMemo(
     () =>
       visible
@@ -99,9 +98,6 @@ export function VersionsPanel() {
       setToast({ kind: "error", message: "ファイルの読み込みに失敗しました" });
       return;
     }
-    // Confirmed files are immutable. Per-version edit-grants don't override
-    // that — so a confirmed file always loads in viewOnly. Per-version
-    // permission only kicks in for drafts.
     const lockEdits = !canEdit || isConfirmed;
     setViewOnly(lockEdits);
     replaceNodes(nodes, { versionId: id, versionLabel: name });
@@ -136,10 +132,7 @@ export function VersionsPanel() {
       setToast({ kind: "error", message: "複製に失敗しました" });
       return;
     }
-    // Open the new file immediately so the user can start editing.
     if (dirty) {
-      // We just complicated state — keep the user where they are; tell them
-      // the duplicate is ready in the list.
       setToast({
         kind: "info",
         message: `「${trimmed}」を作成しました（下書きタブから開けます）`,
@@ -154,11 +147,6 @@ export function VersionsPanel() {
     }
     setTab("draft");
     setToast({ kind: "info", message: `「${trimmed}」を複製しました` });
-  }
-
-  function handleDelete(id: string, name: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    setPendingDelete({ id, name });
   }
 
   async function confirmDelete() {
@@ -202,11 +190,26 @@ export function VersionsPanel() {
     );
   }
 
+  async function togglePrivate(id: string, current: boolean, e: React.MouseEvent) {
+    e.stopPropagation();
+    const ok = await updatePermissions(id, { is_private: !current });
+    setToast(
+      ok
+        ? {
+            kind: "info",
+            message: !current
+              ? "🔒 非公開にしました（作成者のみ閲覧・編集可能）"
+              : "🔓 公開に戻しました",
+          }
+        : { kind: "error", message: "公開設定の更新に失敗しました" },
+    );
+  }
+
   if (!isSupabaseConfigured) {
     return (
       <section className="versions">
         <header className="versions__header">
-          <h2 className="sidebar__title" style={{ margin: 0 }}>バージョン履歴</h2>
+          <h2 className="sidebar__title" style={{ margin: 0 }}>組織図ファイル</h2>
         </header>
         <p className="versions__empty">
           サーバ未設定です。<code>VITE_SUPABASE_URL</code> と
@@ -275,23 +278,25 @@ export function VersionsPanel() {
           {!loading && tabList.length === 0 && versions.length > 0 && (
             <p className="versions__empty">
               {tab === "confirmed"
-                ? "確定版はまだありません。下書きの「FIX登録」から確定版にしてください。"
+                ? "確定版はまだありません。下書きの「確定」ボタンから確定版にしてください。"
                 : "下書きはまだありません。"}
             </p>
           )}
           {tabList.map(({ v, access }) => {
             const isActive = currentVersionId === v.id;
             const isPrivate = !!v.is_private;
-            const canDelete =
-              currentUser?.role === "master" ||
-              v.created_by_email === currentUser?.email;
+            const isCreator = !!v.created_by_email && v.created_by_email === currentUser?.email;
+            const canDelete = currentUser?.role === "master" || isCreator;
             const canConfirm =
-              currentUser?.role === "master" ||
-              currentUser?.role === "editor";
+              currentUser?.role === "master" || currentUser?.role === "editor";
+            // Only the creator (or master) can flip the privacy lock — same
+            // people who already have edit-rights to the file metadata.
+            const canToggleLock = currentUser?.role === "master" || isCreator;
+
             return (
               <div
                 key={v.id}
-                className={`version-card ${isActive ? "is-active" : ""} ${v.is_confirmed ? "is-confirmed" : ""}`}
+                className={`version-card ${isActive ? "is-active" : ""} ${v.is_confirmed ? "is-confirmed" : ""} ${isPrivate ? "is-private" : ""}`}
                 onClick={() => handleLoad(v.id, v.name, access.edit, !!v.is_confirmed)}
                 role="button"
                 tabIndex={0}
@@ -299,7 +304,6 @@ export function VersionsPanel() {
               >
                 <div className="version-card__head">
                   <span className="version-card__name">
-                    {isPrivate && <span className="version-card__lock" title="非公開">🔒</span>}
                     {v.is_confirmed && (
                       <span className="version-card__period" title="確定版">
                         {formatPeriod(v.confirmed_period)}
@@ -307,23 +311,13 @@ export function VersionsPanel() {
                     )}
                     {v.name}
                   </span>
-                  {!access.edit && (
+                  {!access.edit && !v.is_confirmed && (
                     <span
                       className="version-card__readonly"
-                      title="このバージョンに対しては閲覧権限のみあります"
+                      title="このファイルに対しては閲覧権限のみあります"
                     >
                       閲覧のみ
                     </span>
-                  )}
-                  {canDelete && (
-                    <button
-                      className="version-card__delete"
-                      onClick={(e) => handleDelete(v.id, v.name, e)}
-                      aria-label="削除"
-                      title="削除"
-                    >
-                      ✕
-                    </button>
                   )}
                 </div>
                 <div className="version-card__meta">
@@ -337,39 +331,70 @@ export function VersionsPanel() {
                 </div>
                 {v.note && <div className="version-card__note">{v.note}</div>}
                 {isActive && <div className="version-card__active">読み込み中</div>}
-                <div className="version-card__actions">
+
+                <div className="version-card__menu">
+                  {canToggleLock && (
+                    <button
+                      className={`vmenu__icon ${isPrivate ? "is-on" : ""}`}
+                      onClick={(e) => togglePrivate(v.id, isPrivate, e)}
+                      title={
+                        isPrivate
+                          ? "非公開を解除（全員に公開）"
+                          : "鍵をかけて非公開にする（作成者のみ閲覧・編集可）"
+                      }
+                      aria-label={isPrivate ? "非公開を解除" : "鍵をかけて非公開にする"}
+                    >
+                      {isPrivate ? "🔒" : "🔓"}
+                    </button>
+                  )}
                   {currentUser?.role !== "viewer" && (
                     <button
-                      className="btn btn--ghost btn--xs"
+                      className="vmenu__icon"
                       onClick={(e) => handleDuplicate(v.id, v.name, e)}
                       title={
                         v.is_confirmed
                           ? "確定版を元に下書きを作成して編集を始める"
                           : "このファイルを複製して新しい下書きを作成"
                       }
+                      aria-label="複製"
                     >
-                      複製
+                      🗐
                     </button>
                   )}
                   {canConfirm && !v.is_confirmed && (
                     <button
-                      className="btn btn--xs"
+                      className="vmenu__icon"
                       onClick={(e) => {
                         e.stopPropagation();
                         setPendingFix({ id: v.id, name: v.name });
                       }}
                       title="このファイルを月次の確定版として登録"
+                      aria-label="確定版にする"
                     >
-                      FIX登録
+                      ✓
                     </button>
                   )}
                   {canConfirm && v.is_confirmed && (
                     <button
-                      className="btn btn--ghost btn--xs"
+                      className="vmenu__icon"
                       onClick={(e) => unfix(v.id, e)}
                       title="確定を取り消して下書きに戻す"
+                      aria-label="確定を取り消す"
                     >
-                      確定を取消
+                      ↺
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      className="vmenu__icon vmenu__icon--danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPendingDelete({ id: v.id, name: v.name });
+                      }}
+                      title="削除"
+                      aria-label="削除"
+                    >
+                      🗑
                     </button>
                   )}
                 </div>
@@ -405,8 +430,6 @@ function formatPeriod(period: string | null | undefined): string {
   return `${m[1]}年${parseInt(m[2], 10)}月度`;
 }
 
-/** Modal that captures the YYYY-MM period for a version being promoted to a
- *  confirmed monthly snapshot. Defaults to the current month. */
 function FixDialog({
   versionName,
   onCancel,
@@ -425,7 +448,7 @@ function FixDialog({
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3 className="modal__title">FIX登録</h3>
+        <h3 className="modal__title">確定版として登録</h3>
         <p className="modal__body">
           <strong>「{versionName}」</strong>{" "}
           を月次の確定版として登録します。年月を選んでください。
@@ -460,10 +483,9 @@ function FixDialog({
 }
 
 /**
- * Type-to-confirm delete dialog. The user has to retype the version name
- * exactly, which makes accidental deletes (single-click misfires) effectively
- * impossible. Versions are server-persisted and not undoable, so paying this
- * small friction at delete time is worthwhile.
+ * Hold-to-confirm delete dialog. We replaced the type-to-confirm flow because
+ * the user found retyping names friction-y; the press-and-hold gesture keeps
+ * accidental clicks safe while being faster on the common case.
  */
 function DeleteVersionModal({
   name,
@@ -474,46 +496,25 @@ function DeleteVersionModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const [draft, setDraft] = useState("");
-  const matches = draft === name;
-
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3 className="modal__title">バージョンの削除</h3>
+        <h3 className="modal__title">ファイルを削除</h3>
         <p className="modal__body">
-          バージョン <strong>「{name}」</strong> を完全に削除します。
+          ファイル <strong>「{name}」</strong> を完全に削除します。
           <br />
           この操作は取り消せません。
-          <br />
-          <br />
-          確認のため、バージョン名 <code>{name}</code> を下に入力してください。
         </p>
-        <input
-          className="field__input"
-          value={draft}
+        <p className="modal__body" style={{ marginTop: 6, fontSize: 12, color: "var(--text-muted)" }}>
+          下のバーを <strong>1秒間 押し続ける</strong> と削除されます。
+        </p>
+        <HoldToConfirm
+          label="押し続けて削除"
+          variant="danger"
           autoFocus
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={name}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && matches) onConfirm();
-            if (e.key === "Escape") onCancel();
-          }}
-          style={{ width: "100%", marginBottom: 14 }}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
         />
-        <div className="modal__actions">
-          <button className="btn btn--ghost" onClick={onCancel}>
-            キャンセル
-          </button>
-          <button
-            className="btn btn--danger"
-            onClick={onConfirm}
-            disabled={!matches}
-            title={matches ? "削除する" : "バージョン名と完全一致が必要です"}
-          >
-            完全に削除する
-          </button>
-        </div>
       </div>
     </div>
   );
