@@ -304,7 +304,7 @@ select.field__input {
 .list-view__body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .list-view__empty {
@@ -313,119 +313,239 @@ select.field__input {
   padding: 30px;
 }
 
-.lv-block {
-  margin-top: 6px;
+.list-view__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 8px;
 }
 
-.lv-block__header {
+/* ── Framed dept card (list view) ─────────────────────────────────── */
+.lv-card {
+  background: #fff;
+  border: 2px solid;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 4px;
+  cursor: grab;
+  transition: box-shadow 0.12s, transform 0.06s;
+  position: relative;
+}
+
+.lv-card:active {
+  cursor: grabbing;
+}
+
+.lv-card:hover {
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.lv-card.is-selected {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.lv-card.is-being-dragged {
+  opacity: 0.5;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+}
+
+/* Drop indicators painted via classes set in onDragOver */
+.lv-card.is-drop-before {
+  box-shadow: 0 -4px 0 var(--primary), 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+.lv-card.is-drop-after {
+  box-shadow: 0 4px 0 var(--primary), 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+.lv-card.is-drop-child {
+  box-shadow: 0 0 0 3px var(--primary), 0 0 0 6px rgba(37, 99, 235, 0.18);
+}
+
+/* Per-category sizing: ROOT/Exe/DIV/TM/Unit get progressively lighter framing. */
+.lv-card--root { border-width: 3px; }
+.lv-card--exe { border-width: 3px; }
+.lv-card--div { border-width: 2px; }
+.lv-card--tm { border-width: 2px; }
+.lv-card--unit { border-width: 1px; }
+.lv-card--dept { border-width: 1px; }
+
+.lv-card__header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  border-left: 4px solid transparent;
-  transition: background 0.12s;
+  padding: 5px 10px;
+  font-weight: 600;
+  font-size: 12px;
+  user-select: none;
 }
 
-.lv-block__header:hover {
-  background: #f8fafc;
+.lv-card--root > .lv-card__header,
+.lv-card--exe > .lv-card__header,
+.lv-card--div > .lv-card__header {
+  font-size: 13px;
+  padding: 6px 12px;
 }
 
-.lv-block__header.is-selected {
-  background: #eff6ff;
-  border-left-color: var(--primary);
-}
-
-.lv-block__category {
+.lv-card__category {
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
+  background: rgba(255, 255, 255, 0.22);
   padding: 2px 6px;
   border-radius: 3px;
   flex-shrink: 0;
 }
 
-.lv-block__name {
+.lv-card__name {
   flex: 1;
-  font-weight: 600;
-  font-size: 13px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
 }
 
-.lv-block__counts {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.lv-people {
-  list-style: none;
-  margin: 4px 0 6px;
-  padding: 0 0 0 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.lv-person {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.lv-person:hover {
-  background: #f1f5f9;
-}
-
-.lv-person.is-selected {
-  background: #eff6ff;
-}
-
-.lv-person__role {
-  color: #fff;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-weight: 700;
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  flex-shrink: 0;
-}
-
-.lv-person__bullet {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.lv-person__name {
+.lv-card__nameInput {
   flex: 1;
   min-width: 0;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text);
+  border: 2px solid var(--primary);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
 }
 
-.lv-person__badge {
+.lv-card__counts {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+.lv-card__body {
+  padding: 6px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lv-card__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.lv-card__children {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 0;
+  border-top: 1px dashed var(--border);
+  margin-top: 2px;
+}
+
+.lv-card--root > .lv-card__body > .lv-card__children,
+.lv-card--exe > .lv-card__body > .lv-card__children {
+  background: #f8fafc;
+  margin: 4px -10px -8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* Person chip in list view */
+.lv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  cursor: grab;
+  user-select: none;
+  transition: background 0.1s, box-shadow 0.1s, transform 0.06s;
+  white-space: nowrap;
+}
+
+.lv-chip:hover {
+  background: #fff;
+  border-color: #cbd5e1;
+}
+
+.lv-chip:active {
+  cursor: grabbing;
+}
+
+.lv-chip.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.lv-chip.is-being-dragged {
+  opacity: 0.4;
+  transform: scale(0.95);
+}
+
+.lv-chip--leader {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  font-weight: 600;
+}
+
+.lv-chip--leader.lv-chip--exec,
+.lv-chip--exec {
+  background: linear-gradient(90deg, #fff7ed, #ffedd5);
+  border-color: #fb923c;
+}
+
+.lv-chip__role {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.lv-chip__name {
+  font-size: 11px;
+}
+
+.lv-chip__badge {
   font-size: 9px;
   font-weight: 800;
   background: #ea580c;
   color: #fff;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: 3px;
-  letter-spacing: 0.06em;
-  flex-shrink: 0;
+  letter-spacing: 0.04em;
 }
 
-.lv-block__children {
-  border-left: 1px dashed var(--border-strong);
-  padding-left: 0;
-  margin-left: 8px;
+.lv-chip--editing {
+  font-family: inherit;
+  font-size: 11px;
+  border: 2px solid var(--primary) !important;
+  outline: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.lv-legend__chip {
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  margin-right: 4px;
 }
 
 /* Share dialog specifics */
