@@ -178,10 +178,17 @@ export function TopBar() {
         </button>
         <button
           className="btn btn--ghost"
-          onClick={() => navigate("employees")}
+          onClick={() => navigate({ name: "employees" })}
           title="従業員名簿（マスター管理）ページを開く"
         >
           従業員
+        </button>
+        <button
+          className="btn btn--ghost"
+          onClick={() => navigate({ name: "announcements" })}
+          title="人事発令資料を作成・閲覧"
+        >
+          発令
         </button>
         <button
           className="btn btn--ghost"

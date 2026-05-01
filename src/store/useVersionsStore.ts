@@ -8,7 +8,7 @@ import {
 import type { OrgNode } from "../lib/types";
 
 const VERSION_SELECT =
-  "id, name, author, note, created_at, created_by_email, is_private, grants";
+  "id, name, author, note, created_at, created_by_email, is_private, grants, is_confirmed, confirmed_period";
 
 type VersionsState = {
   versions: VersionRow[];
@@ -31,6 +31,12 @@ type VersionsState = {
   updatePermissions: (
     id: string,
     patch: { is_private?: boolean; grants?: VersionGrants },
+  ) => Promise<boolean>;
+  /** Promote a draft version to a confirmed monthly snapshot, OR demote it
+   *  back to a draft (period=null, is_confirmed=false). */
+  setConfirmation: (
+    id: string,
+    patch: { is_confirmed: boolean; confirmed_period: string | null },
   ) => Promise<boolean>;
   /** Returns the snapshot.nodes for a given version id, or null on error. */
   getSnapshot: (id: string) => Promise<OrgNode[] | null>;
@@ -114,6 +120,24 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
   },
 
   updatePermissions: async (id, patch) => {
+    if (!supabase) return false;
+    const { error } = await supabase
+      .from("org_versions")
+      .update(patch)
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({
+      versions: get().versions.map((v) =>
+        v.id === id ? { ...v, ...patch } : v,
+      ),
+    });
+    return true;
+  },
+
+  setConfirmation: async (id, patch) => {
     if (!supabase) return false;
     const { error } = await supabase
       .from("org_versions")

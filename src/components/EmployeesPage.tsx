@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useUiStore } from "../store/useUiStore";
-import { useEmployeesStore } from "../store/useEmployeesStore";
+import { useEmployeesStore, isCasualEmployment } from "../store/useEmployeesStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import type { EmployeeRow } from "../lib/supabase";
 import type { ImportSummary } from "../store/useEmployeesStore";
 
 const PAGE_SIZE = 50;
+
+function uniqueSorted(values: (string | null)[]): string[] {
+  const set = new Set<string>();
+  for (const v of values) {
+    if (v && v.trim()) set.add(v);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, "ja"));
+}
 
 const EMPTY_DRAFT: Partial<EmployeeRow> & { employee_number: string } = {
   employee_number: "",
@@ -43,7 +51,11 @@ export function EmployeesPage() {
   const isMaster = currentUser?.role === "master";
 
   const [filter, setFilter] = useState("");
-  const [showInactive, setShowInactive] = useState(false);
+  // Retirement state filter: 在籍 (default) / 退職 / 全て
+  const [retirementMode, setRetirementMode] = useState<"active" | "retired" | "all">("active");
+  const [empTypeFilter, setEmpTypeFilter] = useState<string>("");
+  const [deptFilter, setDeptFilter] = useState<string>("");
+  const [positionFilter, setPositionFilter] = useState<string>("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<EmployeeRow> & { employee_number: string }>(EMPTY_DRAFT);
@@ -63,11 +75,33 @@ export function EmployeesPage() {
 
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
+  // Distinct values for the dropdown filters. Build once per employees list.
+  const distinctEmpTypes = useMemo(
+    () => uniqueSorted(employees.map((e) => e.employment_type)),
+    [employees],
+  );
+  const distinctDepts = useMemo(
+    () => uniqueSorted(employees.map((e) => e.department)),
+    [employees],
+  );
+  const distinctPositions = useMemo(
+    () => uniqueSorted(employees.map((e) => e.position_title)),
+    [employees],
+  );
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return employees
       .filter((e) => {
-        if (!showInactive && e.left_at && e.left_at <= today) return false;
+        // Retirement state
+        const isRetired = !!e.left_at && e.left_at <= today;
+        if (retirementMode === "active" && isRetired) return false;
+        if (retirementMode === "retired" && !isRetired) return false;
+        // Dropdown filters
+        if (empTypeFilter && e.employment_type !== empTypeFilter) return false;
+        if (deptFilter && e.department !== deptFilter) return false;
+        if (positionFilter && e.position_title !== positionFilter) return false;
+        // Free-text search
         if (!q) return true;
         const blob = [
           e.employee_number,
@@ -83,7 +117,21 @@ export function EmployeesPage() {
         return blob.includes(q);
       })
       .sort((a, b) => a.employee_number.localeCompare(b.employee_number));
-  }, [employees, filter, showInactive, today]);
+  }, [employees, filter, retirementMode, empTypeFilter, deptFilter, positionFilter, today]);
+
+  // In-roster headcount split by employment-type buckets the user
+  // specifically wants visible at a glance.
+  const headcounts = useMemo(() => {
+    const active = employees.filter((e) => !e.left_at || e.left_at > today);
+    const seishain = active.filter(
+      (e) => e.employment_type === "正社員",
+    ).length;
+    const limited = active.filter(
+      (e) => e.employment_type === "限定正社員",
+    ).length;
+    const casual = active.filter((e) => isCasualEmployment(e.employment_type)).length;
+    return { total: active.length, seishain, limited, casual };
+  }, [employees, today]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   // If the filter changes and the current page is out of range, snap back.
@@ -93,10 +141,6 @@ export function EmployeesPage() {
 
   const pageStart = (page - 1) * PAGE_SIZE;
   const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
-  const activeCount = useMemo(
-    () => employees.filter((e) => !e.left_at || e.left_at > today).length,
-    [employees, today],
-  );
 
   function startEdit(emp: EmployeeRow) {
     setEditing(emp.employee_number);
@@ -176,7 +220,7 @@ export function EmployeesPage() {
       <header className="emppage__head">
         <button
           className="btn btn--ghost"
-          onClick={() => navigate("editor")}
+          onClick={() => navigate({ name: "editor" })}
           title="組織図エディタに戻る"
         >
           ← エディタに戻る
@@ -184,7 +228,11 @@ export function EmployeesPage() {
         <div className="emppage__title">
           <h1>従業員名簿</h1>
           <p className="emppage__subtitle">
-            登録 {employees.length} 名（在籍 {activeCount} 名 ／ 退職 {employees.length - activeCount} 名）
+            登録 {employees.length} 名 ／ 在籍 {headcounts.total} 名（
+            <span className="emppage__chip">正社員 {headcounts.seishain}</span>
+            <span className="emppage__chip">限定正社員 {headcounts.limited}</span>
+            <span className="emppage__chip">アルバイト・パート {headcounts.casual}</span>
+            ） ／ 退職 {employees.length - headcounts.total} 名
           </p>
         </div>
         <div className="emppage__headRight">
@@ -263,7 +311,7 @@ export function EmployeesPage() {
         </fieldset>
       )}
 
-      <div className="emppage__toolbar">
+      <div className="emppage__filters">
         <input
           className="field__input"
           placeholder="氏名 / 部署 / メール / 役職などで絞り込み"
@@ -272,23 +320,83 @@ export function EmployeesPage() {
             setFilter(e.target.value);
             setPage(1);
           }}
-          style={{ flex: 1 }}
+          style={{ flex: "2 1 200px" }}
         />
-        <label className="checkbox" style={{ flexShrink: 0, alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={showInactive}
-            onChange={(e) => {
-              setShowInactive(e.target.checked);
+        <select
+          className="field__input"
+          value={retirementMode}
+          onChange={(e) => {
+            setRetirementMode(e.target.value as "active" | "retired" | "all");
+            setPage(1);
+          }}
+          title="退職状態"
+        >
+          <option value="active">在籍のみ</option>
+          <option value="retired">退職のみ</option>
+          <option value="all">全て</option>
+        </select>
+        <select
+          className="field__input"
+          value={empTypeFilter}
+          onChange={(e) => {
+            setEmpTypeFilter(e.target.value);
+            setPage(1);
+          }}
+          title="雇用形態でフィルタ"
+        >
+          <option value="">雇用形態：全て</option>
+          {distinctEmpTypes.map((v) => (
+            <option key={v} value={v}>{v}</option>
+          ))}
+        </select>
+        <select
+          className="field__input"
+          value={deptFilter}
+          onChange={(e) => {
+            setDeptFilter(e.target.value);
+            setPage(1);
+          }}
+          title="部署でフィルタ"
+        >
+          <option value="">部署：全て</option>
+          {distinctDepts.map((v) => (
+            <option key={v} value={v}>{v}</option>
+          ))}
+        </select>
+        <select
+          className="field__input"
+          value={positionFilter}
+          onChange={(e) => {
+            setPositionFilter(e.target.value);
+            setPage(1);
+          }}
+          title="役職でフィルタ"
+        >
+          <option value="">役職：全て</option>
+          {distinctPositions.map((v) => (
+            <option key={v} value={v}>{v}</option>
+          ))}
+        </select>
+        {(filter || empTypeFilter || deptFilter || positionFilter || retirementMode !== "active") && (
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => {
+              setFilter("");
+              setEmpTypeFilter("");
+              setDeptFilter("");
+              setPositionFilter("");
+              setRetirementMode("active");
               setPage(1);
             }}
-          />
-          <span>退職者も表示</span>
-        </label>
+            title="フィルタをクリア"
+          >
+            ✕ クリア
+          </button>
+        )}
         <span className="emppage__count">
-          {filtered.length} 名
-          {filter && employees.length !== filtered.length && (
-            <> / 全 {employees.length}</>
+          <strong>{filtered.length}</strong> 名 一致
+          {filtered.length !== employees.length && (
+            <span className="emppage__countSub"> / 全 {employees.length}</span>
           )}
         </span>
       </div>

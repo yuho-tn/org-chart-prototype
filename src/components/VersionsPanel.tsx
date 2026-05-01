@@ -32,6 +32,7 @@ export function VersionsPanel() {
   const refresh = useVersionsStore((s) => s.refresh);
   const getSnapshot = useVersionsStore((s) => s.getSnapshot);
   const remove = useVersionsStore((s) => s.remove);
+  const setConfirmation = useVersionsStore((s) => s.setConfirmation);
 
   const dirty = useOrgStore((s) => s.dirty);
   const currentVersionId = useOrgStore((s) => s.currentVersionId);
@@ -42,6 +43,8 @@ export function VersionsPanel() {
 
   const [showSave, setShowSave] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [pendingFix, setPendingFix] = useState<{ id: string; name: string } | null>(null);
+  const [tab, setTab] = useState<"draft" | "confirmed">("draft");
 
   /** Versions visible to the current user, with their access level annotated. */
   const visible = useMemo(() => {
@@ -52,6 +55,26 @@ export function VersionsPanel() {
         access: { view: true; edit: boolean };
       }[];
   }, [versions, currentUser]);
+
+  // Split into the two tabs. Confirmed versions are sorted newest-period
+  // first; drafts keep their default created_at-desc order.
+  const confirmedList = useMemo(
+    () =>
+      visible
+        .filter((x) => x.v.is_confirmed)
+        .sort((a, b) => {
+          const pa = a.v.confirmed_period ?? "";
+          const pb = b.v.confirmed_period ?? "";
+          return pb.localeCompare(pa);
+        }),
+    [visible],
+  );
+  const draftList = useMemo(
+    () => visible.filter((x) => !x.v.is_confirmed),
+    [visible],
+  );
+
+  const tabList = tab === "confirmed" ? confirmedList : draftList;
 
   useEffect(() => {
     if (isSupabaseConfigured) refresh();
@@ -98,6 +121,35 @@ export function VersionsPanel() {
     );
   }
 
+  async function commitFix(period: string) {
+    if (!pendingFix) return;
+    const { id } = pendingFix;
+    setPendingFix(null);
+    const ok = await setConfirmation(id, {
+      is_confirmed: true,
+      confirmed_period: period,
+    });
+    setToast(
+      ok
+        ? { kind: "info", message: `「${period}」の確定版として登録しました` }
+        : { kind: "error", message: "FIX登録に失敗しました" },
+    );
+    if (ok) setTab("confirmed");
+  }
+
+  async function unfix(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const ok = await setConfirmation(id, {
+      is_confirmed: false,
+      confirmed_period: null,
+    });
+    setToast(
+      ok
+        ? { kind: "info", message: "下書きに戻しました" }
+        : { kind: "error", message: "下書きへの差し戻しに失敗しました" },
+    );
+  }
+
   if (!isSupabaseConfigured) {
     return (
       <section className="versions">
@@ -134,34 +186,56 @@ export function VersionsPanel() {
 
         {error && <p className="versions__error">{error}</p>}
 
+        <div className="versions__tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={tab === "draft"}
+            className={`versions__tab ${tab === "draft" ? "is-active" : ""}`}
+            onClick={() => setTab("draft")}
+          >
+            下書き <span className="versions__tabCount">{draftList.length}</span>
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "confirmed"}
+            className={`versions__tab ${tab === "confirmed" ? "is-active" : ""}`}
+            onClick={() => setTab("confirmed")}
+          >
+            確定版 <span className="versions__tabCount">{confirmedList.length}</span>
+          </button>
+        </div>
+
         <div className="versions__list">
-          {loading && visible.length === 0 && (
+          {loading && tabList.length === 0 && (
             <p className="versions__empty">読み込み中…</p>
           )}
-          {!loading && visible.length === 0 && versions.length === 0 && (
+          {!loading && tabList.length === 0 && versions.length === 0 && (
             <p className="versions__empty">
               保存済みバージョンはまだありません。
               <br />
               「＋現状をバージョン保存」から最初の一件を作成してください。
             </p>
           )}
-          {!loading && visible.length === 0 && versions.length > 0 && (
+          {!loading && tabList.length === 0 && versions.length > 0 && (
             <p className="versions__empty">
-              アクセス可能なバージョンがありません。
-              <br />
-              非公開バージョンへのアクセス許可は、作成者かマスター権限のユーザーに依頼してください。
+              {tab === "confirmed"
+                ? "確定版はまだありません。下書きの「FIX登録」から確定版にしてください。"
+                : "下書きはまだありません。"}
             </p>
           )}
-          {visible.map(({ v, access }) => {
+          {tabList.map(({ v, access }) => {
             const isActive = currentVersionId === v.id;
             const isPrivate = !!v.is_private;
             const canDelete =
               currentUser?.role === "master" ||
               v.created_by_email === currentUser?.email;
+            const canConfirm =
+              currentUser?.role === "master" ||
+              currentUser?.role === "editor";
             return (
               <div
                 key={v.id}
-                className={`version-card ${isActive ? "is-active" : ""}`}
+                className={`version-card ${isActive ? "is-active" : ""} ${v.is_confirmed ? "is-confirmed" : ""}`}
                 onClick={() => handleLoad(v.id, v.name, access.edit)}
                 role="button"
                 tabIndex={0}
@@ -170,6 +244,11 @@ export function VersionsPanel() {
                 <div className="version-card__head">
                   <span className="version-card__name">
                     {isPrivate && <span className="version-card__lock" title="非公開">🔒</span>}
+                    {v.is_confirmed && (
+                      <span className="version-card__period" title="確定版">
+                        {formatPeriod(v.confirmed_period)}
+                      </span>
+                    )}
                     {v.name}
                   </span>
                   {!access.edit && (
@@ -198,6 +277,27 @@ export function VersionsPanel() {
                 </div>
                 {v.note && <div className="version-card__note">{v.note}</div>}
                 {isActive && <div className="version-card__active">読み込み中</div>}
+                {canConfirm && !v.is_confirmed && (
+                  <button
+                    className="btn btn--xs version-card__fix"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPendingFix({ id: v.id, name: v.name });
+                    }}
+                    title="このバージョンを月次の確定版として登録"
+                  >
+                    FIX登録
+                  </button>
+                )}
+                {canConfirm && v.is_confirmed && (
+                  <button
+                    className="btn btn--ghost btn--xs version-card__fix"
+                    onClick={(e) => unfix(v.id, e)}
+                    title="確定を取り消して下書きに戻す"
+                  >
+                    確定を取消
+                  </button>
+                )}
               </div>
             );
           })}
@@ -212,7 +312,75 @@ export function VersionsPanel() {
           onConfirm={confirmDelete}
         />
       )}
+      {pendingFix && (
+        <FixDialog
+          versionName={pendingFix.name}
+          onCancel={() => setPendingFix(null)}
+          onConfirm={commitFix}
+        />
+      )}
     </>
+  );
+}
+
+function formatPeriod(period: string | null | undefined): string {
+  if (!period) return "";
+  const m = /^(\d{4})-(\d{1,2})/.exec(period);
+  if (!m) return period;
+  return `${m[1]}年${parseInt(m[2], 10)}月度`;
+}
+
+/** Modal that captures the YYYY-MM period for a version being promoted to a
+ *  confirmed monthly snapshot. Defaults to the current month. */
+function FixDialog({
+  versionName,
+  onCancel,
+  onConfirm,
+}: {
+  versionName: string;
+  onCancel: () => void;
+  onConfirm: (period: string) => void;
+}) {
+  const todayMonth = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+  const [period, setPeriod] = useState(todayMonth);
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3 className="modal__title">FIX登録</h3>
+        <p className="modal__body">
+          <strong>「{versionName}」</strong>{" "}
+          を月次の確定版として登録します。年月を選んでください。
+        </p>
+        <label className="field">
+          <span className="field__label">対象年月</span>
+          <input
+            className="field__input"
+            type="month"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+          />
+          <span className="field__value" style={{ marginTop: 4 }}>
+            表示：{formatPeriod(period)}
+          </span>
+        </label>
+        <div className="modal__actions" style={{ marginTop: 14 }}>
+          <button className="btn btn--ghost" onClick={onCancel}>
+            キャンセル
+          </button>
+          <button
+            className="btn btn--primary"
+            onClick={() => onConfirm(period)}
+            disabled={!period}
+          >
+            確定版として登録
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

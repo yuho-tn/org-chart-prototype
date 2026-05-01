@@ -6,29 +6,45 @@ export type OrgView = "tree" | "list";
  * are only two views and we want the URL hash to reflect which one is
  * active so browser back/forward and reload still land in the right place.
  */
-export type Route = "editor" | "employees";
-
-const HASH_TO_ROUTE: Record<string, Route> = {
-  "": "editor",
-  "#": "editor",
-  "#/": "editor",
-  "#/employees": "employees",
-};
+export type Route =
+  | { name: "editor" }
+  | { name: "employees" }
+  | { name: "announcements" }
+  | { name: "announcement"; id: string };
 
 function readRouteFromHash(): Route {
-  if (typeof window === "undefined") return "editor";
-  return HASH_TO_ROUTE[window.location.hash] ?? "editor";
+  if (typeof window === "undefined") return { name: "editor" };
+  const h = window.location.hash;
+  if (h === "" || h === "#" || h === "#/") return { name: "editor" };
+  if (h === "#/employees") return { name: "employees" };
+  if (h === "#/announcements") return { name: "announcements" };
+  const m = /^#\/announcements\/([0-9a-f-]+)$/i.exec(h);
+  if (m) return { name: "announcement", id: m[1] };
+  return { name: "editor" };
+}
+
+function routeToHash(r: Route): string {
+  switch (r.name) {
+    case "editor":
+      return "";
+    case "employees":
+      return "#/employees";
+    case "announcements":
+      return "#/announcements";
+    case "announcement":
+      return `#/announcements/${r.id}`;
+  }
 }
 
 function writeRouteToHash(r: Route) {
   if (typeof window === "undefined") return;
-  const next = r === "editor" ? "" : "#/employees";
+  const next = routeToHash(r);
   if (window.location.hash !== next) {
-    // Use replaceState for the initial sync (no extra history entry); the
-    // navigate() action below uses pushState semantics by writing hash
-    // directly which DOES create one.
-    if (next === "") window.history.replaceState(null, "", window.location.pathname + window.location.search);
-    else window.location.hash = next.slice(1); // hash includes the leading '#'
+    if (next === "") {
+      window.history.pushState(null, "", window.location.pathname + window.location.search);
+    } else {
+      window.location.hash = next.slice(1);
+    }
   }
 }
 
@@ -68,10 +84,9 @@ export const useUiStore = create<UiState>((set) => ({
   navigate: (route, opts) => {
     set({ route });
     if (opts?.pushHistory === false) {
-      // Replace the current entry instead of pushing a new one.
-      const next = route === "editor"
-        ? window.location.pathname + window.location.search
-        : window.location.pathname + window.location.search + "#/employees";
+      const hash = routeToHash(route);
+      const next =
+        window.location.pathname + window.location.search + hash;
       window.history.replaceState(null, "", next);
     } else {
       writeRouteToHash(route);

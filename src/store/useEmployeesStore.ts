@@ -286,3 +286,12 @@ export function activeEmployees(rows: EmployeeRow[]): EmployeeRow[] {
   const today = new Date().toISOString().slice(0, 10);
   return rows.filter((e) => !e.left_at || e.left_at > today);
 }
+
+/** Match against common SmartHR employment_type strings for casual labour
+ *  (アルバイト / パート / インターン / contractor variants). Used by the
+ *  unplaced-members panel to hide casual hires from the default view. */
+export function isCasualEmployment(et: string | null | undefined): boolean {
+  if (!et) return false;
+  const s = et;
+  return /アルバイト|パート|インターン|intern|part[\s-]?time/i.test(s);
+}

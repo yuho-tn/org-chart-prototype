@@ -9,6 +9,8 @@ import { Toast } from "./components/Toast";
 import { AuthorPrompt } from "./components/AuthorPrompt";
 import { UserManagementModal } from "./components/UserManagementModal";
 import { EmployeesPage } from "./components/EmployeesPage";
+import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
+import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
 import { ListView } from "./components/ListView";
 import { ViewTabs } from "./components/ViewTabs";
 import { useOrgStore } from "./store/useOrgStore";
@@ -144,12 +146,38 @@ export default function App() {
   // The Employees page is a sibling top-level view of the editor — both live
   // inside the editor app shell so the AuthorPrompt / global modals etc. are
   // shared, but the main pane swaps based on route.
-  if (route === "employees") {
+  if (route.name === "employees") {
     return (
       <ReactFlowProvider>
         <AuthorPrompt onReady={() => setBootReady(true)} />
         <div className="app app--page">
           <EmployeesPage />
+          <Toast />
+          <UserManagementModal />
+        </div>
+      </ReactFlowProvider>
+    );
+  }
+
+  if (route.name === "announcements") {
+    return (
+      <ReactFlowProvider>
+        <AuthorPrompt onReady={() => setBootReady(true)} />
+        <div className="app app--page">
+          <AnnouncementsListPage />
+          <Toast />
+          <UserManagementModal />
+        </div>
+      </ReactFlowProvider>
+    );
+  }
+
+  if (route.name === "announcement") {
+    return (
+      <ReactFlowProvider>
+        <AuthorPrompt onReady={() => setBootReady(true)} />
+        <div className="app app--page">
+          <AnnouncementDetailPage id={route.id} />
           <Toast />
           <UserManagementModal />
         </div>

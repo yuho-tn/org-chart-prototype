@@ -32,6 +32,10 @@ export type VersionRow = {
   created_by_email?: string | null;
   is_private?: boolean;
   grants?: VersionGrants;
+  /** Migration 0004: set when this version has been "FIX登録"-ed. */
+  is_confirmed?: boolean;
+  /** YYYY-MM string identifying the month a confirmed version represents. */
+  confirmed_period?: string | null;
 };
 
 export type VersionWithSnapshot = VersionRow & {

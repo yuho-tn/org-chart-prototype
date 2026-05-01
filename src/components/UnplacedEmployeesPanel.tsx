@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
-import { useEmployeesStore, activeEmployees } from "../store/useEmployeesStore";
+import {
+  useEmployeesStore,
+  activeEmployees,
+  isCasualEmployment,
+} from "../store/useEmployeesStore";
 import { useUiStore } from "../store/useUiStore";
 import { isSupabaseConfigured } from "../lib/supabase";
 
@@ -20,6 +24,10 @@ export function UnplacedEmployeesPanel() {
 
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState(false);
+  // By default the panel hides retired members and casual employment types
+  // (アルバイト / パート / インターン). The user can flip these on if they
+  // need to bring those people into the chart explicitly.
+  const [includeCasual, setIncludeCasual] = useState(false);
 
   useEffect(() => {
     if (isSupabaseConfigured) refresh();
@@ -40,6 +48,7 @@ export function UnplacedEmployeesPanel() {
     const q = filter.trim().toLowerCase();
     return active
       .filter((e) => !placed.has(e.employee_number))
+      .filter((e) => includeCasual || !isCasualEmployment(e.employment_type))
       .filter((e) => {
         if (!q) return true;
         const blob = [
@@ -54,7 +63,16 @@ export function UnplacedEmployeesPanel() {
         return blob.includes(q);
       })
       .sort((a, b) => a.employee_number.localeCompare(b.employee_number));
-  }, [employees, placed, filter]);
+  }, [employees, placed, filter, includeCasual]);
+
+  // Count of casual hires hidden by the default filter, so the toggle has a
+  // clear "what am I missing?" signal.
+  const hiddenCasualCount = useMemo(() => {
+    if (includeCasual) return 0;
+    return activeEmployees(employees).filter(
+      (e) => !placed.has(e.employee_number) && isCasualEmployment(e.employment_type),
+    ).length;
+  }, [employees, placed, includeCasual]);
 
   if (!isSupabaseConfigured) return null;
 
@@ -81,7 +99,7 @@ export function UnplacedEmployeesPanel() {
               従業員名簿が空です。
               <button
                 className="btn btn--ghost btn--xs"
-                onClick={() => navigate("employees")}
+                onClick={() => navigate({ name: "employees" })}
               >
                 名簿を開く
               </button>
@@ -95,6 +113,19 @@ export function UnplacedEmployeesPanel() {
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
+              <label className="checkbox unplaced__toggle">
+                <input
+                  type="checkbox"
+                  checked={includeCasual}
+                  onChange={(e) => setIncludeCasual(e.target.checked)}
+                />
+                <span>
+                  アルバイト・インターンも表示
+                  {hiddenCasualCount > 0 && (
+                    <span className="unplaced__hidden">（非表示中 {hiddenCasualCount} 名）</span>
+                  )}
+                </span>
+              </label>
               {candidates.length === 0 ? (
                 <p className="unplaced__empty">
                   在籍中の従業員はすべて組織図に配置済みです。
