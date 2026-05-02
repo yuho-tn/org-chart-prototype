@@ -3464,3 +3464,179 @@ body.is-dragging .dept-card__add-child {
   }
 }
 
+/* ── Inspector: employee link + affiliation views ────────────────── */
+.emplink__current {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.emplink__current--orphan {
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.emplink__current--empty {
+  background: var(--bg-soft);
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.emplink__currentName {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.emplink__currentMeta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.emplink__currentMeta code {
+  font-size: 11px;
+  background: var(--panel);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.emplink__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+/* Picker dialog list */
+.emplink__list {
+  margin-top: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+}
+
+.emplink__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+
+.emplink__row:last-child {
+  border-bottom: none;
+}
+
+.emplink__row:hover {
+  background: var(--primary-soft);
+}
+
+.emplink__row.is-current {
+  background: #eef2ff;
+  border-left: 3px solid var(--primary);
+}
+
+.emplink__name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-strong);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.emplink__currentBadge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--primary);
+  color: #fff;
+  letter-spacing: 0.04em;
+}
+
+.emplink__meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.emplink__meta code {
+  font-size: 11px;
+  background: var(--bg-soft);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Affiliation summary */
+.affiliations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.affiliations__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.affiliations__label {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.affiliations__label--primary {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.affiliations__label--concurrent {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.affiliations__path {
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.affiliations__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.affiliations__list li {
+  word-break: break-word;
+}
+

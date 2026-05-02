@@ -54,6 +54,14 @@ type Store = AppState & {
   setRole: (id: string, roleLabel: PersonRole) => void;
   setExecutive: (id: string, isExecutive: boolean) => void;
   setConcurrent: (id: string, isConcurrent: boolean) => void;
+  /** Link or unlink a person node to an entry in the employee master.
+   *  Pass null to clear the link. Optionally also rewrites the chip name
+   *  when linking, so freshly-linked nodes don't carry a stale label. */
+  setEmployeeNumber: (
+    id: string,
+    employeeNumber: string | null,
+    opts?: { name?: string },
+  ) => void;
   setCategory: (id: string, category: DeptCategory) => void;
   setColor: (id: string, colorIndex: number) => void;
   reparent: (
@@ -336,6 +344,37 @@ export const useOrgStore = create<Store>((set, get) => ({
         state,
         "role",
         `「${target.name}」を${isExecutive ? "役員" : "通常メンバー"}に変更`,
+      ),
+      dirty: true,
+    });
+  },
+
+  setEmployeeNumber: (id, employeeNumber, opts) => {
+    const state = get();
+    const target = state.nodes.find((n) => n.id === id);
+    if (!target || target.kind !== "person") return;
+    const prevEmpNo = target.employeeNumber ?? null;
+    const nextEmpNo = employeeNumber ?? null;
+    const nextName = opts?.name?.trim() ?? null;
+    if (prevEmpNo === nextEmpNo && (nextName === null || nextName === target.name)) return;
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: state.nodes.map((n) =>
+        n.id === id
+          ? {
+              ...n,
+              employeeNumber: nextEmpNo ?? undefined,
+              ...(nextName ? { name: nextName } : {}),
+            }
+          : n,
+      ),
+      log: logEntry(
+        state,
+        "rename",
+        nextEmpNo
+          ? `「${nextName ?? target.name}」を従業員マスターに紐付け（${nextEmpNo}）`
+          : `「${target.name}」の従業員マスター紐付けを解除`,
       ),
       dirty: true,
     });
