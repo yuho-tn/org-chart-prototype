@@ -4,6 +4,8 @@ import { seedData } from "../lib/seed";
 import { descendantsOf, wouldCreateCycle } from "../lib/layout";
 import { applyMove, cloneSubtree } from "../lib/move";
 import { STORAGE_KEYS } from "../lib/storageKeys";
+import { findEmployeeByName } from "../lib/employeeMatch";
+import { useEmployeesStore } from "./useEmployeesStore";
 
 const STORAGE_KEY = STORAGE_KEYS.draft;
 // Bumped from 10 → 50 so the log can serve as a meaningful revision history,
@@ -252,22 +254,12 @@ export const useOrgStore = create<Store>((set, get) => ({
 
   addPersonFromEmployee: ({ employee_number, name, roleLabel }) => {
     const state = get();
-    // Don't double-add if this employee is already in the chart for the
-    // current version. The "unplaced employees" UI filters out placed ones,
-    // but a defensive check here prevents accidental duplicates from any
-    // other code path.
+    // Same employee can be referenced by many person nodes — that's how 兼務
+    // is modeled. We don't block re-adding any more; the user is expected
+    // to mark the secondary entries with the 兼務 flag in the inspector.
     const already = state.nodes.find(
       (n) => n.kind === "person" && n.employeeNumber === employee_number && !n.isUnplaced,
     );
-    if (already) {
-      set({
-        toast: {
-          kind: "info",
-          message: `${name} は既に配置済みです`,
-        },
-      });
-      return;
-    }
     const id = uid("p");
     const newNode: OrgNode = {
       id,
@@ -277,17 +269,28 @@ export const useOrgStore = create<Store>((set, get) => ({
       roleLabel: roleLabel ?? null,
       isUnplaced: true,
       employeeNumber: employee_number,
+      // Re-adding an existing employee defaults to 兼務 — the original
+      // entry stays as 主務 and the new node represents the cross-posting.
+      isConcurrent: !!already,
     };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
       nodes: [...state.nodes, newNode],
       selectedId: id,
-      log: logEntry(state, "add", `${name}（${employee_number}）を未配置に追加`),
+      log: logEntry(
+        state,
+        "add",
+        already
+          ? `${name}（${employee_number}）を兼務として未配置に追加`
+          : `${name}（${employee_number}）を未配置に追加`,
+      ),
       dirty: true,
       toast: {
         kind: "info",
-        message: `${name} を未配置に追加しました。ドラッグで配置してください`,
+        message: already
+          ? `${name} を兼務として未配置に追加しました。ドラッグで配置してください`
+          : `${name} を未配置に追加しました。ドラッグで配置してください`,
       },
     });
   },
@@ -429,11 +432,29 @@ export const useOrgStore = create<Store>((set, get) => ({
     const state = get();
     const target = state.nodes.find((n) => n.id === id);
     if (!target || target.name === name) return;
+    // Auto-link the chip to an employee master entry when the new name
+    // matches a unique employee and the node isn't already linked. This is
+    // the "基本的には名前で登録" workflow — typing the name is enough to
+    // tie the chip to the master record. Ambiguous matches are skipped so
+    // the user can resolve them manually via the inspector picker.
+    let extraPatch: Partial<OrgNode> = {};
+    let autoLinkLog: string | null = null;
+    if (target.kind === "person" && !target.employeeNumber) {
+      const match = findEmployeeByName(name, useEmployeesStore.getState().employees);
+      if (match) {
+        extraPatch = { employeeNumber: match.employee_number };
+        autoLinkLog = `（従業員マスター「${match.employee_number}」と自動紐付け）`;
+      }
+    }
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
-      nodes: state.nodes.map((n) => (n.id === id ? { ...n, name } : n)),
-      log: logEntry(state, "rename", `「${target.name}」→「${name}」`),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, name, ...extraPatch } : n)),
+      log: logEntry(
+        state,
+        "rename",
+        `「${target.name}」→「${name}」${autoLinkLog ?? ""}`,
+      ),
       dirty: true,
     });
   },

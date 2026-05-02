@@ -5,6 +5,7 @@ import { descendantsOf } from "../lib/layout";
 import { ALL_ROLES, ROLE_DESCRIPTIONS } from "../lib/types";
 import type { DeptCategory, OrgNode, PersonRole } from "../lib/types";
 import { PALETTE } from "../lib/palette";
+import { findEmployeeByName } from "../lib/employeeMatch";
 import { EmployeeLinkDialog } from "./EmployeeLinkDialog";
 
 const CATEGORIES: DeptCategory[] = ["ROOT", "Exe", "DIV", "TM", "Unit", "DEPT"];
@@ -262,13 +263,45 @@ export function Inspector() {
                 <div className="emplink__current emplink__current--empty">
                   <div className="emplink__currentMeta">
                     まだ従業員マスターと紐付いていません。
+                    {(() => {
+                      // Show a one-tap auto-link affordance when the current
+                      // chip name uniquely matches an employee. The user
+                      // can also open the picker to override / search.
+                      const auto = findEmployeeByName(selected.name, employees);
+                      if (!auto) return null;
+                      return (
+                        <>
+                          <br />
+                          名前一致：<strong>{auto.full_name}</strong>{" "}
+                          <code>{auto.employee_number}</code>
+                        </>
+                      );
+                    })()}
                   </div>
-                  <button
-                    className="btn btn--xs"
-                    onClick={() => setLinkOpen(true)}
-                  >
-                    ＋従業員を選択
-                  </button>
+                  <div className="emplink__actions">
+                    {(() => {
+                      const auto = findEmployeeByName(selected.name, employees);
+                      if (!auto) return null;
+                      return (
+                        <button
+                          className="btn btn--primary btn--xs"
+                          onClick={() =>
+                            setEmployeeNumber(selected.id, auto.employee_number, {
+                              name: auto.full_name ?? selected.name,
+                            })
+                          }
+                        >
+                          名前で自動紐付け
+                        </button>
+                      );
+                    })()}
+                    <button
+                      className="btn btn--xs"
+                      onClick={() => setLinkOpen(true)}
+                    >
+                      ＋従業員を選択
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

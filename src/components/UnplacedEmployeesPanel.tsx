@@ -28,6 +28,11 @@ export function UnplacedEmployeesPanel() {
   // (アルバイト / パート / インターン). The user can flip these on if they
   // need to bring those people into the chart explicitly.
   const [includeCasual, setIncludeCasual] = useState(false);
+  // Same employee can be referenced from many person nodes (兼務). When
+  // ON, the panel keeps already-placed employees in the list so the user
+  // can add a 兼務 entry for them; when OFF (default) we hide them as
+  // before to keep the list short.
+  const [includePlaced, setIncludePlaced] = useState(false);
 
   useEffect(() => {
     if (isSupabaseConfigured) refresh();
@@ -47,7 +52,7 @@ export function UnplacedEmployeesPanel() {
     const active = activeEmployees(employees);
     const q = filter.trim().toLowerCase();
     return active
-      .filter((e) => !placed.has(e.employee_number))
+      .filter((e) => includePlaced || !placed.has(e.employee_number))
       .filter((e) => includeCasual || !isCasualEmployment(e.employment_type))
       .filter((e) => {
         if (!q) return true;
@@ -63,7 +68,7 @@ export function UnplacedEmployeesPanel() {
         return blob.includes(q);
       })
       .sort((a, b) => a.employee_number.localeCompare(b.employee_number));
-  }, [employees, placed, filter, includeCasual]);
+  }, [employees, placed, filter, includeCasual, includePlaced]);
 
   // Count of casual hires hidden by the default filter, so the toggle has a
   // clear "what am I missing?" signal.
@@ -126,6 +131,16 @@ export function UnplacedEmployeesPanel() {
                   )}
                 </span>
               </label>
+              <label className="checkbox unplaced__toggle">
+                <input
+                  type="checkbox"
+                  checked={includePlaced}
+                  onChange={(e) => setIncludePlaced(e.target.checked)}
+                />
+                <span>
+                  配置済みも表示（兼務として再追加するとき）
+                </span>
+              </label>
               {candidates.length === 0 ? (
                 <p className="unplaced__empty">
                   在籍中の従業員はすべて組織図に配置済みです。
@@ -134,9 +149,18 @@ export function UnplacedEmployeesPanel() {
                 <ul className="unplaced__list">
                   {candidates.slice(0, 50).map((e) => {
                     const fullName = (e.full_name ?? "").trim() || e.employee_number;
+                    const isPlaced = placed.has(e.employee_number);
                     return (
-                      <li key={e.employee_number} className="unplaced__item">
-                        <div className="unplaced__name">{fullName}</div>
+                      <li
+                        key={e.employee_number}
+                        className={`unplaced__item ${isPlaced ? "is-placed" : ""}`}
+                      >
+                        <div className="unplaced__name">
+                          {fullName}
+                          {isPlaced && (
+                            <span className="unplaced__placedBadge" title="既に組織図に配置されています">配置済</span>
+                          )}
+                        </div>
                         <div className="unplaced__meta">
                           <code>{e.employee_number}</code>
                           {e.department && <span>・{e.department}</span>}
@@ -150,9 +174,13 @@ export function UnplacedEmployeesPanel() {
                               name: fullName,
                             })
                           }
-                          title="未配置エリアに追加 → ドラッグで配置"
+                          title={
+                            isPlaced
+                              ? "兼務として未配置に追加（自動で兼務フラグON）"
+                              : "未配置エリアに追加 → ドラッグで配置"
+                          }
                         >
-                          ＋追加
+                          {isPlaced ? "＋兼務追加" : "＋追加"}
                         </button>
                       </li>
                     );
