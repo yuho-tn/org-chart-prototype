@@ -49,15 +49,15 @@ export function TopBar() {
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setShowLog = useUiStore((s) => s.setShowLog);
 
-  // Resolve the loaded file's metadata so we can refuse to overwrite a
-  // confirmed snapshot. Confirmed files are immutable by spec — the user
-  // 複製s them to make a draft.
+  // Resolve the loaded file's metadata. Confirmed files are normal files
+  // with a "FIX" label — they can be edited and saved in place. Only
+  // viewer-role and per-version read-only grants prevent overwrites.
   const currentFile = currentVersionId
     ? versions.find((v) => v.id === currentVersionId)
     : null;
   const isConfirmedFile = !!currentFile?.is_confirmed;
   const canOverwrite =
-    !!currentVersionId && !isConfirmedFile && !viewOnly && currentUser?.role !== "viewer";
+    !!currentVersionId && !viewOnly && currentUser?.role !== "viewer";
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -169,10 +169,10 @@ export function TopBar() {
           <span className="toolbar__badgeDot" aria-hidden />
           {dirty
             ? versionLabel
-              ? `編集中：${versionLabel}（未保存）`
+              ? `編集中：${versionLabel}${isConfirmedFile ? "（確定版・マスター）" : ""}（未保存）`
               : "新規ファイル（未保存）"
             : versionLabel
-              ? `保存済：${versionLabel}${isConfirmedFile ? "（確定版）" : ""}`
+              ? `保存済：${versionLabel}${isConfirmedFile ? "（確定版・マスター）" : ""}`
               : "新規ファイル"}
         </span>
 

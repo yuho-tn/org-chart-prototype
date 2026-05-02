@@ -6,11 +6,11 @@ import { getAuthor } from "../lib/author";
 
 /**
  * Slim banner shown directly under the TopBar whenever the editor is
- * displaying a 確定版 file. Confirmed files are immutable by spec, so
- * the banner doubles as the affordance the user needs: a one-click
- * 「複製して編集」 button that creates a fresh draft from this snapshot
- * and switches to it. The user does NOT have to navigate to the side
- * panel to find this action.
+ * displaying a 確定版 file. Confirmed files are the "master" org chart —
+ * they remain editable and saving updates the confirmed snapshot in place.
+ * The banner makes the FIX status (and 確定期間) explicit, and offers a
+ * "複製して別案を作成" affordance for users who want to fork without
+ * touching the master.
  */
 export function ConfirmedBanner() {
   const currentVersionId = useOrgStore((s) => s.currentVersionId);
@@ -34,7 +34,7 @@ export function ConfirmedBanner() {
     ? formatPeriod(file.confirmed_period)
     : null;
 
-  async function duplicateAndEdit() {
+  async function duplicateAsDraft() {
     if (!file) return;
     if (dirty) {
       const ok = window.confirm(
@@ -60,19 +60,20 @@ export function ConfirmedBanner() {
       setViewOnly(false);
       replaceNodes(nodes, { versionId: row.id, versionLabel: row.name });
     }
-    setToast({ kind: "info", message: `「${trimmed}」を作成しました。編集できます。` });
+    setToast({ kind: "info", message: `「${trimmed}」を別案として作成しました` });
   }
 
   return (
     <div className="confirmed-banner">
       <span className="confirmed-banner__label">
-        🔒 確定版（{period ?? "FIX登録済"}）— 閲覧のみ
+        ⭐ 確定版（マスター{period ? `／${period}` : ""}）
       </span>
       <span className="confirmed-banner__hint">
-        編集する場合は複製してから行ってください。元の確定版は変わりません。
+        マスター組織図として保存中です。編集→保存で確定版のまま更新されます。
+        別案を試す場合は右の「別案として複製」を使用してください。
       </span>
-      <button className="btn btn--primary btn--xs" onClick={duplicateAndEdit}>
-        複製して編集
+      <button className="btn btn--ghost btn--xs" onClick={duplicateAsDraft}>
+        別案として複製
       </button>
     </div>
   );

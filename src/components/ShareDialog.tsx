@@ -22,7 +22,6 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const setToast = useOrgStore((s) => s.setToast);
   const save = useVersionsStore((s) => s.save);
   const updateSnapshot = useVersionsStore((s) => s.updateSnapshot);
-  const versions = useVersionsStore((s) => s.versions);
   const view = useUiStore((s) => s.view);
   const currentUser = useAuthStore((s) => s.currentUser);
 
@@ -60,17 +59,11 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   async function prepareShare() {
     const author = getAuthor() ?? currentUser?.display_name ?? "共有";
 
-    const currentFile = currentVersionId
-      ? versions.find((v) => v.id === currentVersionId)
-      : null;
-    const isConfirmed = !!currentFile?.is_confirmed;
     const canOverwrite =
-      !!currentVersionId &&
-      !isConfirmed &&
-      currentUser?.role !== "viewer";
+      !!currentVersionId && currentUser?.role !== "viewer";
 
     // Branch 1+2: nothing to write. Just share the loaded version.
-    if (currentVersionId && (!dirty || isConfirmed || currentUser?.role === "viewer")) {
+    if (currentVersionId && (!dirty || currentUser?.role === "viewer")) {
       setVersionIdToShare(currentVersionId);
       setVersionLabelToShare(currentVersionLabel);
       setPhase("ready");

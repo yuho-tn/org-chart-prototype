@@ -98,13 +98,15 @@ export function VersionsPanel() {
       setToast({ kind: "error", message: "ファイルの読み込みに失敗しました" });
       return;
     }
-    const lockEdits = !canEdit || isConfirmed;
-    setViewOnly(lockEdits);
+    // Confirmed files are now editable (they act as the "master" org chart).
+    // Edit access is solely a function of accessForVersion(); the FIX label
+    // doesn't lock edits any more — only an explicit 確定解除 reverts to draft.
+    setViewOnly(!canEdit);
     replaceNodes(nodes, { versionId: id, versionLabel: name });
-    if (isConfirmed) {
+    if (isConfirmed && canEdit) {
       setToast({
         kind: "info",
-        message: "確定版を開きました（閲覧のみ）。編集する場合は「複製」してください。",
+        message: "確定版（マスター）を開きました。編集して保存すると確定版のまま更新されます。",
       });
     } else if (!canEdit) {
       setToast({

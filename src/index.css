@@ -201,25 +201,31 @@ select.field__input {
   color: var(--text-muted);
 }
 
-/* ── Confirmed-file lock banner (between TopBar and ViewTabs) ────── */
+/* ── Confirmed-file (master) banner ───────────────────────────────── */
+/* Confirmed files are still editable (they're the canonical "master"
+ * chart). The banner advertises FIX status + period in a calmer color
+ * so users don't mistake it for a read-only lock. */
 .confirmed-banner {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px 18px;
-  background: linear-gradient(180deg, #fff7ed 0%, #fed7aa 100%);
-  border-bottom: 1px solid #fb923c;
+  background: linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%);
+  border-bottom: 1px solid #fcd34d;
   font-size: 12px;
-  color: #7c2d12;
+  color: #78350f;
 }
 
 .confirmed-banner__label {
   font-weight: 700;
+  color: #92400e;
+  white-space: nowrap;
 }
 
 .confirmed-banner__hint {
   flex: 1;
-  color: #9a3412;
+  color: #92400e;
+  opacity: 0.85;
 }
 
 /* ── View tabs (between TopBar and main) ───────────────────────────── */
