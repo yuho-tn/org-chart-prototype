@@ -1,26 +1,37 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useEmployeesStore } from "../store/useEmployeesStore";
 import type { OrgNode, PersonRole } from "../lib/types";
+import { ROLE_DESCRIPTIONS } from "../lib/types";
 import type { EmployeeRow } from "../lib/supabase";
 
-/**
- * Aggregate of all chart positions held by a single person. Built once per
- * render from the placed person nodes; the same employee may have one
- * primary (主務) and any number of concurrent (兼務) entries — exactly the
- * shape the user wants the table to surface.
- */
+/* ───────────────────── Data shape ───────────────────── */
+
+type AssignmentEntry = {
+  node: OrgNode;
+  path: string;
+  pathSegments: string[];
+  role: PersonRole;
+};
+
 type Assignment = {
   /** Stable key — employeeNumber when linked, else node id of the primary. */
   key: string;
   name: string;
+  nameSortKey: string;
   employeeNumber: string | null;
-  primary: { node: OrgNode; path: string; role: PersonRole } | null;
-  concurrent: { node: OrgNode; path: string; role: PersonRole }[];
+  primary: AssignmentEntry | null;
+  concurrent: AssignmentEntry[];
   employeeMaster: EmployeeRow | null;
+  /** Cached union of all dept names appearing in primary + concurrent paths. */
+  deptSet: Set<string>;
+  /** Cached union of all roles (primary + concurrent). */
+  roleSet: Set<NonNullable<PersonRole>>;
 };
 
-function pathOfParents(nodes: OrgNode[], node: OrgNode): string {
+/* ───────────────────── Helpers ───────────────────── */
+
+function pathSegments(nodes: OrgNode[], node: OrgNode): string[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const parts: string[] = [];
   let cur: OrgNode | undefined = node.parentId
@@ -30,28 +41,14 @@ function pathOfParents(nodes: OrgNode[], node: OrgNode): string {
     parts.unshift(cur.name);
     cur = cur.parentId ? byId.get(cur.parentId) : undefined;
   }
-  return parts.join(" / ") || "（未配置）";
+  return parts;
 }
 
-/**
- * Strip the leading "*" that 兼務 chips carry as a visual marker. Two chips
- * for the same person otherwise show as different names in this view.
- */
 function cleanName(s: string): string {
   return s.replace(/^\*+\s*/, "").trim();
 }
 
-/**
- * Build the assignment rows. Group person nodes by employeeNumber when
- * present (兼務 use case shares an employee_number across nodes), and fall
- * back to a normalized name for nodes that aren't linked yet so they still
- * show up. Only placed nodes (parent set, not unplaced) are counted —
- * unplaced tray entries aren't "配属" yet.
- */
-function buildAssignments(
-  nodes: OrgNode[],
-  employees: EmployeeRow[],
-): Assignment[] {
+function buildAssignments(nodes: OrgNode[], employees: EmployeeRow[]): Assignment[] {
   const empByNumber = new Map(employees.map((e) => [e.employee_number, e]));
   const placed = nodes.filter(
     (n) => n.kind === "person" && !n.isUnplaced && n.parentId !== null,
@@ -73,7 +70,6 @@ function buildAssignments(
       groups.set(key, g);
     }
     g.nodes.push(n);
-    // Prefer the primary (non-concurrent) node's name as the group label.
     if (!n.isConcurrent) g.name = cleanName(n.name);
   }
 
@@ -81,66 +77,266 @@ function buildAssignments(
   for (const g of groups.values()) {
     const primaryNode = g.nodes.find((n) => !n.isConcurrent) ?? null;
     const concurrentNodes = g.nodes.filter((n) => n.id !== primaryNode?.id);
-    const master = g.employeeNumber
-      ? empByNumber.get(g.employeeNumber) ?? null
-      : null;
+    const master = g.employeeNumber ? empByNumber.get(g.employeeNumber) ?? null : null;
+
+    function entryFor(n: OrgNode): AssignmentEntry {
+      const segs = pathSegments(nodes, n);
+      return {
+        node: n,
+        path: segs.length ? segs.join(" / ") : "（未配置）",
+        pathSegments: segs,
+        role: n.roleLabel ?? null,
+      };
+    }
+
+    const primary = primaryNode ? entryFor(primaryNode) : null;
+    const concurrent = concurrentNodes.map(entryFor);
+
+    const deptSet = new Set<string>();
+    for (const e of [primary, ...concurrent]) {
+      if (!e) continue;
+      for (const seg of e.pathSegments) deptSet.add(seg);
+    }
+
+    const roleSet = new Set<NonNullable<PersonRole>>();
+    for (const e of [primary, ...concurrent]) {
+      if (e?.role) roleSet.add(e.role);
+    }
+
+    const displayName = master?.full_name?.trim() || g.name;
     out.push({
       key: g.key,
-      name: master?.full_name?.trim() || g.name,
+      name: displayName,
+      nameSortKey: displayName.normalize("NFKC"),
       employeeNumber: g.employeeNumber,
-      primary: primaryNode
-        ? {
-            node: primaryNode,
-            path: pathOfParents(nodes, primaryNode),
-            role: primaryNode.roleLabel ?? null,
-          }
-        : null,
-      concurrent: concurrentNodes.map((n) => ({
-        node: n,
-        path: pathOfParents(nodes, n),
-        role: n.roleLabel ?? null,
-      })),
+      primary,
+      concurrent,
       employeeMaster: master,
+      deptSet,
+      roleSet,
     });
   }
 
-  out.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  // Default order: 氏名 ascending. Sorting is overridden by user choice
+  // later but we still build the array in a stable, predictable order.
+  out.sort((a, b) => a.nameSortKey.localeCompare(b.nameSortKey, "ja"));
   return out;
 }
+
+/* ───────────────────── Sort ───────────────────── */
+
+type SortKey = "name" | "empno" | "primary" | "concurrent";
+type SortDir = "asc" | "desc";
+
+function sortValue(a: Assignment, key: SortKey): string | number {
+  switch (key) {
+    case "name":
+      return a.nameSortKey;
+    case "empno":
+      // Empty empno sorts to the end on asc.
+      return a.employeeNumber ?? "￿";
+    case "primary":
+      return a.primary?.path ?? "￿";
+    case "concurrent":
+      return a.concurrent.length;
+  }
+}
+
+function compareAssignments(a: Assignment, b: Assignment, key: SortKey, dir: SortDir): number {
+  const av = sortValue(a, key);
+  const bv = sortValue(b, key);
+  let cmp: number;
+  if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
+  else cmp = String(av).localeCompare(String(bv), "ja");
+  // Tie-break by name asc so the table never feels shuffled.
+  if (cmp === 0) cmp = a.nameSortKey.localeCompare(b.nameSortKey, "ja");
+  return dir === "asc" ? cmp : -cmp;
+}
+
+/* ───────────────────── Filter popover ───────────────────── */
+
+function FilterPopover({
+  label,
+  options,
+  selected,
+  onChange,
+  formatOption,
+}: {
+  label: string;
+  options: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+  formatOption?: (opt: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as globalThis.Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const filteredOptions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) =>
+      (formatOption?.(o) ?? o).toLowerCase().includes(q),
+    );
+  }, [options, query, formatOption]);
+
+  function toggle(opt: string) {
+    const next = new Set(selected);
+    if (next.has(opt)) next.delete(opt);
+    else next.add(opt);
+    onChange(next);
+  }
+
+  function clear() {
+    onChange(new Set());
+  }
+
+  const summary =
+    selected.size === 0
+      ? `${label}：すべて`
+      : `${label}：${selected.size}件選択中`;
+
+  return (
+    <div className="filterpop" ref={ref}>
+      <button
+        type="button"
+        className={`filterpop__trigger ${selected.size > 0 ? "is-active" : ""}`}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {summary}
+        <span aria-hidden style={{ marginLeft: 6 }}>▾</span>
+      </button>
+      {open && (
+        <div className="filterpop__panel" role="dialog">
+          <input
+            className="field__input field__input--xs filterpop__search"
+            placeholder={`${label}内を絞り込み`}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoFocus
+          />
+          <div className="filterpop__list">
+            {filteredOptions.length === 0 ? (
+              <p className="filterpop__empty">該当なし</p>
+            ) : (
+              filteredOptions.map((opt) => (
+                <label key={opt} className="filterpop__row">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(opt)}
+                    onChange={() => toggle(opt)}
+                  />
+                  <span>{formatOption?.(opt) ?? opt}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="filterpop__footer">
+            <button
+              type="button"
+              className="btn btn--ghost btn--xs"
+              onClick={clear}
+              disabled={selected.size === 0}
+            >
+              選択解除
+            </button>
+            <button
+              type="button"
+              className="btn btn--xs"
+              onClick={() => setOpen(false)}
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────── Main view ───────────────────── */
 
 export function AssignmentsView() {
   const nodes = useOrgStore((s) => s.nodes);
   const setSelected = useOrgStore((s) => s.setSelected);
   const employees = useEmployeesStore((s) => s.employees);
 
-  const [filter, setFilter] = useState("");
+  const [nameQuery, setNameQuery] = useState("");
+  const [deptFilter, setDeptFilter] = useState<Set<string>>(new Set());
+  const [roleFilter, setRoleFilter] = useState<Set<string>>(new Set());
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const assignments = useMemo(() => buildAssignments(nodes, employees), [nodes, employees]);
 
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return assignments;
-    return assignments.filter((a) => {
-      const blob = [
-        a.name,
-        a.employeeNumber,
-        a.primary?.path,
-        a.primary?.role,
-        a.employeeMaster?.department,
-        a.employeeMaster?.position_title,
-        a.employeeMaster?.employment_type,
-        ...a.concurrent.map((c) => c.path),
-        ...a.concurrent.map((c) => c.role ?? ""),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return blob.includes(q);
-    });
-  }, [assignments, filter]);
+  // Distinct option lists for the dept / role multi-selects, derived from
+  // the data so users only see filters that match something.
+  const allDepts = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of assignments) for (const d of a.deptSet) s.add(d);
+    return [...s].sort((x, y) => x.localeCompare(y, "ja"));
+  }, [assignments]);
 
-  // Header counts so users can see "X people placed, of whom Y have 兼務"
-  // at a glance.
+  const allRoles = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of assignments) for (const r of a.roleSet) s.add(r);
+    return [...s];
+  }, [assignments]);
+
+  const filtered = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    return assignments.filter((a) => {
+      if (q) {
+        // Name-only search — dept/role have their own filters.
+        const blob = [a.name, a.employeeNumber].filter(Boolean).join(" ").toLowerCase();
+        if (!blob.includes(q)) return false;
+      }
+      if (deptFilter.size > 0) {
+        let ok = false;
+        for (const d of deptFilter) {
+          if (a.deptSet.has(d)) {
+            ok = true;
+            break;
+          }
+        }
+        if (!ok) return false;
+      }
+      if (roleFilter.size > 0) {
+        let ok = false;
+        for (const r of roleFilter) {
+          if (a.roleSet.has(r as NonNullable<PersonRole>)) {
+            ok = true;
+            break;
+          }
+        }
+        if (!ok) return false;
+      }
+      return true;
+    });
+  }, [assignments, nameQuery, deptFilter, roleFilter]);
+
+  const sorted = useMemo(() => {
+    const out = [...filtered];
+    out.sort((a, b) => compareAssignments(a, b, sortKey, sortDir));
+    return out;
+  }, [filtered, sortKey, sortDir]);
+
   const totals = useMemo(() => {
     return {
       total: assignments.length,
@@ -148,6 +344,25 @@ export function AssignmentsView() {
       withoutPrimary: assignments.filter((a) => !a.primary).length,
     };
   }, [assignments]);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      // Default direction varies by column — names ascending, counts
+      // descending feels right (most concurrent first).
+      setSortDir(key === "concurrent" ? "desc" : "asc");
+    }
+  }
+
+  function sortIndicator(key: SortKey): string {
+    if (sortKey !== key) return "↕";
+    return sortDir === "asc" ? "▲" : "▼";
+  }
+
+  const filterCount =
+    (nameQuery.trim() ? 1 : 0) + (deptFilter.size > 0 ? 1 : 0) + (roleFilter.size > 0 ? 1 : 0);
 
   return (
     <div className="assignlist">
@@ -159,28 +374,86 @@ export function AssignmentsView() {
             {totals.withoutPrimary > 0 && (
               <> ／ <span className="assignlist__warn">主務未設定 {totals.withoutPrimary} 名</span></>
             )}
+            {filterCount > 0 && (
+              <> ／ 表示 <strong>{sorted.length}</strong> 名</>
+            )}
           </p>
         </div>
-        <input
-          className="field__input assignlist__filter"
-          placeholder="氏名 / 部署 / 役職 / 社員番号 で絞り込み"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
       </header>
+
+      <div className="assignlist__filters">
+        <input
+          className="field__input assignlist__nameInput"
+          placeholder="氏名 / 社員番号 で絞り込み"
+          value={nameQuery}
+          onChange={(e) => setNameQuery(e.target.value)}
+        />
+        <FilterPopover
+          label="部署"
+          options={allDepts}
+          selected={deptFilter}
+          onChange={setDeptFilter}
+        />
+        <FilterPopover
+          label="役職"
+          options={allRoles}
+          selected={roleFilter}
+          onChange={setRoleFilter}
+          formatOption={(r) =>
+            ROLE_DESCRIPTIONS[r as NonNullable<PersonRole>]
+              ? `${r}（${ROLE_DESCRIPTIONS[r as NonNullable<PersonRole>]}）`
+              : r
+          }
+        />
+        {filterCount > 0 && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--xs"
+            onClick={() => {
+              setNameQuery("");
+              setDeptFilter(new Set());
+              setRoleFilter(new Set());
+            }}
+          >
+            すべての絞り込みを解除
+          </button>
+        )}
+      </div>
 
       <div className="assignlist__tableWrap">
         <table className="assignlist__table">
           <thead>
             <tr>
-              <th style={{ width: 200 }}>氏名</th>
-              <th style={{ width: 110 }}>社員番号</th>
-              <th>主務（部署 ／ 役職）</th>
-              <th>兼務</th>
+              <th
+                style={{ width: 220 }}
+                className={`assignlist__sortable ${sortKey === "name" ? "is-sorted" : ""}`}
+                onClick={() => toggleSort("name")}
+              >
+                氏名 <span className="assignlist__sortIcon">{sortIndicator("name")}</span>
+              </th>
+              <th
+                style={{ width: 120 }}
+                className={`assignlist__sortable ${sortKey === "empno" ? "is-sorted" : ""}`}
+                onClick={() => toggleSort("empno")}
+              >
+                社員番号 <span className="assignlist__sortIcon">{sortIndicator("empno")}</span>
+              </th>
+              <th
+                className={`assignlist__sortable ${sortKey === "primary" ? "is-sorted" : ""}`}
+                onClick={() => toggleSort("primary")}
+              >
+                主務（部署 ／ 役職） <span className="assignlist__sortIcon">{sortIndicator("primary")}</span>
+              </th>
+              <th
+                className={`assignlist__sortable ${sortKey === "concurrent" ? "is-sorted" : ""}`}
+                onClick={() => toggleSort("concurrent")}
+              >
+                兼務 <span className="assignlist__sortIcon">{sortIndicator("concurrent")}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <tr>
                 <td colSpan={4} className="assignlist__empty">
                   {assignments.length === 0
@@ -189,7 +462,7 @@ export function AssignmentsView() {
                 </td>
               </tr>
             ) : (
-              filtered.map((a) => (
+              sorted.map((a) => (
                 <tr key={a.key}>
                   <td className="assignlist__name">
                     {a.primary ? (
