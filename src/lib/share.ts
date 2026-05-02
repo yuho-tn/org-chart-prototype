@@ -9,17 +9,18 @@ export function parseShareParams(): ShareParams {
   const params = new URLSearchParams(window.location.search);
   const versionId = params.get("v");
   const viewParam = params.get("view") as OrgView | null;
-  return {
-    versionId,
-    view: viewParam === "list" ? "list" : "tree",
-  };
+  const view: OrgView =
+    viewParam === "list" || viewParam === "assignments" || viewParam === "tree"
+      ? viewParam
+      : "tree";
+  return { versionId, view };
 }
 
 export function buildShareUrl(versionId: string, view: OrgView = "tree"): string {
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("v", versionId);
-  if (view === "list") url.searchParams.set("view", "list");
+  if (view !== "tree") url.searchParams.set("view", view);
   return url.toString();
 }
 

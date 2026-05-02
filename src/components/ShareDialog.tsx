@@ -171,7 +171,14 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               />
             </label>
             <div className="share-tips">
-              リンク先のデフォルト表示：<strong>{view === "list" ? "リスト" : "ツリー"}</strong>
+              リンク先のデフォルト表示：
+              <strong>
+                {view === "list"
+                  ? "組織図リスト"
+                  : view === "assignments"
+                    ? "配属一覧"
+                    : "組織図ツリー"}
+              </strong>
               （現在のタブをそのまま反映）
             </div>
             <div className="modal__actions" style={{ marginTop: 12 }}>

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type OrgView = "tree" | "list";
+export type OrgView = "tree" | "list" | "assignments";
 
 /**
  * Primary navigation sections, shown as the top-tier of the global header.

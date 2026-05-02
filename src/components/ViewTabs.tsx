@@ -1,4 +1,10 @@
-import { useUiStore } from "../store/useUiStore";
+import { useUiStore, type OrgView } from "../store/useUiStore";
+
+const TABS: { id: OrgView; label: string; icon: string; tip: string }[] = [
+  { id: "tree", label: "組織図ツリー", icon: "⌬", tip: "ツリー形式（編集向け）" },
+  { id: "list", label: "組織図リスト", icon: "≡", tip: "リスト形式（PDF・印刷向け）" },
+  { id: "assignments", label: "配属一覧", icon: "👥", tip: "配置メンバーの主務／兼務を一覧" },
+];
 
 export function ViewTabs() {
   const view = useUiStore((s) => s.view);
@@ -6,26 +12,19 @@ export function ViewTabs() {
 
   return (
     <div className="view-tabs" role="tablist">
-      <button
-        role="tab"
-        aria-selected={view === "tree"}
-        className={`view-tab ${view === "tree" ? "is-active" : ""}`}
-        onClick={() => setView("tree")}
-        title="ツリー形式（編集向け）"
-      >
-        <span className="view-tab__icon" aria-hidden>⌬</span>
-        ツリー
-      </button>
-      <button
-        role="tab"
-        aria-selected={view === "list"}
-        className={`view-tab ${view === "list" ? "is-active" : ""}`}
-        onClick={() => setView("list")}
-        title="リスト形式（PDF・印刷向け）"
-      >
-        <span className="view-tab__icon" aria-hidden>≡</span>
-        リスト
-      </button>
+      {TABS.map((t) => (
+        <button
+          key={t.id}
+          role="tab"
+          aria-selected={view === t.id}
+          className={`view-tab ${view === t.id ? "is-active" : ""}`}
+          onClick={() => setView(t.id)}
+          title={t.tip}
+        >
+          <span className="view-tab__icon" aria-hidden>{t.icon}</span>
+          {t.label}
+        </button>
+      ))}
       <div className="view-tabs__spacer" />
       {view === "list" && (
         <button

@@ -15,6 +15,7 @@ import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
 import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
 import { ConfirmedBanner } from "./components/ConfirmedBanner";
 import { ListView } from "./components/ListView";
+import { AssignmentsView } from "./components/AssignmentsView";
 import { ViewTabs } from "./components/ViewTabs";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
@@ -178,6 +179,20 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
   return <EditorShell />;
 }
 
+function ViewBody({ view }: { view: ReturnType<typeof useUiStore.getState>["view"] }) {
+  if (view === "tree") {
+    return (
+      <div className="app__canvas">
+        <Canvas />
+      </div>
+    );
+  }
+  if (view === "assignments") {
+    return <AssignmentsView />;
+  }
+  return <ListView />;
+}
+
 function EditorShell() {
   const view = useUiStore((s) => s.view);
   return (
@@ -189,13 +204,7 @@ function EditorShell() {
       <div className="app__main">
         <Sidebar />
         <div className="app__content">
-          {view === "tree" ? (
-            <div className="app__canvas">
-              <Canvas />
-            </div>
-          ) : (
-            <ListView />
-          )}
+          <ViewBody view={view} />
         </div>
         <Inspector />
       </div>
@@ -204,7 +213,7 @@ function EditorShell() {
   );
 }
 
-function ViewerLayout({ view }: { view: "tree" | "list" }) {
+function ViewerLayout({ view }: { view: ReturnType<typeof useUiStore.getState>["view"] }) {
   const sharedLabel = useUiStore((s) => s.sharedVersionLabel);
 
   function openInEditor() {
@@ -229,13 +238,7 @@ function ViewerLayout({ view }: { view: "tree" | "list" }) {
         <ViewTabs />
         <div className="app__main app__main--viewer">
           <div className="app__content">
-            {view === "tree" ? (
-              <div className="app__canvas">
-                <Canvas />
-              </div>
-            ) : (
-              <ListView />
-            )}
+            <ViewBody view={view} />
           </div>
         </div>
         <Toast />
