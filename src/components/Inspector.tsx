@@ -39,8 +39,15 @@ function pathOf(nodes: OrgNode[], node: OrgNode, includeLeaf: boolean): string {
 /**
  * Given a person node, gather every other node that points at the same
  * employee_number — these are the 兼務 entries. The "primary" (主務) is
- * the one with isConcurrent=false; if none exists explicitly, fall back
- * to the selected node so we still show *something* useful.
+ * picked in this order:
+ *   1. If the selected node itself is non-concurrent, it wins. This makes
+ *      the inspector's "I just unchecked 兼務" expectation reliable even
+ *      when stale orphan rows or pre-existing primaries are still around.
+ *   2. Otherwise the first match with isConcurrent=false.
+ *   3. Otherwise null (no primary anywhere).
+ *
+ * Orphan nodes (parentId=null, !isUnplaced) are excluded so they can't
+ * silently outrank a real placed primary.
  */
 function affiliationsOf(
   nodes: OrgNode[],
@@ -56,9 +63,14 @@ function affiliationsOf(
     (n) =>
       n.kind === "person" &&
       n.employeeNumber === selected.employeeNumber &&
-      !n.isUnplaced,
+      !n.isUnplaced &&
+      n.parentId !== null,
   );
-  const primary = matches.find((n) => !n.isConcurrent) ?? null;
+  const selectedQualifies =
+    !selected.isConcurrent && !selected.isUnplaced && selected.parentId !== null;
+  const primary: OrgNode | null = selectedQualifies
+    ? selected
+    : matches.find((n) => !n.isConcurrent) ?? null;
   const concurrent = matches.filter((n) => n.id !== primary?.id);
   return { primary, concurrent };
 }

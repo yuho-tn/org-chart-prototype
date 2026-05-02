@@ -388,10 +388,32 @@ export const useOrgStore = create<Store>((set, get) => ({
     const target = state.nodes.find((n) => n.id === id);
     if (!target || target.kind !== "person") return;
     if (!!target.isConcurrent === isConcurrent) return;
+    // Mutex: when promoting THIS node to 主務 (isConcurrent=false), force every
+    // other node sharing the same employeeNumber to 兼務. Without this guard
+    // a previously-existing primary (or a stray orphan node carried over from
+    // an older edit) would still satisfy the "first with !isConcurrent" rule
+    // and outrank the user's just-toggled choice. With it, the user's intent
+    // — "make me the main one" — is unambiguous regardless of prior data.
+    const empNo = target.employeeNumber ?? null;
+    const becomingPrimary = !isConcurrent;
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
-      nodes: state.nodes.map((n) => (n.id === id ? { ...n, isConcurrent } : n)),
+      nodes: state.nodes.map((n) => {
+        if (n.id === id) return { ...n, isConcurrent };
+        if (
+          becomingPrimary &&
+          empNo &&
+          n.kind === "person" &&
+          n.employeeNumber === empNo &&
+          !n.isConcurrent
+        ) {
+          // Demote any prior 主務 (or orphan with isConcurrent=false) so we
+          // don't end up with two primaries for the same employee.
+          return { ...n, isConcurrent: true };
+        }
+        return n;
+      }),
       log: logEntry(
         state,
         "role",
