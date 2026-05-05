@@ -72,49 +72,91 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
 
   create: async (input) => {
     if (!supabase) return null;
+    // .maybeSingle() rather than .single() so a 0-row response (which can
+    // happen if RLS denies SELECT-after-INSERT) returns data:null instead
+    // of throwing — letting us tell the user *what* went wrong.
     const { data, error } = await supabase
       .from("hr_announcements")
       .insert(input)
       .select("*")
-      .single();
-    if (error || !data) {
-      set({ error: error?.message ?? "保存に失敗しました" });
+      .maybeSingle();
+    if (error) {
+      const isMissing = /relation .*hr_announcements.* does not exist/i.test(error.message);
+      set({
+        error: isMissing
+          ? "発令テーブル(hr_announcements)が見つかりません。supabase/migrations/0005_hr_announcements.sql をSQLエディタで実行してください。"
+          : `発令資料の保存に失敗しました: ${error.message}`,
+      });
+      return null;
+    }
+    if (!data) {
+      set({
+        error:
+          "保存はされた可能性がありますが結果を取得できませんでした。Supabaseの hr_announcements テーブルで anon ロールに対する INSERT/SELECT ポリシーが両方有効か（行レベルセキュリティ）をご確認ください。",
+      });
       return null;
     }
     const row = data as AnnouncementRow;
-    set({ list: [row, ...get().list] });
+    set({ list: [row, ...get().list], error: null });
     return row;
   },
 
   update: async (id, patch) => {
     if (!supabase) return false;
-    const { error } = await supabase
+    // Verify the UPDATE actually persisted: PostgREST returns no error when
+    // RLS silently blocks an UPDATE (0 rows affected), so we have to check
+    // the returned row instead of trusting "no error" as success.
+    const { data, error } = await supabase
       .from("hr_announcements")
       .update(patch)
-      .eq("id", id);
+      .eq("id", id)
+      .select("id, updated_at")
+      .maybeSingle();
     if (error) {
-      set({ error: error.message });
+      set({ error: `発令資料の更新に失敗しました: ${error.message}` });
+      return false;
+    }
+    if (!data) {
+      set({
+        error:
+          "DBへの反映が確認できませんでした。Supabaseの hr_announcements テーブルで anon ロールに対する UPDATE が許可されているかご確認ください。",
+      });
       return false;
     }
     set({
       list: get().list.map((r) =>
         r.id === id ? { ...r, ...patch, updated_at: new Date().toISOString() } : r,
       ),
+      error: null,
     });
     return true;
   },
 
   remove: async (id) => {
     if (!supabase) return false;
+    // Same RLS-resilient pattern: confirm the row was actually deleted by
+    // requesting it back. If it's still there we know DELETE was blocked.
     const { error } = await supabase
       .from("hr_announcements")
       .delete()
       .eq("id", id);
     if (error) {
-      set({ error: error.message });
+      set({ error: `削除に失敗しました: ${error.message}` });
       return false;
     }
-    set({ list: get().list.filter((r) => r.id !== id) });
+    const verify = await supabase
+      .from("hr_announcements")
+      .select("id")
+      .eq("id", id)
+      .maybeSingle();
+    if (verify.data) {
+      set({
+        error:
+          "削除がDBに反映されませんでした。Supabaseの hr_announcements テーブルで anon ロールに対する DELETE が許可されているかご確認ください。",
+      });
+      return false;
+    }
+    set({ list: get().list.filter((r) => r.id !== id), error: null });
     return true;
   },
 
@@ -127,9 +169,13 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
       .from("hr_announcements")
       .select("*")
       .eq("id", id)
-      .single();
-    if (error || !data) {
-      set({ error: error?.message ?? "発令の取得に失敗しました" });
+      .maybeSingle();
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    if (!data) {
+      set({ error: "発令資料が見つかりません" });
       return null;
     }
     return data as AnnouncementRow;

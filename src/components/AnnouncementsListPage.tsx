@@ -57,11 +57,12 @@ export function AnnouncementsListPage() {
     const id = pendingDelete.id;
     setPendingDelete(null);
     const ok = await removeOne(id);
-    setToast(
-      ok
-        ? { kind: "info", message: "発令資料を削除しました" }
-        : { kind: "error", message: "削除に失敗しました" },
-    );
+    if (ok) {
+      setToast({ kind: "info", message: "発令資料を削除しました" });
+    } else {
+      const detail = useAnnouncementsStore.getState().error;
+      setToast({ kind: "error", message: detail ?? "削除に失敗しました" });
+    }
   }
 
   async function handleCreate(input: {
@@ -89,7 +90,11 @@ export function AnnouncementsListPage() {
       created_by_email: currentUser?.email ?? null,
     });
     if (!row) {
-      setToast({ kind: "error", message: "発令資料の作成に失敗しました" });
+      const detail = useAnnouncementsStore.getState().error;
+      setToast({
+        kind: "error",
+        message: detail ?? "発令資料の作成に失敗しました",
+      });
       return;
     }
     setToast({ kind: "info", message: "発令資料を作成しました" });

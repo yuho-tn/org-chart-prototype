@@ -60,7 +60,8 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
     if (!row || !draft) return;
     const ok = await update(row.id, { payload: draft, title: draftTitle });
     if (!ok) {
-      setToast({ kind: "error", message: "保存に失敗しました" });
+      const detail = useAnnouncementsStore.getState().error;
+      setToast({ kind: "error", message: detail ?? "保存に失敗しました" });
       return;
     }
     setRow({ ...row, payload: draft, title: draftTitle });
