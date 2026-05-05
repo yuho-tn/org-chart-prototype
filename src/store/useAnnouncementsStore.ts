@@ -57,7 +57,7 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
       .order("period", { ascending: false })
       .order("created_at", { ascending: false });
     if (error) {
-      const isMissing = /relation .*hr_announcements.* does not exist/i.test(error.message);
+      const isMissing = /(relation|table).*hr_announcements.*(does not exist|in the schema cache)/i.test(error.message);
       set({
         loading: false,
         error: isMissing
@@ -81,7 +81,7 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
       .select("*")
       .maybeSingle();
     if (error) {
-      const isMissing = /relation .*hr_announcements.* does not exist/i.test(error.message);
+      const isMissing = /(relation|table).*hr_announcements.*(does not exist|in the schema cache)/i.test(error.message);
       set({
         error: isMissing
           ? "発令テーブル(hr_announcements)が見つかりません。supabase/migrations/0005_hr_announcements.sql をSQLエディタで実行してください。"
