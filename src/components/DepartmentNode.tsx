@@ -24,8 +24,18 @@ export type DeptNodeData = {
     selected: boolean;
     isExecutive: boolean;
     isConcurrent?: boolean;
+    /** True if this person isn't linked to a row in the employee master.
+     *  Surfaced as a small ⚠ badge so the user can fix it before generating
+     *  an HR announcement (which silently skips unlinked people). */
+    isUnlinked?: boolean;
   }[];
-  members: { id: string; name: string; selected: boolean; isConcurrent?: boolean }[];
+  members: {
+    id: string;
+    name: string;
+    selected: boolean;
+    isConcurrent?: boolean;
+    isUnlinked?: boolean;
+  }[];
   viewOnly?: boolean;
 };
 
@@ -357,7 +367,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
           return (
             <div
               key={p.id}
-              className={`chip chip--leader nodrag ${p.selected ? "is-selected" : ""} ${p.isExecutive ? "chip--exec" : ""}`}
+              className={`chip chip--leader nodrag ${p.selected ? "is-selected" : ""} ${p.isExecutive ? "chip--exec" : ""} ${p.isUnlinked ? "chip--unlinked" : ""}`}
               style={{ background: color.leaderStrip, color: color.leaderText }}
               draggable={!data.viewOnly}
               onDragStart={(e) => startChipDrag(e, p.id, p.name)}
@@ -365,10 +375,19 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
               onClick={(e) => selectChip(e, p.id)}
               onDoubleClick={(e) => startChipEdit(e, p.id, p.name)}
               onMouseDown={(e) => e.stopPropagation()}
-              title={`${p.roleLabel ?? ""}：${p.name}${p.isExecutive ? "（役員）" : ""}${p.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`}
+              title={`${p.roleLabel ?? ""}：${p.name}${p.isExecutive ? "（役員）" : ""}${p.isConcurrent ? "（兼務）" : ""}${p.isUnlinked ? "（従業員マスター未紐付け）" : ""}（ダブルクリックで編集）`}
             >
               <span className="chip__role">{p.roleLabel}</span>
               <span className="chip__name">{displayName(p.name, p.isConcurrent)}</span>
+              {p.isUnlinked && (
+                <span
+                  className="chip__warn"
+                  aria-label="従業員マスター未紐付け"
+                  title="従業員マスターと紐付いていません — Inspectorから紐付けてください"
+                >
+                  ⚠
+                </span>
+              )}
               {p.isExecutive && <span className="chip__badge">役員</span>}
               {p.isConcurrent && <span className="chip__badge chip__badge--concurrent">兼務</span>}
             </div>
@@ -396,17 +415,26 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
           return (
             <div
               key={p.id}
-              className={`chip chip--member nodrag ${p.selected ? "is-selected" : ""}`}
+              className={`chip chip--member nodrag ${p.selected ? "is-selected" : ""} ${p.isUnlinked ? "chip--unlinked" : ""}`}
               draggable={!data.viewOnly}
               onDragStart={(e) => startChipDrag(e, p.id, p.name)}
               onDragEnd={endChipDrag}
               onClick={(e) => selectChip(e, p.id)}
               onDoubleClick={(e) => startChipEdit(e, p.id, p.name)}
               onMouseDown={(e) => e.stopPropagation()}
-              title={`${p.name}${p.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`}
+              title={`${p.name}${p.isConcurrent ? "（兼務）" : ""}${p.isUnlinked ? "（従業員マスター未紐付け）" : ""}（ダブルクリックで編集）`}
             >
               <span className="chip__bullet">•</span>
               <span className="chip__name">{displayName(p.name, p.isConcurrent)}</span>
+              {p.isUnlinked && (
+                <span
+                  className="chip__warn"
+                  aria-label="従業員マスター未紐付け"
+                  title="従業員マスターと紐付いていません — Inspectorから紐付けてください"
+                >
+                  ⚠
+                </span>
+              )}
               {p.isConcurrent && <span className="chip__badge chip__badge--concurrent">兼務</span>}
             </div>
           );

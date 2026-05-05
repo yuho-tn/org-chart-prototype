@@ -1871,6 +1871,33 @@ body.is-dragging .dept-card__add-child {
   background: #6366f1;
 }
 
+/* Unlinked-employee warning. Highlights chips whose person node has no
+ * link to the employee master (or whose link no longer resolves). */
+.chip__warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  width: 14px;
+  height: 14px;
+  background: #f59e0b;
+  color: #ffffff;
+  border-radius: 50%;
+  font-weight: 800;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.chip--unlinked {
+  outline: 1.5px dashed #f59e0b;
+  outline-offset: -1.5px;
+}
+
+.exec-card--unlinked {
+  outline: 1.5px dashed #f59e0b;
+  outline-offset: -1.5px;
+}
+
 .lv-chip__badge--concurrent {
   background: #6366f1;
 }
@@ -2099,33 +2126,105 @@ body.is-dragging .dept-card__add-child {
 }
 
 .annsec--sub {
-  margin: 14px 0 14px 18px;
+  margin: 18px 0 14px 0;
 }
 
+/* Top-level section headings (①②③④) get a unified blue banner so the
+ * announcement reads like an outlined document. Sub-sections (A. / B.
+ * inside ③) revert to a quieter underline so the hierarchy is obvious. */
 .annsec__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 16px;
   font-weight: 700;
-  margin: 0 0 10px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border-strong);
+  margin: 0 0 14px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, var(--primary), #1d4ed8);
+  color: #ffffff;
+  border-radius: 6px;
+  border: none;
 }
 
 .annsec--sub .annsec__head {
   font-size: 14px;
-  border-bottom-style: dashed;
+  margin: 0 0 10px;
+  padding: 0 0 4px;
+  background: transparent;
+  color: var(--text-strong);
+  border-radius: 0;
+  border-bottom: 1px dashed var(--border-strong);
 }
 
 .annsec__num {
-  display: inline-block;
-  margin-right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-weight: 800;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.annsec--sub .annsec__num {
+  background: transparent;
   color: var(--primary);
+  font-weight: 700;
+  font-size: 13px;
+  min-width: auto;
+  height: auto;
+  padding: 0;
+  margin-right: 4px;
 }
 
 .annsec__count {
-  margin-left: 8px;
+  margin-left: auto;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+}
+
+.annsec--sub .annsec__count {
+  color: var(--text-muted);
+}
+
+/* Grouped (by destination department) display for transfer / promotion
+ * sections. Each bucket gets a thin "destination" header and the rows
+ * underneath. */
+.anngrp {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.anngrp__bucket {
+  border-left: 3px solid #c7d2fe;
+  padding-left: 12px;
+}
+
+.anngrp__head {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: #1e3a8a;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.anngrp__count {
   font-size: 11px;
   color: var(--text-muted);
   font-weight: 500;
+}
+
+.annrow__path {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .annsec__empty {
@@ -2206,6 +2305,90 @@ body.is-dragging .dept-card__add-child {
 .annrow__note {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+/* ── Unlinked-employee alert (above canvas) ─────────────────────────── */
+.unlinked-alert {
+  border-bottom: 1px solid #fcd34d;
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  flex-shrink: 0;
+}
+
+.unlinked-alert__bar {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: #78350f;
+}
+
+.unlinked-alert__bar:hover {
+  background: rgba(251, 191, 36, 0.15);
+}
+
+.unlinked-alert__icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.unlinked-alert__text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.unlinked-alert__caret {
+  font-size: 12px;
+  color: #92400e;
+  flex-shrink: 0;
+}
+
+.unlinked-alert__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 18px 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.unlinked-alert__list li {
+  display: inline-flex;
+}
+
+.unlinked-alert__name {
+  background: #ffffff;
+  border: 1px solid #fcd34d;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.unlinked-alert__name:hover {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.unlinked-alert__num {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 
 /* Print: show only the paper, hide chrome */

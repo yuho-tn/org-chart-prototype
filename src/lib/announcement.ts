@@ -1,4 +1,4 @@
-import type { OrgNode, PersonRole } from "./types";
+import type { DeptCategory, OrgNode, PersonRole } from "./types";
 import type { EmployeeRow } from "./supabase";
 
 /**
@@ -42,7 +42,7 @@ function rankOf(role: PersonRole | undefined): number {
 function ancestorOfCategory(
   node: OrgNode,
   byId: Map<string, OrgNode>,
-  category: "DIV" | "TM",
+  category: DeptCategory,
 ): OrgNode | null {
   let cur: OrgNode | undefined = node;
   while (cur) {
@@ -73,8 +73,21 @@ export type AnnouncementLeave = {
 export type AnnouncementMove = {
   employee_number: string;
   full_name: string;
+  /** Legacy flat strings — kept for backward compatibility with rows
+   *  saved before structured fields were introduced. New rows still
+   *  populate these (= the moving department's name) so existing
+   *  consumers that read .from / .to don't break. */
   from: string;
   to: string;
+  /** Structured path components (added 2026-05). Older rows may have
+   *  these absent; the renderer falls back to the flat from/to in that
+   *  case. */
+  from_div?: string | null;
+  from_tm?: string | null;
+  from_unit?: string | null;
+  to_div?: string | null;
+  to_tm?: string | null;
+  to_unit?: string | null;
   note?: string;
 };
 
@@ -83,6 +96,12 @@ export type AnnouncementPromotion = {
   full_name: string;
   from_role: string;
   to_role: string;
+  /** Department where this person sits AT THE TIME OF PROMOTION (chart B).
+   *  Helps the announcement reader see "where" the person was promoted —
+   *  the legacy data model had only roles, so older rows lack these. */
+  div?: string | null;
+  tm?: string | null;
+  unit?: string | null;
   note?: string;
 };
 
@@ -161,6 +180,7 @@ export function computeAnnouncement(
     node: OrgNode;
     div: string | null;
     tm: string | null;
+    unit: string | null;
     role: PersonRole;
   };
   function indexChart(nodes: OrgNode[]): Map<string, ChartEntry> {
@@ -171,10 +191,12 @@ export function computeAnnouncement(
       if (n.isUnplaced) continue;
       const div = ancestorOfCategory(n, byId, "DIV")?.name ?? null;
       const tm = ancestorOfCategory(n, byId, "TM")?.name ?? null;
+      const unit = ancestorOfCategory(n, byId, "Unit")?.name ?? null;
       out.set(n.employeeNumber, {
         node: n,
         div,
         tm,
+        unit,
         role: n.roleLabel ?? null,
       });
     }
@@ -191,33 +213,54 @@ export function computeAnnouncement(
     const ea = a.get(num);
     if (!ea) continue; // newcomer in chart B (already covered by hires if hired this period)
 
+    const fullName =
+      empByNumber.get(num)?.full_name ?? eb.node.name ?? num;
+    // Both flat (legacy) and structured fields are populated. The flat
+    // fields use the moving department's name so older renderers keep
+    // working; structured fields give the new full-path renderer all
+    // three levels (DIV / TM / Unit) at once.
+    const fromStruct = {
+      from_div: ea.div,
+      from_tm: ea.tm,
+      from_unit: ea.unit,
+    };
+    const toStruct = {
+      to_div: eb.div,
+      to_tm: eb.tm,
+      to_unit: eb.unit,
+    };
+
     // DIV change wins over TM change because moving across DIVs implicitly
     // changes TM too — we don't want to double-count.
     if ((ea.div ?? "") !== (eb.div ?? "")) {
       div_moves.push({
         employee_number: num,
-        full_name:
-          empByNumber.get(num)?.full_name ?? eb.node.name ?? num,
+        full_name: fullName,
         from: ea.div ?? "（未所属）",
         to: eb.div ?? "（未所属）",
+        ...fromStruct,
+        ...toStruct,
       });
     } else if ((ea.tm ?? "") !== (eb.tm ?? "")) {
       tm_moves.push({
         employee_number: num,
-        full_name:
-          empByNumber.get(num)?.full_name ?? eb.node.name ?? num,
+        full_name: fullName,
         from: ea.tm ?? "（TM外）",
         to: eb.tm ?? "（TM外）",
+        ...fromStruct,
+        ...toStruct,
       });
     }
 
     if (rankOf(eb.role) > rankOf(ea.role)) {
       promotions.push({
         employee_number: num,
-        full_name:
-          empByNumber.get(num)?.full_name ?? eb.node.name ?? num,
+        full_name: fullName,
         from_role: ea.role ?? "メンバー",
         to_role: eb.role ?? "メンバー",
+        div: eb.div,
+        tm: eb.tm,
+        unit: eb.unit,
       });
     }
   }
@@ -237,4 +280,32 @@ export function formatPeriodHeading(period: string): string {
   const m = /^(\d{4})-(\d{1,2})/.exec(period);
   if (!m) return period;
   return `${m[1]}年${parseInt(m[2], 10)}月度`;
+}
+
+/**
+ * Render a "DIV / TM / Unit" path. Empty levels collapse out. If the
+ * row has no structured info at all, returns null so the caller can fall
+ * back to the legacy flat string.
+ */
+export function formatDeptPath(
+  div: string | null | undefined,
+  tm: string | null | undefined,
+  unit: string | null | undefined,
+): string | null {
+  const parts = [div, tm, unit].filter((s): s is string => !!s && s.trim() !== "");
+  if (parts.length === 0) return null;
+  return parts.join(" / ");
+}
+
+/** Group destination — used by the detail page to bucket transfers under
+ *  the receiving department. For DIV moves we use to_div; for TM moves the
+ *  receiving TM is the meaningful grouper (within an unchanged DIV). */
+export function moveDestinationGroup(
+  m: AnnouncementMove,
+  kind: "div" | "tm",
+): string {
+  if (kind === "div") {
+    return m.to_div ?? m.to ?? "（未指定）";
+  }
+  return m.to_tm ?? m.to ?? "（未指定）";
 }

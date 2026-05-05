@@ -18,6 +18,7 @@ import { ListView } from "./components/ListView";
 import { AssignmentsView } from "./components/AssignmentsView";
 import { ViewTabs } from "./components/ViewTabs";
 import { FilesDrawer } from "./components/FilesDrawer";
+import { UnlinkedAlert } from "./components/UnlinkedAlert";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useUiStore, sectionOfRoute } from "./store/useUiStore";
@@ -201,6 +202,7 @@ function EditorShell() {
       <OrgSubNav />
       <TopBar />
       <ConfirmedBanner />
+      <UnlinkedAlert />
       <ViewTabs />
       <div className="app__main">
         <Sidebar />

@@ -4,7 +4,9 @@ import { useAnnouncementsStore, type AnnouncementRow } from "../store/useAnnounc
 import { useAuthStore } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import {
+  formatDeptPath,
   formatPeriodHeading,
+  moveDestinationGroup,
   type AnnouncementHire,
   type AnnouncementLeave,
   type AnnouncementMove,
@@ -227,7 +229,7 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
           }}
         />
 
-        <SectionGroup label="③ 人事異動">
+        <SectionGroup number="③" label="人事異動">
           <Section
             number="A."
             label="DIV間人事"
@@ -235,6 +237,7 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
             rows={data.div_moves}
             editing={editing}
             sub
+            groupKey={(item) => moveDestinationGroup(item, "div")}
             renderRow={(item, set) => (
               <MoveRow item={item} editing={editing} onChange={set} />
             )}
@@ -266,6 +269,7 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
             rows={data.tm_moves}
             editing={editing}
             sub
+            groupKey={(item) => moveDestinationGroup(item, "tm")}
             renderRow={(item, set) => (
               <MoveRow item={item} editing={editing} onChange={set} />
             )}
@@ -298,6 +302,7 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
           empty="（該当なし）"
           rows={data.promotions}
           editing={editing}
+          groupKey={(item) => item.div ?? "（部署不明）"}
           renderRow={(item, set) => (
             <PromotionRow item={item} editing={editing} onChange={set} />
           )}
@@ -346,10 +351,21 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
 
 /* ── Generic section renderer ─────────────────────────────────────── */
 
-function SectionGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function SectionGroup({
+  number,
+  label,
+  children,
+}: {
+  number: string;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="annsec annsec--group">
-      <h2 className="annsec__head">{label}</h2>
+      <h2 className="annsec__head">
+        <span className="annsec__num">{number}</span>
+        {label}
+      </h2>
       {children}
     </section>
   );
@@ -362,13 +378,35 @@ type SectionProps<T> = {
   rows: T[];
   editing: boolean;
   sub?: boolean;
+  /** When provided in view mode, rows are bucketed by this key under the
+   *  destination department. Edit mode keeps a flat list so the user can
+   *  freely add/remove/edit rows without thinking about groupings. */
+  groupKey?: (item: T) => string;
   renderRow: (item: T, set: (next: T) => void) => React.ReactNode;
   onAdd: () => void;
   onRemove: (idx: number) => void;
   onUpdate: (idx: number, next: T) => void;
 };
 
-function Section<T>({ number, label, empty, rows, editing, sub, renderRow, onAdd, onRemove, onUpdate }: SectionProps<T>) {
+function Section<T>({
+  number,
+  label,
+  empty,
+  rows,
+  editing,
+  sub,
+  groupKey,
+  renderRow,
+  onAdd,
+  onRemove,
+  onUpdate,
+}: SectionProps<T>) {
+  // Edit mode = flat list (so add/remove indices stay obvious).
+  // View mode = grouped if groupKey is supplied; otherwise flat.
+  const groups = !editing && groupKey && rows.length > 0
+    ? groupRows(rows, groupKey)
+    : null;
+
   return (
     <section className={`annsec ${sub ? "annsec--sub" : ""}`}>
       <h2 className="annsec__head">
@@ -378,6 +416,24 @@ function Section<T>({ number, label, empty, rows, editing, sub, renderRow, onAdd
       </h2>
       {rows.length === 0 ? (
         <p className="annsec__empty">{empty}</p>
+      ) : groups ? (
+        <div className="anngrp">
+          {groups.map(({ key, items }) => (
+            <div key={key} className="anngrp__bucket">
+              <h3 className="anngrp__head">
+                {key}
+                <span className="anngrp__count">{items.length}名</span>
+              </h3>
+              <ul className="annsec__list">
+                {items.map(({ item, idx }) => (
+                  <li key={idx} className="annsec__row">
+                    {renderRow(item, (next) => onUpdate(idx, next))}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       ) : (
         <ul className="annsec__list">
           {rows.map((item, i) => (
@@ -402,6 +458,23 @@ function Section<T>({ number, label, empty, rows, editing, sub, renderRow, onAdd
       )}
     </section>
   );
+}
+
+function groupRows<T>(
+  rows: T[],
+  keyOf: (item: T) => string,
+): { key: string; items: { item: T; idx: number }[] }[] {
+  const m = new Map<string, { item: T; idx: number }[]>();
+  rows.forEach((item, idx) => {
+    const k = keyOf(item) || "（未指定）";
+    const arr = m.get(k) ?? [];
+    arr.push({ item, idx });
+    m.set(k, arr);
+  });
+  // Stable: groups appear in first-seen order; within each group rows
+  // keep their original array order (stable sort by name happens in
+  // computeAnnouncement).
+  return [...m.entries()].map(([key, items]) => ({ key, items }));
 }
 
 /* ── Row renderers ────────────────────────────────────────────────── */
@@ -502,13 +575,22 @@ function MoveRow({
   onChange: (next: AnnouncementMove) => void;
 }) {
   if (!editing) {
+    // Prefer the structured DIV / TM / Unit path. Fall back to the
+    // legacy single-string form for older saved announcements that
+    // don't have the structured fields populated.
+    const fromPath =
+      formatDeptPath(item.from_div, item.from_tm, item.from_unit) ??
+      item.from ??
+      "—";
+    const toPath =
+      formatDeptPath(item.to_div, item.to_tm, item.to_unit) ?? item.to ?? "—";
     return (
       <span className="annrow">
         <strong>{item.full_name || "—"}</strong>
         <span className="annrow__sep">：</span>
-        <span>{item.from || "—"}</span>
+        <span className="annrow__path">{fromPath}</span>
         <span className="annrow__arrow">→</span>
-        <span>{item.to || "—"}</span>
+        <span className="annrow__path">{toPath}</span>
         {item.note && <span className="annrow__note">（{item.note}）</span>}
       </span>
     );
@@ -517,10 +599,18 @@ function MoveRow({
     <span className="annrow annrow--edit">
       <input className="field__input field__input--xs" placeholder="氏名"
         value={item.full_name} onChange={(e) => onChange({ ...item, full_name: e.target.value })} />
-      <input className="field__input field__input--xs" placeholder="変更前"
-        value={item.from} onChange={(e) => onChange({ ...item, from: e.target.value })} />
-      <input className="field__input field__input--xs" placeholder="変更後"
-        value={item.to} onChange={(e) => onChange({ ...item, to: e.target.value })} />
+      <input className="field__input field__input--xs" placeholder="変更前 DIV"
+        value={item.from_div ?? ""} onChange={(e) => onChange({ ...item, from_div: e.target.value || null })} />
+      <input className="field__input field__input--xs" placeholder="変更前 TM"
+        value={item.from_tm ?? ""} onChange={(e) => onChange({ ...item, from_tm: e.target.value || null })} />
+      <input className="field__input field__input--xs" placeholder="変更前 Unit"
+        value={item.from_unit ?? ""} onChange={(e) => onChange({ ...item, from_unit: e.target.value || null })} />
+      <input className="field__input field__input--xs" placeholder="変更後 DIV"
+        value={item.to_div ?? ""} onChange={(e) => onChange({ ...item, to_div: e.target.value || null })} />
+      <input className="field__input field__input--xs" placeholder="変更後 TM"
+        value={item.to_tm ?? ""} onChange={(e) => onChange({ ...item, to_tm: e.target.value || null })} />
+      <input className="field__input field__input--xs" placeholder="変更後 Unit"
+        value={item.to_unit ?? ""} onChange={(e) => onChange({ ...item, to_unit: e.target.value || null })} />
       <input className="field__input field__input--xs" placeholder="備考"
         value={item.note ?? ""} onChange={(e) => onChange({ ...item, note: e.target.value || undefined })} />
     </span>
@@ -537,9 +627,16 @@ function PromotionRow({
   onChange: (next: AnnouncementPromotion) => void;
 }) {
   if (!editing) {
+    const path = formatDeptPath(item.div, item.tm, item.unit);
     return (
       <span className="annrow">
         <strong>{item.full_name || "—"}</strong>
+        {path && (
+          <>
+            <span className="annrow__sep">／</span>
+            <span className="annrow__path">{path}</span>
+          </>
+        )}
         <span className="annrow__sep">：</span>
         <span>{item.from_role || "メンバー"}</span>
         <span className="annrow__arrow">→</span>
@@ -552,6 +649,12 @@ function PromotionRow({
     <span className="annrow annrow--edit">
       <input className="field__input field__input--xs" placeholder="氏名"
         value={item.full_name} onChange={(e) => onChange({ ...item, full_name: e.target.value })} />
+      <input className="field__input field__input--xs" placeholder="DIV"
+        value={item.div ?? ""} onChange={(e) => onChange({ ...item, div: e.target.value || null })} />
+      <input className="field__input field__input--xs" placeholder="TM"
+        value={item.tm ?? ""} onChange={(e) => onChange({ ...item, tm: e.target.value || null })} />
+      <input className="field__input field__input--xs" placeholder="Unit"
+        value={item.unit ?? ""} onChange={(e) => onChange({ ...item, unit: e.target.value || null })} />
       <input className="field__input field__input--xs" placeholder="変更前役職"
         value={item.from_role} onChange={(e) => onChange({ ...item, from_role: e.target.value })} />
       <input className="field__input field__input--xs" placeholder="変更後役職"

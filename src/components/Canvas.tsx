@@ -12,6 +12,7 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
+import { useEmployeesStore } from "../store/useEmployeesStore";
 import { DepartmentNode, type DeptNodeData } from "./DepartmentNode";
 import { ExecutiveNode, type ExecNodeData } from "./ExecutiveNode";
 import { isInExecutiveBand, layoutAll, wouldCreateCycle } from "../lib/layout";
@@ -50,7 +51,24 @@ export function Canvas() {
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setToast = useOrgStore((s) => s.setToast);
   const viewOnly = useUiStore((s) => s.viewOnly);
+  const employees = useEmployeesStore((s) => s.employees);
   const reactFlow = useReactFlow();
+
+  // Person nodes that aren't linked to a row in the employee master are
+  // flagged so the editor can warn the user up-front: announcements rely on
+  // the master to compute hires / leaves / etc, and unlinked nodes drop out
+  // of the diff silently. We treat both "no employeeNumber" and "FK no longer
+  // resolves" (employee deleted from master) as unlinked.
+  const validEmployeeNumbers = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of employees) s.add(e.employee_number);
+    return s;
+  }, [employees]);
+  function isPersonUnlinked(p: OrgNode): boolean {
+    if (p.kind !== "person") return false;
+    if (!p.employeeNumber) return true;
+    return !validEmployeeNumbers.has(p.employeeNumber);
+  }
 
   const [drag, setDrag] = useState<DragState>({
     draggingId: null,
@@ -108,6 +126,7 @@ export function Canvas() {
           selected: selectedId === p.id,
           isExecutive: !!p.isExecutive,
           isConcurrent: !!p.isConcurrent,
+          isUnlinked: isPersonUnlinked(p),
         }));
       const members = persons
         .filter((p) => !p.roleLabel)
@@ -116,6 +135,7 @@ export function Canvas() {
           name: p.name,
           selected: selectedId === p.id,
           isConcurrent: !!p.isConcurrent,
+          isUnlinked: isPersonUnlinked(p),
         }));
 
       return {
@@ -150,13 +170,23 @@ export function Canvas() {
         role: e.roleLabel ?? null,
         selected: selectedId === e.id,
         isConcurrent: !!e.isConcurrent,
+        isUnlinked: isPersonUnlinked(e),
       },
       draggable: false,
       selectable: true,
     }));
 
     return [...dnodes, ...enodes];
-  }, [laidOutDepts, laidOutExecs, nodes, selectedId, drag, personsByParent]);
+  }, [
+    laidOutDepts,
+    laidOutExecs,
+    nodes,
+    selectedId,
+    drag,
+    personsByParent,
+    validEmployeeNumbers,
+    viewOnly,
+  ]);
 
   const rfEdges = useMemo(() => buildDeptEdges(nodes), [nodes]);
 

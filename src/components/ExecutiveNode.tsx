@@ -11,6 +11,8 @@ export type ExecNodeData = {
   role: PersonRole;
   selected: boolean;
   isConcurrent?: boolean;
+  /** True if this person isn't linked to a row in the employee master. */
+  isUnlinked?: boolean;
 };
 
 const PERSON_MIME = "application/x-person-id";
@@ -44,19 +46,28 @@ export function ExecutiveNode({ id, data }: NodeProps<ExecNodeData>) {
 
   return (
     <div
-      className={`exec-card nodrag ${data.selected ? "is-selected" : ""}`}
+      className={`exec-card nodrag ${data.selected ? "is-selected" : ""} ${data.isUnlinked ? "exec-card--unlinked" : ""}`}
       draggable
       onDragStart={startDrag}
       onDragEnd={endDrag}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={selectClick}
-      title={`${data.role}：${data.name}${data.isConcurrent ? "（兼務）" : ""}`}
+      title={`${data.role}：${data.name}${data.isConcurrent ? "（兼務）" : ""}${data.isUnlinked ? "（従業員マスター未紐付け）" : ""}`}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
       <span className="exec-card__role">{data.role}</span>
       <span className="exec-card__name">
         {data.isConcurrent && !data.name.startsWith("*") ? `*${data.name}` : data.name}
       </span>
+      {data.isUnlinked && (
+        <span
+          className="chip__warn"
+          aria-label="従業員マスター未紐付け"
+          title="従業員マスターと紐付いていません"
+        >
+          ⚠
+        </span>
+      )}
       {data.isConcurrent && <span className="chip__badge chip__badge--concurrent">兼務</span>}
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
     </div>
