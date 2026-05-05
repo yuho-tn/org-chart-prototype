@@ -95,12 +95,16 @@ type UiState = {
   sharedVersionLabel: string | null;
   /** Operation-history drawer open state. Defaults closed; shown via TopBar button. */
   showLog: boolean;
+  /** Files drawer open state — slides in from the left when the user clicks
+   *  the ファイル button in OrgSubNav. Auto-closes when a file is loaded. */
+  filesDrawerOpen: boolean;
   /** Top-level route. */
   route: Route;
   setView: (v: OrgView) => void;
   setViewOnly: (b: boolean) => void;
   setSharedVersionLabel: (label: string | null) => void;
   setShowLog: (b: boolean) => void;
+  setFilesDrawerOpen: (b: boolean) => void;
   /** Navigate. Pass `pushHistory: false` to update the URL without a new history entry. */
   navigate: (r: Route, opts?: { pushHistory?: boolean }) => void;
 };
@@ -110,11 +114,13 @@ export const useUiStore = create<UiState>((set) => ({
   viewOnly: false,
   sharedVersionLabel: null,
   showLog: false,
+  filesDrawerOpen: false,
   route: readRouteFromHash(),
   setView: (view) => set({ view }),
   setViewOnly: (viewOnly) => set({ viewOnly }),
   setSharedVersionLabel: (sharedVersionLabel) => set({ sharedVersionLabel }),
   setShowLog: (showLog) => set({ showLog }),
+  setFilesDrawerOpen: (filesDrawerOpen) => set({ filesDrawerOpen }),
   navigate: (route, opts) => {
     set({ route });
     if (opts?.pushHistory === false) {

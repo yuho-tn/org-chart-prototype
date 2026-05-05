@@ -17,6 +17,7 @@ import { ConfirmedBanner } from "./components/ConfirmedBanner";
 import { ListView } from "./components/ListView";
 import { AssignmentsView } from "./components/AssignmentsView";
 import { ViewTabs } from "./components/ViewTabs";
+import { FilesDrawer } from "./components/FilesDrawer";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useUiStore, sectionOfRoute } from "./store/useUiStore";
@@ -209,6 +210,7 @@ function EditorShell() {
         <Inspector />
       </div>
       <LogPanel />
+      <FilesDrawer />
     </div>
   );
 }

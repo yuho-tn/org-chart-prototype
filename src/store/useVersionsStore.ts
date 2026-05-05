@@ -328,12 +328,38 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
 
   setConfirmation: async (id, patch) => {
     if (!supabase) return false;
-    const { error } = await supabase
+    // Use update().select().maybeSingle() so PostgREST returns the row that
+    // was actually written. If RLS silently blocks the UPDATE the response
+    // has no error but `data` is null — the previous code treated that as
+    // success and wrote optimistically to local state, so the toggle looked
+    // like it persisted but reverted on reload. Treating null as failure
+    // surfaces the real cause to the user.
+    const { data, error } = await supabase
       .from("org_versions")
       .update(patch)
-      .eq("id", id);
+      .eq("id", id)
+      .select("id, is_confirmed, confirmed_period")
+      .maybeSingle();
     if (error) {
       set({ error: error.message });
+      return false;
+    }
+    if (!data) {
+      set({
+        error:
+          "DBへの反映が確認できませんでした。Supabase の org_versions テーブルで anon ロールに対する UPDATE が許可されているか（行レベルセキュリティ）をご確認ください。",
+      });
+      return false;
+    }
+    const row = data as { is_confirmed?: boolean; confirmed_period?: string | null };
+    if (
+      row.is_confirmed !== patch.is_confirmed ||
+      (row.confirmed_period ?? null) !== (patch.confirmed_period ?? null)
+    ) {
+      set({
+        error:
+          "更新が DB に反映されませんでした（RLS の WITH CHECK 句で弾かれている可能性があります）。",
+      });
       return false;
     }
     set({

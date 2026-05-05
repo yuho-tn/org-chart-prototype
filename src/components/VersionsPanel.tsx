@@ -44,6 +44,7 @@ export function VersionsPanel() {
   const setToast = useOrgStore((s) => s.setToast);
   const currentUser = useAuthStore((s) => s.currentUser);
   const setViewOnly = useUiStore((s) => s.setViewOnly);
+  const setFilesDrawerOpen = useUiStore((s) => s.setFilesDrawerOpen);
 
   const [showSave, setShowSave] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
@@ -103,6 +104,9 @@ export function VersionsPanel() {
     // doesn't lock edits any more — only an explicit 確定解除 reverts to draft.
     setViewOnly(!canEdit);
     replaceNodes(nodes, { versionId: id, versionLabel: name });
+    // After a successful load, collapse the drawer so the editor canvas
+    // is fully visible — this is the whole reason the drawer exists.
+    setFilesDrawerOpen(false);
     if (isConfirmed && canEdit) {
       setToast({
         kind: "info",

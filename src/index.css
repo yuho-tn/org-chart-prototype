@@ -4001,3 +4001,140 @@ body.is-dragging .dept-card__add-child {
   }
 }
 
+/* ── OrgSubNav file trigger + FilesDrawer ─────────────────────────────
+ * Files moved out of the sidebar bottom and into a slide-in drawer
+ * triggered from the 2nd-tier header. The trigger sits to the right
+ * of the editor / 人事発令 tabs and shows the active file name so the
+ * user always knows which file they're editing without opening the
+ * drawer.
+ * ────────────────────────────────────────────────────────────────── */
+.orgsub__spacer {
+  flex: 1;
+}
+
+.orgsub__file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 460px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e3a8a;
+  background: #ffffff;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, color 0.12s;
+}
+
+.orgsub__file:hover {
+  background: #eef2ff;
+  border-color: #818cf8;
+}
+
+.orgsub__file.is-open {
+  background: linear-gradient(135deg, var(--primary), #1d4ed8);
+  border-color: #1e3a8a;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.orgsub__fileIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.orgsub__fileLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.orgsub__fileCaret {
+  font-size: 10px;
+  opacity: 0.7;
+  transition: transform 0.18s;
+}
+
+.orgsub__file.is-open .orgsub__fileCaret {
+  transform: rotate(180deg);
+}
+
+/* Backdrop dims the editor while the drawer is open. Pointer events
+ * are off when closed so it never blocks clicks on the canvas. */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 40;
+}
+
+.drawer-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.files-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  background: var(--panel);
+  box-shadow: 4px 0 24px rgba(15, 23, 42, 0.18);
+  transform: translateX(-100%);
+  transition: transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  z-index: 41;
+  border-right: 1px solid var(--border);
+}
+
+.files-drawer.is-open {
+  transform: translateX(0);
+}
+
+/* The hosted .versions panel handles its own scrolling — let it fill. */
+.files-drawer > .versions {
+  flex: 1;
+  min-height: 0;
+  padding-top: 18px;
+}
+
+.files-drawer__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+  z-index: 1;
+}
+
+.files-drawer__close:hover {
+  background: #f1f5f9;
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .orgsub__file {
+    max-width: 220px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+}
+

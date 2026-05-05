@@ -1,5 +1,4 @@
 import { useOrgStore } from "../store/useOrgStore";
-import { VersionsPanel } from "./VersionsPanel";
 import { TrayPanel } from "./TrayPanel";
 import { UnplacedEmployeesPanel } from "./UnplacedEmployeesPanel";
 
@@ -31,7 +30,6 @@ export function Sidebar() {
 
       <TrayPanel />
       <UnplacedEmployeesPanel />
-      <VersionsPanel />
     </aside>
   );
 }
