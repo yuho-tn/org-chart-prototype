@@ -2,6 +2,7 @@ import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
 import { ConfirmedBanner } from "./ConfirmedBanner";
 import { UnlinkedAlert } from "./UnlinkedAlert";
+import { PresenceAvatars } from "./PresenceAvatars";
 
 /**
  * Secondary navigation shown ONLY while the user is in the "組織図" section.
@@ -52,6 +53,7 @@ export function OrgSubNav() {
         人事発令
       </button>
       <div className="orgsub__spacer" />
+      <PresenceAvatars />
       {sub === "editor" && (
         <>
           <ConfirmedBanner />

@@ -21,6 +21,7 @@ import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useUiStore, sectionOfRoute } from "./store/useUiStore";
 import { useAuthStore } from "./store/useAuthStore";
+import { usePresenceStore } from "./store/usePresenceStore";
 import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
 import { STORAGE_KEYS, readStorage, writeStorage } from "./lib/storageKeys";
 
@@ -127,6 +128,39 @@ export default function App() {
     if (!bootReady) return;
     writeStorage(STORAGE_KEYS.draft, JSON.stringify({ nodes }));
   }, [nodes, bootReady, viewOnly]);
+
+  // Realtime presence: announce the current user on the shared collab
+  // channel and keep the version_id payload in sync as the user navigates
+  // between files. Viewer mode (read-only share link) doesn't broadcast.
+  const currentUserEmail = useAuthStore((s) => s.currentUser?.email ?? null);
+  const currentDisplayName = useAuthStore((s) => s.currentUser?.display_name ?? null);
+  const currentVersionId = useOrgStore((s) => s.currentVersionId);
+  const presenceSubscribe = usePresenceStore((s) => s.subscribe);
+  const presenceUnsubscribe = usePresenceStore((s) => s.unsubscribe);
+  const presenceUpdateVersionId = usePresenceStore((s) => s.updateVersionId);
+
+  useEffect(() => {
+    if (viewOnly) return;
+    if (!currentUserEmail) return;
+    presenceSubscribe({
+      email: currentUserEmail,
+      display_name: currentDisplayName,
+      versionId: currentVersionId,
+    });
+    return () => {
+      presenceUnsubscribe();
+    };
+    // Re-subscribe when the user switches identity. version_id changes are
+    // handled by the second effect below — re-subscribing on every save
+    // would churn the channel needlessly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserEmail, viewOnly]);
+
+  useEffect(() => {
+    if (viewOnly) return;
+    if (!currentUserEmail) return;
+    presenceUpdateVersionId(currentVersionId);
+  }, [currentVersionId, currentUserEmail, viewOnly, presenceUpdateVersionId]);
 
   if (viewOnly) return <ViewerLayout view={view} />;
 

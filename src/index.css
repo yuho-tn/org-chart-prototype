@@ -4285,6 +4285,49 @@ body.is-dragging .dept-card__add-child {
   transform: rotate(180deg);
 }
 
+/* ── Realtime presence avatars ───────────────────────────────────────
+ * Stacked, slightly-overlapping avatar pills shown in OrgSubNav. Each
+ * other user currently connected to the realtime channel gets one.
+ * ────────────────────────────────────────────────────────────────── */
+.presence {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px 0 8px;
+}
+
+.presence__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 2px solid var(--panel);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+  transition: transform 0.12s, z-index 0s 0.12s;
+  cursor: default;
+}
+
+.presence__avatar:first-child {
+  margin-left: 0;
+}
+
+.presence__avatar:hover {
+  transform: translateY(-1px) scale(1.06);
+  z-index: 5;
+}
+
+.presence__avatar--overflow {
+  background: #475569 !important;
+  font-size: 10px;
+}
+
 /* ── Header-mounted alert (UnlinkedAlert / ConfirmedBanner) ──────────
  * Compact icon-style buttons living in OrgSubNav, replacing the old
  * full-width yellow banners. Each opens a popover anchored below.
