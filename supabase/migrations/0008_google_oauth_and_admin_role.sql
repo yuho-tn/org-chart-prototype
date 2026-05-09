@@ -6,7 +6,7 @@
 --   • 'admin' role (4-tier: master / admin / editor / viewer)
 --   • on_auth_user_created trigger that auto-provisions an app_users row
 --     for every new auth.users row, gated by domain allow-list
---   • master seed for yuho_tn@forumyu.co.jp
+--   • master seed for yuho_tn@sho-san.co.jp
 --   • RLS policies rewritten to gate writes on auth.email() role lookup
 --
 -- IMPORTANT: idempotent. Safe to re-run.
@@ -24,9 +24,9 @@ alter table public.app_users
 alter table public.app_users
   alter column role set default 'viewer';
 
--- ── 2. Master seed (yuho_tn@forumyu.co.jp) ───────────────────────────
+-- ── 2. Master seed (yuho_tn@sho-san.co.jp) ───────────────────────────
 insert into public.app_users (email, display_name, role)
-values ('yuho_tn@forumyu.co.jp', 'YUHO', 'master')
+values ('yuho_tn@sho-san.co.jp', 'YUHO', 'master')
 on conflict (email) do update set role = 'master';
 
 -- ── 3. Domain allow-list helper ──────────────────────────────────────
@@ -38,9 +38,7 @@ returns boolean
 language sql
 immutable
 as $$
-  select
-    p_email = 'yuho_tn@forumyu.co.jp'
-    or p_email like '%@sho-san.co.jp'
+  select p_email like '%@sho-san.co.jp'
 $$;
 
 -- ── 4. Auto-provision app_users on first Google sign-in ──────────────
@@ -72,7 +70,7 @@ begin
   values (
     v_email,
     v_name,
-    case when v_email = 'yuho_tn@forumyu.co.jp' then 'master' else 'viewer' end
+    case when v_email = 'yuho_tn@sho-san.co.jp' then 'master' else 'viewer' end
   )
   on conflict (email) do update
     set display_name = coalesce(public.app_users.display_name, excluded.display_name);
