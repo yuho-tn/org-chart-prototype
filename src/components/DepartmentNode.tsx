@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Handle, Position } from "reactflow";
 import type { NodeProps } from "reactflow";
 import { useOrgStore } from "../store/useOrgStore";
@@ -79,6 +79,10 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   const [editingChipId, setEditingChipId] = useState<string | null>(null);
   const [editingDeptName, setEditingDeptName] = useState(false);
   const [draft, setDraft] = useState("");
+  // IME 変換中は Enter / Blur の commit を抑止する。日本語入力で
+  // 確定の Enter が発火する瞬間に commit が走ると、確定済みテキストが
+  // ブラウザ側で再挿入されて「二重に入る」ように見えるバグを防ぐ。
+  const composingRef = useRef(false);
 
   const isRoot = data.category === "ROOT";
   const isExe = data.category === "Exe";
@@ -265,6 +269,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   }
 
   function commitChipEdit() {
+    if (composingRef.current) return;
     if (editingChipId && draft.trim() && draft.trim() !== "") {
       rename(editingChipId, draft.trim());
     }
@@ -284,6 +289,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
   }
 
   function commitDeptNameEdit() {
+    if (composingRef.current) return;
     if (draft.trim() && draft.trim() !== data.name) {
       rename(id, draft.trim());
     }
@@ -292,6 +298,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
 
   function onChipKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     e.stopPropagation();
+    if ((e.nativeEvent as { isComposing?: boolean }).isComposing) return;
     if (e.key === "Enter") {
       e.preventDefault();
       commitChipEdit();
@@ -303,6 +310,7 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
 
   function onDeptNameKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     e.stopPropagation();
+    if ((e.nativeEvent as { isComposing?: boolean }).isComposing) return;
     if (e.key === "Enter") {
       e.preventDefault();
       commitDeptNameEdit();
@@ -310,6 +318,15 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
       e.preventDefault();
       setEditingDeptName(false);
     }
+  }
+
+  function onComposeStart() {
+    composingRef.current = true;
+  }
+
+  function onComposeEnd(e: React.CompositionEvent<HTMLInputElement>) {
+    composingRef.current = false;
+    setDraft((e.target as HTMLInputElement).value);
   }
 
   return (
@@ -332,6 +349,8 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
             autoFocus
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onCompositionStart={onComposeStart}
+            onCompositionEnd={onComposeEnd}
             onBlur={commitDeptNameEdit}
             onKeyDown={onDeptNameKeyDown}
             onClick={(e) => e.stopPropagation()}
@@ -357,6 +376,8 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
                 autoFocus
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                onCompositionStart={onComposeStart}
+                onCompositionEnd={onComposeEnd}
                 onBlur={commitChipEdit}
                 onKeyDown={onChipKeyDown}
                 onClick={(e) => e.stopPropagation()}
@@ -405,6 +426,8 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
                 autoFocus
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                onCompositionStart={onComposeStart}
+                onCompositionEnd={onComposeEnd}
                 onBlur={commitChipEdit}
                 onKeyDown={onChipKeyDown}
                 onClick={(e) => e.stopPropagation()}

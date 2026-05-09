@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useEmployeesStore } from "../store/useEmployeesStore";
 import { descendantsOf } from "../lib/layout";
@@ -92,8 +92,13 @@ export function Inspector() {
   const [name, setName] = useState(selected?.name ?? "");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  // IME 変換中は controlled value の上書き／commit を抑止する。
+  // 入力中に value 再注入が走るとブラウザが確定済みテキストを再挿入し、
+  // 「同じ文字が二重に入る」ように見える既知のバグを防ぐ。
+  const composingRef = useRef(false);
 
   useEffect(() => {
+    if (composingRef.current) return;
     setName(selected?.name ?? "");
   }, [selectedId, selected?.name]);
 
@@ -123,6 +128,7 @@ export function Inspector() {
   const descCount = descendantsOf(nodes, selected.id).length;
 
   function commitRename() {
+    if (composingRef.current) return;
     if (selected && name.trim() && name !== selected.name) {
       rename(selected.id, name.trim());
     }
@@ -140,8 +146,16 @@ export function Inspector() {
             className="field__input"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={(e) => {
+              composingRef.current = false;
+              setName((e.target as HTMLInputElement).value);
+            }}
             onBlur={commitRename}
             onKeyDown={(e) => {
+              if ((e.nativeEvent as { isComposing?: boolean }).isComposing) return;
               if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             }}
           />
