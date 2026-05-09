@@ -8,7 +8,7 @@ import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { LogPanel } from "./components/LogPanel";
 import { Toast } from "./components/Toast";
-import { AuthorPrompt } from "./components/AuthorPrompt";
+import { SignInPage } from "./components/SignInPage";
 import { EmployeesPage } from "./components/EmployeesPage";
 import { UsersPage } from "./components/UsersPage";
 import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
@@ -38,11 +38,23 @@ export default function App() {
   const viewOnly = useUiStore((s) => s.viewOnly);
   const route = useUiStore((s) => s.route);
 
-  const [bootReady, setBootReady] = useState(false);
   const [shareInit, setShareInit] = useState<{ versionId: string | null; ready: boolean }>({
     versionId: null,
     ready: false,
   });
+
+  // Bootstrap Supabase Auth (session restore + onAuthStateChange listener).
+  const initializeAuth = useAuthStore((s) => s.initialize);
+  const authInitialized = useAuthStore((s) => s.initialized);
+  const session = useAuthStore((s) => s.session);
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
+  // bootReady gates the rest of the app shell. After the OAuth migration
+  // it tracks "we have a usable session", which is what the data-loading
+  // effect below was waiting for via the old AuthorPrompt callback.
+  const bootReady = !!session;
 
   useEffect(() => {
     const params = parseShareParams();
@@ -178,17 +190,31 @@ export default function App() {
 
   if (viewOnly) return <ViewerLayout view={view} />;
 
+  // Auth gate. While Supabase is resolving the session, hold a short
+  // splash; after that, route to SignInPage when there's no session.
+  if (!authInitialized) return <BootSplash />;
+  if (!session) return <SignInPage />;
+
   // Render the editor shell or a dedicated section page based on the route.
   // GlobalHeader is constant across all sections; what's *under* it changes.
   return (
     <ReactFlowProvider>
-      <AuthorPrompt onReady={() => setBootReady(true)} />
       <div className={`app app--${sectionOfRoute(route)} app--view-${view}`}>
         <GlobalHeader />
         <SectionContent route={route} />
         <Toast />
       </div>
     </ReactFlowProvider>
+  );
+}
+
+function BootSplash() {
+  return (
+    <div className="signin">
+      <div className="signin__card">
+        <p className="signin__lead" style={{ textAlign: "center" }}>読み込み中…</p>
+      </div>
+    </div>
   );
 }
 

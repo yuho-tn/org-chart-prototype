@@ -1,29 +1,41 @@
 import { create } from "zustand";
+import type { Session } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { AppUserRow, AppUserRole } from "../lib/supabase";
-import { STORAGE_KEYS, readStorage, writeStorage } from "../lib/storageKeys";
 
-const readStoredEmail = () => readStorage(STORAGE_KEYS.currentEmail);
-const writeStoredEmail = (email: string | null) =>
-  writeStorage(STORAGE_KEYS.currentEmail, email);
+/**
+ * Auth model (post-0008):
+ *   • Identity is a real Supabase Auth session, populated by Google OAuth
+ *     with hd=sho-san.co.jp domain restriction.
+ *   • Authorization data lives in public.app_users — every authenticated
+ *     user has a matching row (auto-provisioned by the on_auth_user_created
+ *     trigger) carrying their role: master / admin / editor / viewer.
+ *   • Viewer-mode share links (?versionId=xxx) bypass auth entirely; the
+ *     app sets viewOnly=true and never invokes this store.
+ */
 
 type AuthState = {
-  /** Email used to identify the current user (carried in localStorage). */
-  currentEmail: string | null;
-  /** The matching app_users row, if found. */
+  /** Live Supabase session, refreshed by onAuthStateChange. */
+  session: Session | null;
+  /** The matching app_users row resolved from session.user.email. */
   currentUser: AppUserRow | null;
-  /** All registered users. Loaded once on bootstrap; refreshed by user-mgmt UI. */
+  /** All registered users. Only master/admin can mutate (RLS enforces). */
   users: AppUserRow[];
-  /** True after the first refresh() resolves so callers know the bootstrap state is reliable. */
+  /** True once the initial getSession() has resolved. */
   initialized: boolean;
   loading: boolean;
   error: string | null;
 
-  /** Set the in-memory email (also persists). Does NOT validate against the server. */
-  setCurrentEmail: (email: string | null) => void;
-  /** Fetch users + resolve currentUser from currentEmail. */
+  /** Kick off Google OAuth (with hd=sho-san.co.jp). Returns immediately —
+   *  the browser navigates to Google and back to redirectTo. */
+  signInWithGoogle: () => Promise<void>;
+  signOut: () => Promise<void>;
+  /** Re-read app_users + resolve currentUser from the live session.
+   *  Called on bootstrap and after the auth state changes. */
   refresh: () => Promise<void>;
-  /** Insert a new user. Returns ok=false with reason on duplicate / missing field. */
+  /** Wire onAuthStateChange — call once on app boot. */
+  initialize: () => Promise<void>;
+
   addUser: (input: {
     email: string;
     display_name: string;
@@ -31,27 +43,69 @@ type AuthState = {
   }) => Promise<{ ok: boolean; reason?: string }>;
   removeUser: (email: string) => Promise<{ ok: boolean; reason?: string }>;
   setUserRole: (email: string, role: AppUserRole) => Promise<boolean>;
-  /** Sign out: clear localStorage email and currentUser. */
-  signOut: () => void;
 };
 
 function normalizeEmail(s: string): string {
   return s.trim().toLowerCase();
 }
 
+function siteOrigin(): string {
+  if (typeof window === "undefined") return "";
+  return window.location.origin;
+}
+
+let authSubscription: { unsubscribe: () => void } | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
-  currentEmail: readStoredEmail(),
+  session: null,
   currentUser: null,
   users: [],
   initialized: false,
   loading: false,
   error: null,
 
-  setCurrentEmail: (email) => {
-    const norm = email ? normalizeEmail(email) : null;
-    writeStoredEmail(norm);
-    const found = norm ? get().users.find((u) => u.email === norm) ?? null : null;
-    set({ currentEmail: norm, currentUser: found });
+  initialize: async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      set({ initialized: true });
+      return;
+    }
+    const { data } = await supabase.auth.getSession();
+    set({ session: data.session ?? null });
+    await get().refresh();
+    if (!authSubscription) {
+      const sub = supabase.auth.onAuthStateChange(async (_event, session) => {
+        set({ session: session ?? null });
+        await get().refresh();
+      });
+      authSubscription = sub.data.subscription;
+    }
+  },
+
+  signInWithGoogle: async () => {
+    if (!supabase) return;
+    set({ loading: true, error: null });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: siteOrigin(),
+        // Restrict the Google account picker to sho-san.co.jp Workspace
+        // accounts. The on_auth_user_created trigger enforces the same
+        // rule server-side so out-of-domain accounts can't sneak through.
+        queryParams: { hd: "sho-san.co.jp" },
+      },
+    });
+    if (error) {
+      set({ loading: false, error: error.message });
+      return;
+    }
+    // Browser is now navigating away to Google; loading stays true until
+    // we land back via detectSessionInUrl.
+  },
+
+  signOut: async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    set({ session: null, currentUser: null });
   },
 
   refresh: async () => {
@@ -65,9 +119,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       .select("email, display_name, role, created_at")
       .order("created_at", { ascending: true });
     if (error) {
-      // The most common cause of failure is "table does not exist" — the
-      // migration hasn't been run yet. Surface that clearly so the user
-      // knows what to do.
       const isMissingTable =
         /relation .*app_users.* does not exist/i.test(error.message) ||
         /could not find the table/i.test(error.message);
@@ -82,8 +133,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
     const users = (data ?? []) as AppUserRow[];
-    const email = get().currentEmail;
-    const currentUser = email ? users.find((u) => u.email === email) ?? null : null;
+    const sessionEmail = get().session?.user?.email
+      ? normalizeEmail(get().session!.user!.email!)
+      : null;
+    const currentUser = sessionEmail
+      ? users.find((u) => u.email === sessionEmail) ?? null
+      : null;
     set({ loading: false, initialized: true, users, currentUser, error: null });
   },
 
@@ -105,18 +160,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const next = [...get().users, row].sort((a, b) =>
       a.created_at.localeCompare(b.created_at),
     );
-    const email2 = get().currentEmail;
-    set({
-      users: next,
-      currentUser: email2 === row.email ? row : get().currentUser,
-    });
+    set({ users: next });
     return { ok: true };
   },
 
   removeUser: async (email) => {
     if (!supabase) return { ok: false, reason: "Supabase未設定です" };
     const norm = normalizeEmail(email);
-    if (norm === get().currentEmail) {
+    const selfEmail = get().session?.user?.email
+      ? normalizeEmail(get().session!.user!.email!)
+      : null;
+    if (norm === selfEmail) {
       return { ok: false, reason: "現在ログイン中のユーザーは削除できません" };
     }
     const { error } = await supabase.from("app_users").delete().eq("email", norm);
@@ -137,19 +191,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return false;
     }
     const next = get().users.map((u) => (u.email === norm ? { ...u, role } : u));
+    const sessionEmail = get().session?.user?.email
+      ? normalizeEmail(get().session!.user!.email!)
+      : null;
     set({
       users: next,
       currentUser:
-        get().currentEmail === norm
+        sessionEmail === norm
           ? next.find((u) => u.email === norm) ?? get().currentUser
           : get().currentUser,
     });
     return true;
-  },
-
-  signOut: () => {
-    writeStoredEmail(null);
-    set({ currentEmail: null, currentUser: null });
   },
 }));
 
@@ -157,12 +209,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
  * Permission helper — given the current user and a version row, decide
  * whether the user can view and/or edit it. Returns null on "no access".
  *
- * Rules (per spec):
- *   • master: sees everything, can edit everything (including private).
- *   • editor: sees non-private versions + their own + ones explicitly granted.
- *             Edits ones they created or were granted "edit".
- *   • viewer: same visibility as editor but cannot edit anything.
- *   • Private versions are visible only to creator, master, or explicit grantees.
+ * Rules (4-tier, post-0008):
+ *   • master: full access (all versions, including private).
+ *   • admin: full access for non-master operations, can edit any version.
+ *   • editor: edits own creations + grants; sees public + own + granted.
+ *   • viewer: sees public + own + granted; never edits.
  */
 export type VersionAccess = { view: true; edit: boolean };
 
@@ -178,15 +229,12 @@ export function accessForVersion(
   const isCreator = !!v.created_by_email && v.created_by_email === user.email;
   const grant = v.grants?.[user.email];
 
-  if (user.role === "master") {
+  if (user.role === "master" || user.role === "admin") {
     return { view: true, edit: true };
   }
 
   if (v.is_private && !isCreator && !grant) return null;
 
-  // Non-master users see all non-private versions plus their own/granted ones.
-  const canEdit =
-    user.role === "editor" && (isCreator || grant === "edit");
-
+  const canEdit = user.role === "editor" && (isCreator || grant === "edit");
   return { view: true, edit: canEdit };
 }

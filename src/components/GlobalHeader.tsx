@@ -20,9 +20,9 @@ export function GlobalHeader() {
   const currentUser = useAuthStore((s) => s.currentUser);
   const signOut = useAuthStore((s) => s.signOut);
 
-  function handleSignOut() {
+  async function handleSignOut() {
     if (!confirm("サインアウトしますか？")) return;
-    signOut();
+    await signOut();
     window.location.reload();
   }
 

@@ -8,7 +8,12 @@ const ROLE_OPTIONS: { value: AppUserRole; label: string; hint: string }[] = [
   {
     value: "master",
     label: "マスター",
-    hint: "すべてのファイル（非公開含む）を閲覧・編集できる管理者",
+    hint: "すべてのファイル（非公開含む）を閲覧・編集 + ユーザー管理（master固定はyuho_tn@forumyu.co.jpのみ）",
+  },
+  {
+    value: "admin",
+    label: "管理者",
+    hint: "すべてのファイルを閲覧・編集 + ユーザー権限の昇格／降格が可能",
   },
   {
     value: "editor",
@@ -18,7 +23,7 @@ const ROLE_OPTIONS: { value: AppUserRole; label: string; hint: string }[] = [
   {
     value: "viewer",
     label: "閲覧",
-    hint: "閲覧のみ。編集はできない",
+    hint: "閲覧のみ。編集はできない（初回サインイン時のデフォルト）",
   },
 ];
 
@@ -47,15 +52,36 @@ export function UsersPage() {
   }, [refresh]);
 
   const isMaster = currentUser?.role === "master";
+  const canManage = currentUser?.role === "master" || currentUser?.role === "admin";
 
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) => {
-      const order: Record<AppUserRole, number> = { master: 0, editor: 1, viewer: 2 };
+      const order: Record<AppUserRole, number> = { master: 0, admin: 1, editor: 2, viewer: 3 };
       const d = order[a.role] - order[b.role];
       if (d !== 0) return d;
       return a.created_at.localeCompare(b.created_at);
     });
   }, [users]);
+
+  /** Admins can manage editors and viewers, but not other admins or the
+   *  master. Master can manage everyone except themselves (the trigger
+   *  ensures the master row stays as 'master' on every login anyway). */
+  function canEditUser(target: { email: string; role: AppUserRole }): boolean {
+    if (!canManage) return false;
+    if (currentUser?.email === target.email) return false;
+    if (isMaster) return target.role !== "master" || target.email !== "yuho_tn@forumyu.co.jp";
+    // admin
+    return target.role === "editor" || target.role === "viewer";
+  }
+
+  /** Roles an admin/master can assign. Master can assign any role except
+   *  re-promote to master (master is fixed to yuho_tn@forumyu.co.jp).
+   *  Admins can only set editor/viewer. */
+  function assignableRoles(): AppUserRole[] {
+    if (isMaster) return ["admin", "editor", "viewer"];
+    if (currentUser?.role === "admin") return ["editor", "viewer"];
+    return [];
+  }
 
   async function submitNew() {
     if (!draftEmail.trim() || !draftName.trim()) return;
@@ -132,6 +158,12 @@ export function UsersPage() {
               )}
               {sortedUsers.map((u) => {
                 const isSelf = currentUser?.email === u.email;
+                const editable = canEditUser(u);
+                const opts = assignableRoles();
+                // Show the user's current role even if it's outside what
+                // the operator can assign — they shouldn't be able to
+                // demote/promote past their own ceiling.
+                const optList = opts.includes(u.role) ? opts : [u.role, ...opts];
                 return (
                   <tr key={u.email}>
                     <td>
@@ -140,15 +172,15 @@ export function UsersPage() {
                     </td>
                     <td>{u.display_name ?? "—"}</td>
                     <td>
-                      {isMaster && !isSelf ? (
+                      {editable ? (
                         <select
                           className="field__input field__input--inline"
                           value={u.role}
                           onChange={(e) => changeRole(u.email, e.target.value as AppUserRole)}
                         >
-                          {ROLE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
+                          {optList.map((value) => (
+                            <option key={value} value={value}>
+                              {ROLE_OPTIONS.find((o) => o.value === value)?.label ?? value}
                             </option>
                           ))}
                         </select>
@@ -159,7 +191,7 @@ export function UsersPage() {
                       )}
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      {isMaster && !isSelf && (
+                      {editable && (
                         <button
                           className="btn btn--ghost btn--xs"
                           onClick={() => setPendingRemove(u.email)}
@@ -177,10 +209,38 @@ export function UsersPage() {
         </div>
       </section>
 
-      {isMaster ? (
+      <section className="card" style={{ marginTop: 20 }}>
+        <header className="card__head">
+          <h2 className="card__title">権限について</h2>
+        </header>
+        <div className="card__body">
+          <p className="page__hint" style={{ marginTop: 0, marginBottom: 12 }}>
+            ユーザーは <strong>sho-san.co.jp ドメインのGoogleアカウント</strong>
+            でサインインすると自動的に「閲覧」権限で登録されます。
+            管理者・マスターは、このページから権限を昇格／降格させてください。
+          </p>
+          <ul className="usermgr__roleHints">
+            {ROLE_OPTIONS.map((opt) => (
+              <li key={opt.value}>
+                <strong>{opt.label}</strong>：{opt.hint}
+              </li>
+            ))}
+          </ul>
+          {!canManage && (
+            <p className="page__hint" style={{ marginTop: 12 }}>
+              権限の変更はマスターまたは管理者のみが行えます。
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* Manual user creation is no longer needed (auto-provisioned on
+          first sign-in) but kept in code for emergencies — only master
+          can use it, hidden from admins. */}
+      {isMaster && false && (
         <section className="card" style={{ marginTop: 20 }}>
           <header className="card__head">
-            <h2 className="card__title">新規ユーザーを追加</h2>
+            <h2 className="card__title">手動でユーザーを追加（緊急用）</h2>
           </header>
           <div className="card__body">
             <div className="usermgr__addRow">
@@ -216,19 +276,8 @@ export function UsersPage() {
                 追加
               </button>
             </div>
-            <ul className="usermgr__roleHints">
-              {ROLE_OPTIONS.map((opt) => (
-                <li key={opt.value}>
-                  <strong>{opt.label}</strong>：{opt.hint}
-                </li>
-              ))}
-            </ul>
           </div>
         </section>
-      ) : (
-        <p className="page__hint" style={{ marginTop: 20 }}>
-          ユーザーの追加・削除・権限変更はマスター権限を持つユーザーのみが行えます。
-        </p>
       )}
 
       {pendingRemove && (

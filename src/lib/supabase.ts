@@ -5,13 +5,20 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export const isSupabaseConfigured = Boolean(url && anonKey);
 
+// Auth opts: persist the OAuth session so reloads stay signed in, and
+// have the client parse the redirect URL after Google bounces the user
+// back from /auth/v1/callback.
 export const supabase = isSupabaseConfigured
   ? createClient(url!, anonKey!, {
-      auth: { persistSession: false },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
     })
   : null;
 
-export type AppUserRole = "master" | "editor" | "viewer";
+export type AppUserRole = "master" | "admin" | "editor" | "viewer";
 
 export type AppUserRow = {
   email: string;

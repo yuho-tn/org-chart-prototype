@@ -2770,6 +2770,7 @@ body.is-dragging .dept-card__add-child {
   letter-spacing: 0.04em;
 }
 .usermgr__role--master { background: #fef3c7; color: #92400e; }
+.usermgr__role--admin  { background: #fee2e2; color: #991b1b; }
 .usermgr__role--editor { background: #dbeafe; color: #1e3a8a; }
 .usermgr__role--viewer { background: #f1f5f9; color: #475569; }
 
@@ -3268,6 +3269,7 @@ body.is-dragging .dept-card__add-child {
 }
 
 .ghdr__userRole--master { color: #c4b5fd; }
+.ghdr__userRole--admin  { color: #fca5a5; }
 .ghdr__userRole--editor { color: #93c5fd; }
 .ghdr__userRole--viewer { color: #94a3b8; }
 
@@ -4556,3 +4558,115 @@ body.is-dragging .dept-card__add-child {
   }
 }
 
+
+/* ── Sign-in page (Google OAuth) ─────────────────────────────────────
+ * Full-screen splash shown when there's no Supabase Auth session.
+ * Single Google button gates entry; domain restriction (sho-san.co.jp)
+ * is enforced both on the OAuth call and in the auth.users trigger.
+ * ────────────────────────────────────────────────────────────────── */
+.signin {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 50%, #f1f5f9 100%);
+}
+
+.signin__card {
+  width: 100%;
+  max-width: 460px;
+  padding: 36px 32px;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
+  text-align: left;
+}
+
+.signin__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.signin__brandMark {
+  font-size: 18px;
+  color: var(--primary);
+}
+
+.signin__brandName {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.signin__title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.signin__lead {
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.signin__google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f1f1f;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+
+.signin__google:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.1);
+}
+
+.signin__google:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.signin__googleIcon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.signin__hint {
+  margin: 18px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.signin__error {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #991b1b;
+  line-height: 1.6;
+}
