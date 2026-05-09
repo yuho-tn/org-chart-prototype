@@ -6,6 +6,7 @@ import {
   type VersionGrants,
 } from "../lib/supabase";
 import type { OrgNode } from "../lib/types";
+import { useVersionsRealtime } from "./useVersionsRealtime";
 
 /**
  * Progressive column sets used by every "select org_versions" query. We try
@@ -181,6 +182,7 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     }
     const row = resp.data as VersionRow;
     set({ versions: [row, ...get().versions] });
+    useVersionsRealtime.getState().markSelfSave(row.id);
     return row;
   },
 
@@ -249,6 +251,7 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     set({
       versions: get().versions.map((v) => (v.id === id ? merged : v)),
     });
+    useVersionsRealtime.getState().markSelfSave(id);
     return merged;
   },
 

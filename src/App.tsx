@@ -22,6 +22,7 @@ import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore
 import { useUiStore, sectionOfRoute } from "./store/useUiStore";
 import { useAuthStore } from "./store/useAuthStore";
 import { usePresenceStore } from "./store/usePresenceStore";
+import { useVersionsRealtime } from "./store/useVersionsRealtime";
 import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
 import { STORAGE_KEYS, readStorage, writeStorage } from "./lib/storageKeys";
 
@@ -161,6 +162,19 @@ export default function App() {
     if (!currentUserEmail) return;
     presenceUpdateVersionId(currentVersionId);
   }, [currentVersionId, currentUserEmail, viewOnly, presenceUpdateVersionId]);
+
+  // Phase 2: subscribe to org_versions Postgres Changes so other users'
+  // saves are reflected in this client without a manual reload.
+  const realtimeSubscribe = useVersionsRealtime((s) => s.subscribe);
+  const realtimeUnsubscribe = useVersionsRealtime((s) => s.unsubscribe);
+  useEffect(() => {
+    if (viewOnly) return;
+    if (!bootReady) return;
+    realtimeSubscribe();
+    return () => {
+      realtimeUnsubscribe();
+    };
+  }, [bootReady, viewOnly, realtimeSubscribe, realtimeUnsubscribe]);
 
   if (viewOnly) return <ViewerLayout view={view} />;
 
