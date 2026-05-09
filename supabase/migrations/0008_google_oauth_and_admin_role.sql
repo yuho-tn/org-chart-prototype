@@ -84,14 +84,41 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_auth_user();
 
--- ── 5. RLS policies: gate writes on auth.email() role lookup ─────────
+-- ── 5. RLS policies: gate writes via SECURITY DEFINER helpers ────────
 -- We keep SELECT permissive (the app filters client-side and viewers
--- need to read) but tighten writes:
---   • app_users writes: only master/admin
---   • org_versions writes: anyone authenticated whose role is editor or
---     above (master/admin/editor) — viewer cannot write
--- The anon role retains read access so unauthenticated viewer-mode
--- share links continue to work.
+-- need to read) but tighten writes via helper functions that look up
+-- the role bypassing RLS — referencing app_users from a policy ON
+-- app_users would otherwise recurse and PostgREST would return 500.
+
+-- master/admin "manager" check
+create or replace function public.is_manager(p_email text)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.app_users
+    where email = lower(coalesce(p_email, ''))
+      and role in ('master', 'admin')
+  )
+$$;
+
+-- master/admin/editor "writer" check
+create or replace function public.is_writer(p_email text)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.app_users
+    where email = lower(coalesce(p_email, ''))
+      and role in ('master', 'admin', 'editor')
+  )
+$$;
 
 -- app_users
 drop policy if exists "anon read app_users" on public.app_users;
@@ -102,20 +129,8 @@ create policy "read app_users (everyone)"
 
 create policy "manage app_users (master/admin only)"
   on public.app_users for all
-  using (
-    exists (
-      select 1 from public.app_users self
-      where self.email = lower(coalesce(auth.email(), ''))
-        and self.role in ('master', 'admin')
-    )
-  )
-  with check (
-    exists (
-      select 1 from public.app_users self
-      where self.email = lower(coalesce(auth.email(), ''))
-        and self.role in ('master', 'admin')
-    )
-  );
+  using (public.is_manager(auth.email()))
+  with check (public.is_manager(auth.email()));
 
 -- org_versions: read everyone (viewer-mode share links rely on this),
 -- write requires authenticated editor-or-above role.
@@ -127,17 +142,5 @@ create policy "org_versions read (everyone)"
 
 create policy "org_versions write (editor or above)"
   on public.org_versions for all
-  using (
-    exists (
-      select 1 from public.app_users self
-      where self.email = lower(coalesce(auth.email(), ''))
-        and self.role in ('master', 'admin', 'editor')
-    )
-  )
-  with check (
-    exists (
-      select 1 from public.app_users self
-      where self.email = lower(coalesce(auth.email(), ''))
-        and self.role in ('master', 'admin', 'editor')
-    )
-  );
+  using (public.is_writer(auth.email()))
+  with check (public.is_writer(auth.email()));
