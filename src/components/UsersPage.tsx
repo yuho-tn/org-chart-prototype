@@ -75,7 +75,7 @@ export function UsersPage() {
   }
 
   /** Roles an admin/master can assign. Master can assign any role except
-   *  re-promote to master (master is fixed to yuho_tn@forumyu.co.jp).
+   *  re-promote to master (master is fixed to yuho_tn@sho-san.co.jp).
    *  Admins can only set editor/viewer. */
   function assignableRoles(): AppUserRole[] {
     if (isMaster) return ["admin", "editor", "viewer"];
@@ -84,11 +84,20 @@ export function UsersPage() {
   }
 
   async function submitNew() {
-    if (!draftEmail.trim() || !draftName.trim()) return;
+    const email = draftEmail.trim().toLowerCase();
+    const name = draftName.trim();
+    if (!email || !name) return;
+    if (!email.endsWith("@sho-san.co.jp")) {
+      setToast({
+        kind: "error",
+        message: "@sho-san.co.jp ドメインのメールアドレスのみ登録できます",
+      });
+      return;
+    }
     setBusy(true);
     const res = await addUser({
-      email: draftEmail.trim(),
-      display_name: draftName.trim(),
+      email,
+      display_name: name,
       role: draftRole,
     });
     setBusy(false);
@@ -98,8 +107,11 @@ export function UsersPage() {
     }
     setDraftEmail("");
     setDraftName("");
-    setDraftRole("editor");
-    setToast({ kind: "info", message: "ユーザーを追加しました" });
+    setDraftRole(assignableRoles()[0] ?? "editor");
+    setToast({
+      kind: "info",
+      message: `${email} を ${ROLE_OPTIONS.find((o) => o.value === draftRole)?.label ?? draftRole} 権限で登録しました（初回サインイン時に有効化されます）`,
+    });
   }
 
   async function changeRole(email: string, role: AppUserRole) {
@@ -234,26 +246,36 @@ export function UsersPage() {
         </div>
       </section>
 
-      {/* Manual user creation is no longer needed (auto-provisioned on
-          first sign-in) but kept in code for emergencies — only master
-          can use it, hidden from admins. */}
-      {isMaster && false && (
+      {/* Pre-provision: master/admin can register a sho-san.co.jp user
+          ahead of their first login with a chosen role. The trigger's
+          ON CONFLICT DO UPDATE preserves the role on first sign-in, so
+          the user lands directly with the assigned permissions instead
+          of starting as viewer and waiting for a manual upgrade. */}
+      {canManage && (
         <section className="card" style={{ marginTop: 20 }}>
           <header className="card__head">
-            <h2 className="card__title">手動でユーザーを追加（緊急用）</h2>
+            <h2 className="card__title">ユーザーを事前登録</h2>
+            <span className="card__sub">
+              次回サインイン時から指定の権限で利用できます
+            </span>
           </header>
           <div className="card__body">
+            <p className="page__hint" style={{ marginTop: 0, marginBottom: 12 }}>
+              <strong>@sho-san.co.jp</strong> のメールアドレスをここで登録しておくと、
+              そのユーザーが初めてGoogleサインインしたタイミングで指定した権限で参加できます。
+              事前登録しなかったユーザーは「閲覧」権限で自動登録されます。
+            </p>
             <div className="usermgr__addRow">
               <input
                 className="field__input"
-                placeholder="email@example.com"
+                placeholder="user@sho-san.co.jp"
                 value={draftEmail}
                 onChange={(e) => setDraftEmail(e.target.value)}
                 type="email"
               />
               <input
                 className="field__input"
-                placeholder="表示名"
+                placeholder="表示名（例：山田 太郎）"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
               />
@@ -262,9 +284,9 @@ export function UsersPage() {
                 value={draftRole}
                 onChange={(e) => setDraftRole(e.target.value as AppUserRole)}
               >
-                {ROLE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                {assignableRoles().map((value) => (
+                  <option key={value} value={value}>
+                    {ROLE_OPTIONS.find((o) => o.value === value)?.label ?? value}
                   </option>
                 ))}
               </select>
@@ -273,7 +295,7 @@ export function UsersPage() {
                 disabled={busy || !draftEmail.trim() || !draftName.trim()}
                 onClick={submitNew}
               >
-                追加
+                登録
               </button>
             </div>
           </div>
