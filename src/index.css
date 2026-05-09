@@ -3274,7 +3274,8 @@ body.is-dragging .dept-card__add-child {
 /* ── Org sub-nav (under global header in 組織図 section) ──────────── */
 .orgsub {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
   border-bottom: 1px solid #dbeafe;
   padding: 6px 18px;
@@ -4282,6 +4283,159 @@ body.is-dragging .dept-card__add-child {
 
 .orgsub__file.is-open .orgsub__fileCaret {
   transform: rotate(180deg);
+}
+
+/* ── Header-mounted alert (UnlinkedAlert / ConfirmedBanner) ──────────
+ * Compact icon-style buttons living in OrgSubNav, replacing the old
+ * full-width yellow banners. Each opens a popover anchored below.
+ * ────────────────────────────────────────────────────────────────── */
+.hdrAlert {
+  position: relative;
+  display: inline-flex;
+}
+
+.hdrAlert__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+
+.hdrAlert__btn--warn {
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+}
+
+.hdrAlert__btn--warn:hover,
+.hdrAlert__btn--warn.is-open {
+  background: #fde68a;
+  border-color: #f59e0b;
+}
+
+.hdrAlert__btn--confirmed {
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+.hdrAlert__btn--confirmed:hover,
+.hdrAlert__btn--confirmed.is-open {
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.hdrAlert__icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.hdrAlert__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #d97706;
+  border-radius: 999px;
+}
+
+.hdrAlert__label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hdrAlert__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 320px;
+  max-width: 420px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 14px 14px 12px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.hdrAlert__head {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.hdrAlert__head strong {
+  color: #92400e;
+}
+
+.hdrAlert__desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.hdrAlert__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.hdrAlert__list li {
+  margin: 0;
+}
+
+.hdrAlert__name {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 7px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.hdrAlert__name:hover {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.hdrAlert__num {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: #f1f5f9;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.hdrAlert__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
 }
 
 /* Backdrop dims the editor while the drawer is open. Pointer events

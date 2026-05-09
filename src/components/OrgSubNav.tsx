@@ -1,5 +1,7 @@
 import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
+import { ConfirmedBanner } from "./ConfirmedBanner";
+import { UnlinkedAlert } from "./UnlinkedAlert";
 
 /**
  * Secondary navigation shown ONLY while the user is in the "組織図" section.
@@ -51,16 +53,20 @@ export function OrgSubNav() {
       </button>
       <div className="orgsub__spacer" />
       {sub === "editor" && (
-        <button
-          className={`orgsub__file ${filesDrawerOpen ? "is-open" : ""}`}
-          onClick={() => setFilesDrawerOpen(!filesDrawerOpen)}
-          aria-expanded={filesDrawerOpen}
-          title="組織図ファイル一覧を開く（下書き／確定版の切替・複製・削除など）"
-        >
-          <span className="orgsub__fileIcon" aria-hidden>📁</span>
-          <span className="orgsub__fileLabel">ファイル：{fileLabel}</span>
-          <span className="orgsub__fileCaret" aria-hidden>▾</span>
-        </button>
+        <>
+          <ConfirmedBanner />
+          <UnlinkedAlert />
+          <button
+            className={`orgsub__file ${filesDrawerOpen ? "is-open" : ""}`}
+            onClick={() => setFilesDrawerOpen(!filesDrawerOpen)}
+            aria-expanded={filesDrawerOpen}
+            title="組織図ファイル一覧を開く（下書き／確定版の切替・複製・削除など）"
+          >
+            <span className="orgsub__fileIcon" aria-hidden>📁</span>
+            <span className="orgsub__fileLabel">ファイル：{fileLabel}</span>
+            <span className="orgsub__fileCaret" aria-hidden>▾</span>
+          </button>
+        </>
       )}
     </nav>
   );

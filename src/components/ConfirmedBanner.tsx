@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useVersionsStore } from "../store/useVersionsStore";
 import { useUiStore } from "../store/useUiStore";
@@ -5,12 +6,10 @@ import { useAuthStore } from "../store/useAuthStore";
 import { getAuthor } from "../lib/author";
 
 /**
- * Slim banner shown directly under the TopBar whenever the editor is
- * displaying a 確定版 file. Confirmed files are the "master" org chart —
- * they remain editable and saving updates the confirmed snapshot in place.
- * The banner makes the FIX status (and 確定期間) explicit, and offers a
- * "複製して別案を作成" affordance for users who want to fork without
- * touching the master.
+ * Header-mounted "確定版" status indicator. Renders a small ⭐ badge in
+ * OrgSubNav whenever the editor is on a 確定版 file; clicking opens a
+ * popover that explains the master-file behavior and offers the
+ * "別案として複製" affordance. Replaces the old full-width banner.
  */
 export function ConfirmedBanner() {
   const currentVersionId = useOrgStore((s) => s.currentVersionId);
@@ -23,9 +22,29 @@ export function ConfirmedBanner() {
   const setViewOnly = useUiStore((s) => s.setViewOnly);
   const currentUser = useAuthStore((s) => s.currentUser);
 
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
   const file = currentVersionId
     ? versions.find((v) => v.id === currentVersionId)
     : null;
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   if (!file?.is_confirmed) return null;
   if (currentUser?.role === "viewer") return null;
@@ -61,20 +80,36 @@ export function ConfirmedBanner() {
       replaceNodes(nodes, { versionId: row.id, versionLabel: row.name });
     }
     setToast({ kind: "info", message: `「${trimmed}」を別案として作成しました` });
+    setOpen(false);
   }
 
   return (
-    <div className="confirmed-banner">
-      <span className="confirmed-banner__label">
-        ⭐ 確定版（マスター{period ? `／${period}` : ""}）
-      </span>
-      <span className="confirmed-banner__hint">
-        マスター組織図として保存中です。編集→保存で確定版のまま更新されます。
-        別案を試す場合は右の「別案として複製」を使用してください。
-      </span>
-      <button className="btn btn--ghost btn--xs" onClick={duplicateAsDraft}>
-        別案として複製
+    <div className="hdrAlert" ref={wrapRef}>
+      <button
+        className={`hdrAlert__btn hdrAlert__btn--confirmed ${open ? "is-open" : ""}`}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={`確定版（マスター${period ? `／${period}` : ""}）`}
+      >
+        <span className="hdrAlert__icon" aria-hidden>⭐</span>
+        <span className="hdrAlert__label">確定版{period ? `／${period}` : ""}</span>
       </button>
+      {open && (
+        <div className="hdrAlert__panel" role="dialog">
+          <div className="hdrAlert__head">
+            <strong>確定版（マスター{period ? `／${period}` : ""}）</strong>
+            <p className="hdrAlert__desc">
+              マスター組織図として保存中です。編集→保存で確定版のまま更新されます。
+              別案を試す場合は下のボタンを使用してください。
+            </p>
+          </div>
+          <div className="hdrAlert__actions">
+            <button className="btn btn--primary btn--xs" onClick={duplicateAsDraft}>
+              別案として複製
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -13,12 +13,10 @@ import { EmployeesPage } from "./components/EmployeesPage";
 import { UsersPage } from "./components/UsersPage";
 import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
 import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
-import { ConfirmedBanner } from "./components/ConfirmedBanner";
 import { ListView } from "./components/ListView";
 import { AssignmentsView } from "./components/AssignmentsView";
 import { ViewTabs } from "./components/ViewTabs";
 import { FilesDrawer } from "./components/FilesDrawer";
-import { UnlinkedAlert } from "./components/UnlinkedAlert";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useUiStore, sectionOfRoute } from "./store/useUiStore";
@@ -201,8 +199,6 @@ function EditorShell() {
     <div className="orgshell">
       <OrgSubNav />
       <TopBar />
-      <ConfirmedBanner />
-      <UnlinkedAlert />
       <ViewTabs />
       <div className="app__main">
         <div className="app__leftPane">
