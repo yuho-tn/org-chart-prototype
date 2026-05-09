@@ -205,11 +205,13 @@ function EditorShell() {
       <UnlinkedAlert />
       <ViewTabs />
       <div className="app__main">
-        <Sidebar />
+        <div className="app__leftPane">
+          <Sidebar />
+          <Inspector />
+        </div>
         <div className="app__content">
           <ViewBody view={view} />
         </div>
-        <Inspector />
       </div>
       <LogPanel />
       <FilesDrawer />

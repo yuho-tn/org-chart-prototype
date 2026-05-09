@@ -120,6 +120,7 @@ export function Inspector() {
   if (!selected) {
     return (
       <aside className="inspector inspector--empty">
+        <h2 className="inspector__title">詳細</h2>
         <p>ノード（部署カードまたは人員チップ）を選択すると詳細が表示されます。</p>
       </aside>
     );
@@ -137,6 +138,7 @@ export function Inspector() {
   return (
     <>
       <aside className="inspector">
+        <h2 className="inspector__title">詳細</h2>
         <div className={`badge badge--${selected.kind}`}>
           {selected.kind === "department" ? `部署 / ${selected.category ?? "DEPT"}` : "人員"}
         </div>
