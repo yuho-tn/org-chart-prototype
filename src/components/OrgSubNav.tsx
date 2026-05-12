@@ -10,15 +10,16 @@ import { PresenceAvatars } from "./PresenceAvatars";
  * without leaving the section. Renders nothing in other sections — they
  * have their own dedicated layouts.
  *
- * In editor mode this also exposes the "組織図ファイル" trigger that opens
- * the FilesDrawer; files are conceptually above the editor tools so they
- * live up here rather than getting buried at the bottom of the sidebar.
+ * In editor mode this also exposes the "組織図ファイル" trigger (leftmost,
+ * before the 編集/人事発令 tabs) that opens the files modal. Files are the
+ * highest-level concept here — you pick a file first, then choose 編集 or
+ * 人事発令 inside it — so the trigger sits on the far left.
  */
 export function OrgSubNav() {
   const route = useUiStore((s) => s.route);
   const navigate = useUiStore((s) => s.navigate);
-  const filesDrawerOpen = useUiStore((s) => s.filesDrawerOpen);
-  const setFilesDrawerOpen = useUiStore((s) => s.setFilesDrawerOpen);
+  const filesModalOpen = useUiStore((s) => s.filesDrawerOpen);
+  const setFilesModalOpen = useUiStore((s) => s.setFilesDrawerOpen);
   const currentVersionLabel = useOrgStore((s) => s.currentVersionLabel);
   const dirty = useOrgStore((s) => s.dirty);
 
@@ -36,6 +37,21 @@ export function OrgSubNav() {
 
   return (
     <nav className="orgsub" role="tablist">
+      {sub === "editor" && (
+        <>
+          <button
+            className={`orgsub__file ${filesModalOpen ? "is-open" : ""}`}
+            onClick={() => setFilesModalOpen(!filesModalOpen)}
+            aria-expanded={filesModalOpen}
+            title="組織図ファイル一覧を開く（下書き／確定版の切替・複製・権限・確定登録・削除など）"
+          >
+            <span className="orgsub__fileIcon" aria-hidden>📁</span>
+            <span className="orgsub__fileLabel">ファイル：{fileLabel}</span>
+            <span className="orgsub__fileCaret" aria-hidden>▾</span>
+          </button>
+          <span className="orgsub__divider" aria-hidden />
+        </>
+      )}
       <button
         role="tab"
         aria-selected={sub === "editor"}
@@ -58,16 +74,6 @@ export function OrgSubNav() {
         <>
           <ConfirmedBanner />
           <UnlinkedAlert />
-          <button
-            className={`orgsub__file ${filesDrawerOpen ? "is-open" : ""}`}
-            onClick={() => setFilesDrawerOpen(!filesDrawerOpen)}
-            aria-expanded={filesDrawerOpen}
-            title="組織図ファイル一覧を開く（下書き／確定版の切替・複製・削除など）"
-          >
-            <span className="orgsub__fileIcon" aria-hidden>📁</span>
-            <span className="orgsub__fileLabel">ファイル：{fileLabel}</span>
-            <span className="orgsub__fileCaret" aria-hidden>▾</span>
-          </button>
         </>
       )}
     </nav>

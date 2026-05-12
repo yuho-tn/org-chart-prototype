@@ -4227,13 +4227,24 @@ body.is-dragging .dept-card__add-child {
 
 /* ── OrgSubNav file trigger + FilesDrawer ─────────────────────────────
  * Files moved out of the sidebar bottom and into a slide-in drawer
- * triggered from the 2nd-tier header. The trigger sits to the right
- * of the editor / 人事発令 tabs and shows the active file name so the
- * user always knows which file they're editing without opening the
- * drawer.
+ * triggered from the 2nd-tier header. The trigger sits at the far left
+ * of the OrgSubNav (before the 編集/人事発令 tabs) and shows the active
+ * file name so the user always knows which file they're editing
+ * without opening the modal.
  * ────────────────────────────────────────────────────────────────── */
 .orgsub__spacer {
   flex: 1;
+}
+
+/* Vertical separator between the file trigger and the editor/人事発令
+ * tabs. Visually anchors the "pick a file first, then choose what to do"
+ * hierarchy without adding another label. */
+.orgsub__divider {
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  margin: 0 8px;
+  background: #c7d2fe;
 }
 
 .orgsub__file {
@@ -4483,52 +4494,35 @@ body.is-dragging .dept-card__add-child {
   padding-top: 10px;
 }
 
-/* Backdrop dims the editor while the drawer is open. Pointer events
- * are off when closed so it never blocks clicks on the canvas. */
-.drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.32);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-  z-index: 40;
+/* Files modal — centered dialog hosting the VersionsPanel. Replaces the
+ * old left side drawer. We use the existing .modal-backdrop + .modal
+ * machinery, plus a wider variant (.modal--files) so the file list and
+ * its row-level action buttons have room to breathe. */
+.files-modal-backdrop {
+  /* Slightly stronger dim than other modals because this one is the
+   * "switch what you're working on" surface — focus matters. */
+  background: rgba(15, 23, 42, 0.45);
 }
 
-.drawer-backdrop.is-open {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.files-drawer {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: min(420px, 92vw);
-  background: var(--panel);
-  box-shadow: 4px 0 24px rgba(15, 23, 42, 0.18);
-  transform: translateX(-100%);
-  transition: transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+.modal--files {
+  position: relative;
+  width: 720px;
+  max-width: 94vw;
+  max-height: 86vh;
+  padding: 22px 22px 18px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  z-index: 41;
-  border-right: 1px solid var(--border);
 }
 
-.files-drawer.is-open {
-  transform: translateX(0);
-}
-
-/* The hosted .versions panel handles its own scrolling — let it fill. */
-.files-drawer > .versions {
+/* Let the hosted VersionsPanel own its scroll area instead of the modal. */
+.modal--files > .versions {
   flex: 1;
   min-height: 0;
-  padding-top: 18px;
+  padding-top: 4px;
 }
 
-.files-drawer__close {
+.files-modal__close {
   position: absolute;
   top: 8px;
   right: 8px;
@@ -4545,7 +4539,7 @@ body.is-dragging .dept-card__add-child {
   z-index: 1;
 }
 
-.files-drawer__close:hover {
+.files-modal__close:hover {
   background: #f1f5f9;
   color: var(--text);
 }

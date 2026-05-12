@@ -3,10 +3,14 @@ import { useUiStore } from "../store/useUiStore";
 import { VersionsPanel } from "./VersionsPanel";
 
 /**
- * Slide-in drawer that hosts the 組織図ファイル list. Triggered from the
- * OrgSubNav (2nd-tier header) so files — being a "higher" concept than the
- * editor tools in the left sidebar — get more room and don't get pushed off
- * the bottom by 未配置従業員 etc.
+ * Centered modal hosting the 組織図ファイル list. Triggered from the
+ * leftmost button in OrgSubNav. Files are the top-level concept (you
+ * pick a file before deciding to 編集 / 人事発令 inside it), so a centered
+ * modal — not a side drawer — matches that hierarchy and gives the
+ * list, action buttons, and metadata enough room to breathe.
+ *
+ * The store key is still `filesDrawerOpen` for compatibility with the
+ * previous drawer implementation — only the presentation changed.
  */
 export function FilesDrawer() {
   const open = useUiStore((s) => s.filesDrawerOpen);
@@ -21,21 +25,23 @@ export function FilesDrawer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, setOpen]);
 
+  if (!open) return null;
+
   return (
-    <>
+    <div
+      className="modal-backdrop files-modal-backdrop"
+      onClick={() => setOpen(false)}
+      role="presentation"
+    >
       <div
-        className={`drawer-backdrop ${open ? "is-open" : ""}`}
-        onClick={() => setOpen(false)}
-        aria-hidden={!open}
-      />
-      <aside
-        className={`files-drawer ${open ? "is-open" : ""}`}
-        aria-hidden={!open}
+        className="modal modal--files"
+        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="組織図ファイル"
+        aria-modal="true"
       >
         <button
-          className="files-drawer__close"
+          className="files-modal__close"
           onClick={() => setOpen(false)}
           title="閉じる (Esc)"
           aria-label="閉じる"
@@ -43,7 +49,7 @@ export function FilesDrawer() {
           ×
         </button>
         <VersionsPanel />
-      </aside>
-    </>
+      </div>
+    </div>
   );
 }
