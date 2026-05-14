@@ -19,6 +19,7 @@ import { ViewTabs } from "./components/ViewTabs";
 import { FilesDrawer } from "./components/FilesDrawer";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
+import { useEmployeesStore } from "./store/useEmployeesStore";
 import { useUiStore, sectionOfRoute } from "./store/useUiStore";
 import { useAuthStore } from "./store/useAuthStore";
 import { usePresenceStore } from "./store/usePresenceStore";
@@ -79,7 +80,10 @@ export default function App() {
     (async () => {
       if (viewOnly && shareInit.versionId) {
         if (!isSupabaseConfigured) return;
-        await refreshVersions();
+        await Promise.all([
+          refreshVersions(),
+          useEmployeesStore.getState().refresh(),
+        ]);
         if (cancelled) return;
         const versions = useVersionsStore.getState().versions;
         const meta = versions.find((v) => v.id === shareInit.versionId);
