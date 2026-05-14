@@ -17,6 +17,7 @@ import { ListView } from "./components/ListView";
 import { AssignmentsView } from "./components/AssignmentsView";
 import { ViewTabs } from "./components/ViewTabs";
 import { FilesDrawer } from "./components/FilesDrawer";
+import { PersonDetailModal } from "./components/PersonDetailModal";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useEmployeesStore } from "./store/useEmployeesStore";
@@ -321,6 +322,7 @@ function ViewerLayout({ view }: { view: ReturnType<typeof useUiStore.getState>["
             <ViewBody view={view} />
           </div>
         </div>
+        <PersonDetailModal />
         <Toast />
       </div>
     </ReactFlowProvider>

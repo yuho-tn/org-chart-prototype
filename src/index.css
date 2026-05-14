@@ -4664,3 +4664,157 @@ body.is-dragging .dept-card__add-child {
   color: #991b1b;
   line-height: 1.6;
 }
+
+/* ── Viewer-mode person detail modal ─────────────────────────────────
+ * Pops up when a person chip is clicked in viewer mode. Lists the
+ * employee master fields plus 主務 / 兼務 department paths so a viewer
+ * (not author) can see where a person sits without opening the editor.
+ */
+.person-detail {
+  width: 520px;
+}
+
+.person-detail__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.person-detail__head .modal__title {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.person-detail__close {
+  appearance: none;
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.person-detail__close:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.person-detail__meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.person-detail__meta dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.person-detail__meta dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.person-detail__meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.person-detail__warn {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  color: #9a3412;
+  font-size: 12px;
+}
+
+.person-detail__section {
+  margin: 0 0 14px;
+}
+
+.person-detail__heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.person-detail__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.person-detail__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.person-detail__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.person-detail__path {
+  flex: 1 1 auto;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.person-detail__role {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.person-detail__badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fde68a;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.person-detail__muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
