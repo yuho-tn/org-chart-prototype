@@ -21,6 +21,8 @@ export type DeptNodeData = {
     id: string;
     name: string;
     roleLabel: PersonRole;
+    /** Optional 兼任 role rendered inline as "ROLE 兼 SECONDARY". */
+    secondaryRoleLabel?: PersonRole;
     selected: boolean;
     isExecutive: boolean;
     isConcurrent?: boolean;
@@ -396,9 +398,17 @@ export function DepartmentNode({ id, data }: NodeProps<DeptNodeData>) {
               onClick={(e) => selectChip(e, p.id)}
               onDoubleClick={(e) => startChipEdit(e, p.id, p.name)}
               onMouseDown={(e) => e.stopPropagation()}
-              title={`${p.roleLabel ?? ""}：${p.name}${p.isExecutive ? "（役員）" : ""}${p.isConcurrent ? "（兼務）" : ""}${p.isUnlinked ? "（従業員マスター未紐付け）" : ""}（ダブルクリックで編集）`}
+              title={`${p.roleLabel ?? ""}${p.secondaryRoleLabel ? ` 兼 ${p.secondaryRoleLabel}` : ""}：${p.name}${p.isExecutive ? "（役員）" : ""}${p.isConcurrent ? "（兼務）" : ""}${p.isUnlinked ? "（従業員マスター未紐付け）" : ""}（ダブルクリックで編集）`}
             >
-              <span className="chip__role">{p.roleLabel}</span>
+              <span className="chip__role">
+                {p.roleLabel}
+                {p.secondaryRoleLabel && (
+                  <>
+                    <span className="chip__roleSep"> 兼 </span>
+                    {p.secondaryRoleLabel}
+                  </>
+                )}
+              </span>
               <span className="chip__name">{displayName(p.name, p.isConcurrent)}</span>
               {p.isUnlinked && (
                 <span

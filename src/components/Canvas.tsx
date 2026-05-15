@@ -123,6 +123,7 @@ export function Canvas() {
           id: p.id,
           name: p.name,
           roleLabel: p.roleLabel ?? null,
+          secondaryRoleLabel: p.secondaryRoleLabel ?? null,
           selected: selectedId === p.id,
           isExecutive: !!p.isExecutive,
           isConcurrent: !!p.isConcurrent,
@@ -168,6 +169,7 @@ export function Canvas() {
       data: {
         name: e.name,
         role: e.roleLabel ?? null,
+        secondaryRole: e.secondaryRoleLabel ?? null,
         selected: selectedId === e.id,
         isConcurrent: !!e.isConcurrent,
         isUnlinked: isPersonUnlinked(e),

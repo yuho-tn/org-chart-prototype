@@ -9,6 +9,8 @@ import type { PersonRole } from "../lib/types";
 export type ExecNodeData = {
   name: string;
   role: PersonRole;
+  /** Optional 兼任 role rendered inline as "ROLE 兼 SECONDARY". */
+  secondaryRole?: PersonRole;
   selected: boolean;
   isConcurrent?: boolean;
   /** True if this person isn't linked to a row in the employee master. */
@@ -52,10 +54,18 @@ export function ExecutiveNode({ id, data }: NodeProps<ExecNodeData>) {
       onDragEnd={endDrag}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={selectClick}
-      title={`${data.role}：${data.name}${data.isConcurrent ? "（兼務）" : ""}${data.isUnlinked ? "（従業員マスター未紐付け）" : ""}`}
+      title={`${data.role}${data.secondaryRole ? ` 兼 ${data.secondaryRole}` : ""}：${data.name}${data.isConcurrent ? "（兼務）" : ""}${data.isUnlinked ? "（従業員マスター未紐付け）" : ""}`}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
-      <span className="exec-card__role">{data.role}</span>
+      <span className="exec-card__role">
+        {data.role}
+        {data.secondaryRole && (
+          <>
+            <span className="exec-card__roleSep"> 兼 </span>
+            {data.secondaryRole}
+          </>
+        )}
+      </span>
       <span className="exec-card__name">
         {data.isConcurrent && !data.name.startsWith("*") ? `*${data.name}` : data.name}
       </span>

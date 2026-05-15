@@ -237,7 +237,7 @@ function PersonChip({
       }}
       title={
         person.roleLabel
-          ? `${person.roleLabel}：${person.name}${person.isExecutive ? "（役員）" : ""}${person.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`
+          ? `${person.roleLabel}${person.secondaryRoleLabel ? ` 兼 ${person.secondaryRoleLabel}` : ""}：${person.name}${person.isExecutive ? "（役員）" : ""}${person.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`
           : `${person.name}${person.isConcurrent ? "（兼務）" : ""}（ダブルクリックで編集）`
       }
     >
@@ -247,6 +247,7 @@ function PersonChip({
           style={{ background: accent, color: "#fff" }}
         >
           {person.roleLabel}
+          {person.secondaryRoleLabel && <> 兼 {person.secondaryRoleLabel}</>}
         </span>
       )}
       <span className="lv-chip__name">

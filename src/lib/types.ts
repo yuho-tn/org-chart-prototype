@@ -17,7 +17,7 @@ export type PersonRole =
   | "CTO"
   | "CFO"
   | "CHRO"
-  | "CSO"
+  | "CRO"
   | "CMO"
   | "DM"
   | "CDM"
@@ -35,7 +35,7 @@ export const EXECUTIVE_ROLES: ReadonlyArray<NonNullable<PersonRole>> = [
   "CTO",
   "CFO",
   "CHRO",
-  "CSO",
+  "CRO",
   "CMO",
 ];
 
@@ -46,7 +46,7 @@ export const ALL_ROLES: ReadonlyArray<NonNullable<PersonRole>> = [
   "CTO",
   "CFO",
   "CHRO",
-  "CSO",
+  "CRO",
   "CMO",
   "DM",
   "CDM",
@@ -64,7 +64,7 @@ export const ROLE_DESCRIPTIONS: Record<NonNullable<PersonRole>, string> = {
   CTO: "最高技術責任者",
   CFO: "最高財務責任者",
   CHRO: "最高人事責任者",
-  CSO: "最高営業責任者",
+  CRO: "最高営業責任者",
   CMO: "最高マーケティング責任者",
   DM: "DIVマネージャー",
   CDM: "チャレンジDIVマネージャー",
@@ -97,6 +97,13 @@ export type OrgNode = {
   colorIndex?: number;
   /** person-only: leader role; null/absent means regular member */
   roleLabel?: PersonRole;
+  /**
+   * person-only: optional secondary role for 兼任 within the same chip
+   * (e.g. CRO 兼 DM). Independent of `isConcurrent`, which describes a
+   * separate node in another dept. Only renders when both this and
+   * `roleLabel` are set; the chip then shows "<roleLabel> 兼 <secondary>".
+   */
+  secondaryRoleLabel?: PersonRole;
   /** person-only: when true, render in the executive band (parent=ROOT) or with an exec badge inside a dept card */
   isExecutive?: boolean;
   /** when true, this node has been created but not yet placed in the tree — it lives in the left tray until the user drags it onto the canvas. */

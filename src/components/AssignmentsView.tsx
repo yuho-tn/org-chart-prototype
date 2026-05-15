@@ -12,6 +12,7 @@ type AssignmentEntry = {
   path: string;
   pathSegments: string[];
   role: PersonRole;
+  secondaryRole: PersonRole;
 };
 
 type Assignment = {
@@ -86,6 +87,7 @@ function buildAssignments(nodes: OrgNode[], employees: EmployeeRow[]): Assignmen
         path: segs.length ? segs.join(" / ") : "（未配置）",
         pathSegments: segs,
         role: n.roleLabel ?? null,
+        secondaryRole: n.secondaryRoleLabel ?? null,
       };
     }
 
@@ -497,7 +499,10 @@ export function AssignmentsView() {
                       <div className="assignlist__cell">
                         <span className="assignlist__path">{a.primary.path}</span>
                         {a.primary.role && (
-                          <span className="assignlist__role">{a.primary.role}</span>
+                          <span className="assignlist__role">
+                            {a.primary.role}
+                            {a.primary.secondaryRole && <> 兼 {a.primary.secondaryRole}</>}
+                          </span>
                         )}
                       </div>
                     ) : (
@@ -520,6 +525,7 @@ export function AssignmentsView() {
                               {c.role && (
                                 <span className="assignlist__role assignlist__role--concurrent">
                                   {c.role}
+                                  {c.secondaryRole && <> 兼 {c.secondaryRole}</>}
                                 </span>
                               )}
                             </button>

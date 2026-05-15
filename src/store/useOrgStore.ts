@@ -54,6 +54,7 @@ type Store = AppState & {
   deleteNode: (id: string, strategy?: DeleteWithChildrenStrategy) => void;
   rename: (id: string, name: string) => void;
   setRole: (id: string, roleLabel: PersonRole) => void;
+  setSecondaryRole: (id: string, secondaryRoleLabel: PersonRole) => void;
   setExecutive: (id: string, isExecutive: boolean) => void;
   setConcurrent: (id: string, isConcurrent: boolean) => void;
   /** Link or unlink a person node to an entry in the employee master.
@@ -116,6 +117,26 @@ function pushLog(log: LogEntry[], entry: LogEntry): LogEntry[] {
 
 function snapshot(state: Pick<AppState, "nodes">): Snapshot {
   return { nodes: state.nodes.map((n) => ({ ...n })) };
+}
+
+/**
+ * Legacy role-name compatibility: snapshots created before the CSO → CRO
+ * rename still carry `roleLabel: "CSO"`. Normalize on load so the chip,
+ * Inspector, and rank calculations all agree without forcing a manual
+ * re-save by every author.
+ */
+function normalizeLegacyRoles(nodes: OrgNode[]): OrgNode[] {
+  return nodes.map((n) => {
+    if (n.kind !== "person") return n;
+    const role = n.roleLabel as unknown as string | null | undefined;
+    const sec = n.secondaryRoleLabel as unknown as string | null | undefined;
+    if (role !== "CSO" && sec !== "CSO") return n;
+    return {
+      ...n,
+      roleLabel: role === "CSO" ? "CRO" : (n.roleLabel ?? null),
+      secondaryRoleLabel: sec === "CSO" ? "CRO" : n.secondaryRoleLabel,
+    };
+  });
 }
 
 /**
@@ -486,11 +507,45 @@ export const useOrgStore = create<Store>((set, get) => ({
     const target = state.nodes.find((n) => n.id === id);
     if (!target || target.kind !== "person") return;
     if (target.roleLabel === roleLabel) return;
+    // Clearing the primary role implicitly clears the secondary; otherwise a
+    // chip would render as just " 兼 DM" which is meaningless.
+    const patch: Partial<OrgNode> =
+      roleLabel === null
+        ? { roleLabel: null, secondaryRoleLabel: null }
+        : roleLabel === target.secondaryRoleLabel
+          ? { roleLabel, secondaryRoleLabel: null }
+          : { roleLabel };
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
-      nodes: state.nodes.map((n) => (n.id === id ? { ...n, roleLabel } : n)),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
       log: logEntry(state, "role", `「${target.name}」の役職を ${roleLabel ?? "メンバー"} に変更`),
+      dirty: true,
+    });
+  },
+
+  setSecondaryRole: (id, secondaryRoleLabel) => {
+    const state = get();
+    const target = state.nodes.find((n) => n.id === id);
+    if (!target || target.kind !== "person") return;
+    if (target.secondaryRoleLabel === secondaryRoleLabel) return;
+    // Setting secondary === primary would render as "CRO 兼 CRO" — silently
+    // collapse to "clear" instead. Empty primary makes secondary meaningless.
+    const next =
+      !target.roleLabel || secondaryRoleLabel === target.roleLabel
+        ? null
+        : secondaryRoleLabel;
+    set({
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      nodes: state.nodes.map((n) =>
+        n.id === id ? { ...n, secondaryRoleLabel: next } : n,
+      ),
+      log: logEntry(
+        state,
+        "role",
+        `「${target.name}」の兼務役職を ${next ?? "なし"} に変更`,
+      ),
       dirty: true,
     });
   },
@@ -783,7 +838,7 @@ export const useOrgStore = create<Store>((set, get) => ({
     set({
       past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
       future: [],
-      nodes: nodes.map((n) => ({ ...n })),
+      nodes: normalizeLegacyRoles(nodes.map((n) => ({ ...n }))),
       selectedId: null,
       currentVersionId: meta?.versionId ?? null,
       currentVersionLabel: meta?.versionLabel ?? null,
@@ -816,7 +871,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       if (!raw) return;
       const parsed = JSON.parse(raw) as { nodes?: OrgNode[] };
       if (!parsed.nodes || !Array.isArray(parsed.nodes)) return;
-      set({ nodes: parsed.nodes, dirty: false });
+      set({ nodes: normalizeLegacyRoles(parsed.nodes), dirty: false });
     } catch {
       // ignore corrupt storage
     }

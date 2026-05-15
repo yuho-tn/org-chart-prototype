@@ -1833,6 +1833,13 @@ body.is-dragging .dept-card__add-child {
   flex-shrink: 0;
 }
 
+.chip__roleSep,
+.exec-card__roleSep {
+  font-weight: 600;
+  opacity: 0.75;
+  margin: 0 2px;
+}
+
 .chip--leader .chip__name {
   flex: 1;
   min-width: 0;

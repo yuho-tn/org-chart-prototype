@@ -80,6 +80,7 @@ export function Inspector() {
   const selectedId = useOrgStore((s) => s.selectedId);
   const rename = useOrgStore((s) => s.rename);
   const setRole = useOrgStore((s) => s.setRole);
+  const setSecondaryRole = useOrgStore((s) => s.setSecondaryRole);
   const setConcurrent = useOrgStore((s) => s.setConcurrent);
   const setEmployeeNumber = useOrgStore((s) => s.setEmployeeNumber);
   const setCategory = useOrgStore((s) => s.setCategory);
@@ -215,6 +216,27 @@ export function Inspector() {
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="field">
+              <span className="field__label">兼務役職（任意）</span>
+              <select
+                className="field__input"
+                value={selected.secondaryRoleLabel ?? ""}
+                disabled={!selected.roleLabel}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSecondaryRole(selected.id, v === "" ? null : (v as PersonRole));
+                }}
+              >
+                <option value="">なし</option>
+                {ALL_ROLES.filter((r) => r !== selected.roleLabel).map((r) => (
+                  <option key={r} value={r}>{`${r}（${ROLE_DESCRIPTIONS[r]}）`}</option>
+                ))}
+              </select>
+              <small style={{ color: "var(--text-muted)", marginTop: 4, display: "block" }}>
+                例: CRO 兼 DM。役職が未設定の場合は指定できません。
+              </small>
             </label>
 
             <label className="field">

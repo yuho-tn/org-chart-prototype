@@ -61,6 +61,7 @@ export function PersonDetailModal() {
         id: n.id,
         path: segs.length ? segs.join(" / ") : "（未配置）",
         role: n.roleLabel ?? null,
+        secondaryRole: n.secondaryRoleLabel ?? null,
         isExecutive: !!n.isExecutive,
       };
     }
@@ -159,6 +160,7 @@ export function PersonDetailModal() {
             <AssignmentRow
               path={detail.primary.path}
               role={detail.primary.role}
+              secondaryRole={detail.primary.secondaryRole}
               isExecutive={detail.primary.isExecutive}
             />
           ) : (
@@ -179,7 +181,12 @@ export function PersonDetailModal() {
             <ul className="person-detail__list">
               {detail.concurrent.map((c) => (
                 <li key={c.id}>
-                  <AssignmentRow path={c.path} role={c.role} isExecutive={c.isExecutive} />
+                  <AssignmentRow
+                    path={c.path}
+                    role={c.role}
+                    secondaryRole={c.secondaryRole}
+                    isExecutive={c.isExecutive}
+                  />
                 </li>
               ))}
             </ul>
@@ -199,18 +206,28 @@ export function PersonDetailModal() {
 function AssignmentRow({
   path,
   role,
+  secondaryRole,
   isExecutive,
 }: {
   path: string;
   role: string | null;
+  secondaryRole?: string | null;
   isExecutive: boolean;
 }) {
   return (
     <div className="person-detail__row">
       <span className="person-detail__path">{path}</span>
       {role && (
-        <span className="person-detail__role" title={ROLE_DESCRIPTIONS[role as keyof typeof ROLE_DESCRIPTIONS]}>
+        <span
+          className="person-detail__role"
+          title={
+            secondaryRole
+              ? `${ROLE_DESCRIPTIONS[role as keyof typeof ROLE_DESCRIPTIONS]} 兼 ${ROLE_DESCRIPTIONS[secondaryRole as keyof typeof ROLE_DESCRIPTIONS]}`
+              : ROLE_DESCRIPTIONS[role as keyof typeof ROLE_DESCRIPTIONS]
+          }
+        >
           {role}
+          {secondaryRole && <> 兼 {secondaryRole}</>}
         </span>
       )}
       {isExecutive && <span className="person-detail__badge">役員</span>}

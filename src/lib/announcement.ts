@@ -8,7 +8,7 @@ import type { EmployeeRow } from "./supabase";
  *
  * Bands (high → low):
  *   100  CEO
- *    95  COO / CTO / CFO / CHRO / CSO / CMO  (other C-suite — equal among themselves)
+ *    95  COO / CTO / CFO / CHRO / CRO / CMO  (other C-suite — equal among themselves)
  *    60  DM / CDM
  *    40  TM / CTM
  *    20  TL / CTL
@@ -21,7 +21,7 @@ const RANK: Record<NonNullable<PersonRole> | "member", number> = {
   CTO: 95,
   CFO: 95,
   CHRO: 95,
-  CSO: 95,
+  CRO: 95,
   CMO: 95,
   DM: 60,
   CDM: 60,
