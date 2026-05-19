@@ -95,6 +95,13 @@ type Store = AppState & {
   restoreToLog: (logId: string) => { ok: boolean; reason?: string };
   saveDraft: () => void;
   loadFromStorage: () => void;
+  /** Restore an in-progress local draft on boot, keeping it marked dirty
+   *  and bound to the originating server version so a later 保存 overwrites
+   *  the right file. `versionId: null` means an unsaved new file. */
+  hydrateDraft: (
+    nodes: OrgNode[],
+    meta: { versionId: string | null; versionLabel: string | null },
+  ) => void;
   replaceNodes: (nodes: OrgNode[], meta?: { versionId?: string; versionLabel?: string }) => void;
   markClean: (meta?: { versionId?: string; versionLabel?: string }) => void;
 };
@@ -875,5 +882,25 @@ export const useOrgStore = create<Store>((set, get) => ({
     } catch {
       // ignore corrupt storage
     }
+  },
+
+  hydrateDraft: (nodes, meta) => {
+    set({
+      nodes: normalizeLegacyRoles(nodes.map((n) => ({ ...n }))),
+      selectedId: null,
+      past: [],
+      future: [],
+      currentVersionId: meta.versionId,
+      currentVersionLabel: meta.versionLabel,
+      dirty: true,
+      log: [
+        makeLog(
+          "reset",
+          meta.versionLabel
+            ? `ローカルの未保存編集を復元（${meta.versionLabel}）`
+            : "ローカルの未保存編集を復元",
+        ),
+      ],
+    });
   },
 }));

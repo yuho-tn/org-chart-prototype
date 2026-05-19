@@ -26,10 +26,17 @@ import { useAuthStore } from "./store/useAuthStore";
 import { usePresenceStore } from "./store/usePresenceStore";
 import { useVersionsRealtime } from "./store/useVersionsRealtime";
 import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
-import { STORAGE_KEYS, readStorage, writeStorage } from "./lib/storageKeys";
+import {
+  STORAGE_KEYS,
+  readStorage,
+  writeStorage,
+  readDraft,
+  writeDraft,
+  clearDraft,
+} from "./lib/storageKeys";
 
 export default function App() {
-  const loadFromStorage = useOrgStore((s) => s.loadFromStorage);
+  const hydrateDraft = useOrgStore((s) => s.hydrateDraft);
   const replaceNodes = useOrgStore((s) => s.replaceNodes);
   const refreshVersions = useVersionsStore((s) => s.refresh);
   const getSnapshot = useVersionsStore((s) => s.getSnapshot);
@@ -44,6 +51,10 @@ export default function App() {
     versionId: null,
     ready: false,
   });
+  // Gates the draft-persisting effect: until the boot restore has read the
+  // stored draft, that effect must not run — otherwise its clearDraft()
+  // would wipe the draft before boot ever sees it.
+  const [bootRestored, setBootRestored] = useState(false);
 
   // Bootstrap Supabase Auth (session restore + onAuthStateChange listener).
   const initializeAuth = useAuthStore((s) => s.initialize);
@@ -78,7 +89,7 @@ export default function App() {
     if (!shareInit.ready) return;
     if (!viewOnly && !bootReady) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       if (viewOnly && shareInit.versionId) {
         if (!isSupabaseConfigured) return;
         await Promise.all([
@@ -106,26 +117,94 @@ export default function App() {
         return;
       }
 
-      loadFromStorage();
-      if (!isSupabaseConfigured) return;
+      if (!isSupabaseConfigured) {
+        // Offline / unconfigured: still recover any local draft so work
+        // isn't lost, just unbound (no server to sync against).
+        const offlineDraft = readDraft();
+        if (offlineDraft && "v" in offlineDraft) {
+          hydrateDraft(offlineDraft.nodes as Parameters<typeof hydrateDraft>[0], {
+            versionId: null,
+            versionLabel: offlineDraft.versionLabel,
+          });
+        } else if (offlineDraft && "legacyNodes" in offlineDraft) {
+          hydrateDraft(
+            offlineDraft.legacyNodes as Parameters<typeof hydrateDraft>[0],
+            { versionId: null, versionLabel: null },
+          );
+        }
+        return;
+      }
       await refreshVersions();
       if (cancelled) return;
-      const latest = useVersionsStore.getState().versions[0];
-      if (!latest) return;
-      const draftRaw = readStorage(STORAGE_KEYS.draft);
-      if (draftRaw) {
-        useOrgStore.setState({
-          currentVersionId: latest.id,
-          currentVersionLabel: latest.name,
-          dirty: true,
+      const versions = useVersionsStore.getState().versions;
+      const draft = readDraft();
+
+      // ── 1. A local draft exists ─────────────────────────────────────
+      // Restore the user's unsaved work bound to the CORRECT file so a
+      // later 保存 overwrites that file (not whatever was newest). This is
+      // what makes multi-editor sync work: once saved & clean, the draft
+      // is cleared and the next reload loads fresh server state.
+      if (draft && "v" in draft) {
+        const bound = draft.versionId
+          ? versions.find((v) => v.id === draft.versionId)
+          : null;
+        if (draft.versionId && !bound) {
+          // The bound file was deleted on the server. Keep the work but
+          // detach it so it can only be saved as a NEW file.
+          hydrateDraft(draft.nodes as Parameters<typeof hydrateDraft>[0], {
+            versionId: null,
+            versionLabel: null,
+          });
+          useOrgStore.getState().setToast({
+            kind: "error",
+            message:
+              "編集中だったファイルがサーバから削除されていました。未保存の内容は新規ファイルとして保持しています。",
+          });
+          return;
+        }
+        hydrateDraft(draft.nodes as Parameters<typeof hydrateDraft>[0], {
+          versionId: bound ? bound.id : null,
+          versionLabel: bound ? bound.name : draft.versionLabel,
+        });
+        if (bound?.updated_at && bound.updated_at > draft.savedAt) {
+          useOrgStore.getState().setToast({
+            kind: "info",
+            message: `「${bound.name}」は別の編集者がサーバ側で更新しています。あなたの未保存の編集を保持中です（保存すると上書き、破棄するとサーバ最新が反映されます）。`,
+          });
+        }
+        return;
+      }
+
+      // Legacy unbound draft ({ nodes } only): we can't know which file it
+      // belonged to, so restore it as an unsaved NEW file rather than risk
+      // clobbering an unrelated server file.
+      if (draft && "legacyNodes" in draft) {
+        hydrateDraft(draft.legacyNodes as Parameters<typeof hydrateDraft>[0], {
+          versionId: null,
+          versionLabel: null,
+        });
+        useOrgStore.getState().setToast({
+          kind: "info",
+          message:
+            "以前のローカル編集を新規ファイルとして復元しました（保存先が特定できないため）。必要なら「別名で保存」してください。",
         });
         return;
       }
-      const nodes = await getSnapshot(latest.id);
+
+      // ── 2. No draft → open the last file the user had, else newest ──
+      if (versions.length === 0) return;
+      const lastId = readStorage(STORAGE_KEYS.lastVersionId);
+      const target =
+        (lastId && versions.find((v) => v.id === lastId)) || versions[0];
+      const nodes = await getSnapshot(target.id);
       if (!cancelled && nodes) {
-        replaceNodes(nodes, { versionId: latest.id, versionLabel: latest.name });
+        replaceNodes(nodes, { versionId: target.id, versionLabel: target.name });
       }
-    })();
+    })().finally(() => {
+      // Boot restore is done (or bailed): the draft has been read, so the
+      // persisting effect may now safely take over.
+      setBootRestored(true);
+    });
     return () => {
       cancelled = true;
     };
@@ -133,7 +212,7 @@ export default function App() {
     shareInit,
     viewOnly,
     bootReady,
-    loadFromStorage,
+    hydrateDraft,
     refreshVersions,
     getSnapshot,
     replaceNodes,
@@ -141,11 +220,33 @@ export default function App() {
   ]);
 
   const nodes = useOrgStore((s) => s.nodes);
+  const dirty = useOrgStore((s) => s.dirty);
   useEffect(() => {
     if (viewOnly) return;
     if (!bootReady) return;
-    writeStorage(STORAGE_KEYS.draft, JSON.stringify({ nodes }));
-  }, [nodes, bootReady, viewOnly]);
+    if (!bootRestored) return;
+    const st = useOrgStore.getState();
+    // Remember the open file so a no-draft reload reopens it (instead of
+    // jumping to the most-recently-created file).
+    if (st.currentVersionId) {
+      writeStorage(STORAGE_KEYS.lastVersionId, st.currentVersionId);
+    }
+    // Only persist a draft while there are genuine unsaved edits. Once the
+    // state is clean (saved, or freshly loaded from the server) we clear
+    // the draft so it can never shadow the shared server file again — this
+    // is what lets other editors' saves sync in on the next load.
+    if (!dirty) {
+      clearDraft();
+      return;
+    }
+    writeDraft({
+      v: 3,
+      versionId: st.currentVersionId,
+      versionLabel: st.currentVersionLabel,
+      savedAt: new Date().toISOString(),
+      nodes,
+    });
+  }, [nodes, dirty, bootReady, viewOnly, bootRestored]);
 
   // Realtime presence: announce the current user on the shared collab
   // channel and keep the version_id payload in sync as the user navigates
