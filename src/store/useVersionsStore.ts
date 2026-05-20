@@ -90,6 +90,8 @@ type VersionsState = {
     id: string,
     patch: { is_private?: boolean; grants?: VersionGrants },
   ) => Promise<boolean>;
+  /** Renames a file. Returns true on confirmed DB write, false otherwise. */
+  rename: (id: string, newName: string) => Promise<boolean>;
   /** Promote a draft version to a confirmed monthly snapshot, OR demote it
    *  back to a draft (period=null, is_confirmed=false). */
   setConfirmation: (
@@ -309,6 +311,41 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     const row = resp.data as VersionRow;
     set({ versions: [row, ...get().versions] });
     return row;
+  },
+
+  rename: async (id, newName) => {
+    if (!supabase) return false;
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      set({ error: "ファイル名を入力してください" });
+      return false;
+    }
+    // update().select().maybeSingle() so we can detect RLS-silent failures
+    // — same defensive pattern as setConfirmation().
+    const { data, error } = await supabase
+      .from("org_versions")
+      .update({ name: trimmed })
+      .eq("id", id)
+      .select("id, name")
+      .maybeSingle();
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (!data) {
+      set({
+        error:
+          "DBへの反映が確認できませんでした。Supabase の org_versions テーブルで anon ロールに対する UPDATE が許可されているか（行レベルセキュリティ）をご確認ください。",
+      });
+      return false;
+    }
+    set({
+      versions: get().versions.map((v) =>
+        v.id === id ? { ...v, name: trimmed } : v,
+      ),
+    });
+    useVersionsRealtime.getState().markSelfSave(id);
+    return true;
   },
 
   updatePermissions: async (id, patch) => {

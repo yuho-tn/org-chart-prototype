@@ -104,6 +104,9 @@ type Store = AppState & {
   ) => void;
   replaceNodes: (nodes: OrgNode[], meta?: { versionId?: string; versionLabel?: string }) => void;
   markClean: (meta?: { versionId?: string; versionLabel?: string }) => void;
+  /** Update only the display label for the currently-loaded file (used when
+   *  the file is renamed from the file list). Doesn't touch dirty state. */
+  setCurrentVersionLabel: (label: string) => void;
 };
 
 function uid(prefix: string): string {
@@ -870,6 +873,10 @@ export const useOrgStore = create<Store>((set, get) => ({
         ? logEntry(state, "save", `バージョン「${meta.versionLabel}」を保存`)
         : state.log,
     });
+  },
+
+  setCurrentVersionLabel: (label) => {
+    set({ currentVersionLabel: label });
   },
 
   loadFromStorage: () => {

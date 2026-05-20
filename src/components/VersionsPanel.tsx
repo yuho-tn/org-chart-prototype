@@ -37,10 +37,12 @@ export function VersionsPanel() {
   const setConfirmation = useVersionsStore((s) => s.setConfirmation);
   const duplicate = useVersionsStore((s) => s.duplicate);
   const updatePermissions = useVersionsStore((s) => s.updatePermissions);
+  const rename = useVersionsStore((s) => s.rename);
 
   const dirty = useOrgStore((s) => s.dirty);
   const currentVersionId = useOrgStore((s) => s.currentVersionId);
   const replaceNodes = useOrgStore((s) => s.replaceNodes);
+  const setCurrentVersionLabel = useOrgStore((s) => s.setCurrentVersionLabel);
   const setToast = useOrgStore((s) => s.setToast);
   const currentUser = useAuthStore((s) => s.currentUser);
   const setViewOnly = useUiStore((s) => s.setViewOnly);
@@ -49,6 +51,7 @@ export function VersionsPanel() {
   const [showSave, setShowSave] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
   const [pendingFix, setPendingFix] = useState<{ id: string; name: string } | null>(null);
+  const [pendingRename, setPendingRename] = useState<{ id: string; name: string } | null>(null);
   const [tab, setTab] = useState<"draft" | "confirmed">("draft");
 
   const visible = useMemo(() => {
@@ -183,6 +186,30 @@ export function VersionsPanel() {
     if (ok) setTab("confirmed");
   }
 
+  async function commitRename(newName: string) {
+    if (!pendingRename) return;
+    const { id, name: oldName } = pendingRename;
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setToast({ kind: "error", message: "ファイル名を入力してください" });
+      return;
+    }
+    if (trimmed === oldName) {
+      setPendingRename(null);
+      return;
+    }
+    setPendingRename(null);
+    const ok = await rename(id, trimmed);
+    if (ok) {
+      // If the file being renamed is the one currently loaded in the editor,
+      // sync the header label so the user sees the new name immediately.
+      if (currentVersionId === id) setCurrentVersionLabel(trimmed);
+      setToast({ kind: "info", message: `ファイル名を「${trimmed}」に変更しました` });
+    } else {
+      setToast({ kind: "error", message: "名称変更に失敗しました" });
+    }
+  }
+
   async function unfix(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     const ok = await setConfirmation(id, {
@@ -298,6 +325,7 @@ export function VersionsPanel() {
             // Only the creator (or master) can flip the privacy lock — same
             // people who already have edit-rights to the file metadata.
             const canToggleLock = currentUser?.role === "master" || isCreator;
+            const canRename = currentUser?.role === "master" || isCreator;
 
             return (
               <div
@@ -351,6 +379,19 @@ export function VersionsPanel() {
                     >
                       <span className="vmenu__icon" aria-hidden>{isPrivate ? "🔒" : "🔓"}</span>
                       <span className="vmenu__label">{isPrivate ? "非公開" : "公開中"}</span>
+                    </button>
+                  )}
+                  {canRename && (
+                    <button
+                      className="vmenu__btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPendingRename({ id: v.id, name: v.name });
+                      }}
+                      title="ファイル名を変更"
+                    >
+                      <span className="vmenu__icon" aria-hidden>✏️</span>
+                      <span className="vmenu__label">名称変更</span>
                     </button>
                   )}
                   {currentUser?.role !== "viewer" && (
@@ -425,7 +466,66 @@ export function VersionsPanel() {
           onConfirm={commitFix}
         />
       )}
+      {pendingRename && (
+        <RenameDialog
+          currentName={pendingRename.name}
+          onCancel={() => setPendingRename(null)}
+          onConfirm={commitRename}
+        />
+      )}
     </>
+  );
+}
+
+function RenameDialog({
+  currentName,
+  onCancel,
+  onConfirm,
+}: {
+  currentName: string;
+  onCancel: () => void;
+  onConfirm: (newName: string) => void;
+}) {
+  const [name, setName] = useState(currentName);
+  const trimmed = name.trim();
+  const unchanged = trimmed === currentName;
+  const canSubmit = trimmed.length > 0 && !unchanged;
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3 className="modal__title">ファイル名を変更</h3>
+        <p className="modal__body">
+          現在の名前: <strong>「{currentName}」</strong>
+        </p>
+        <label className="field">
+          <span className="field__label">新しいファイル名</span>
+          <input
+            className="field__input"
+            type="text"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canSubmit) onConfirm(trimmed);
+              if (e.key === "Escape") onCancel();
+            }}
+          />
+        </label>
+        <div className="modal__actions" style={{ marginTop: 14 }}>
+          <button className="btn btn--ghost" onClick={onCancel}>
+            キャンセル
+          </button>
+          <button
+            className="btn btn--primary"
+            onClick={() => onConfirm(trimmed)}
+            disabled={!canSubmit}
+          >
+            変更する
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
