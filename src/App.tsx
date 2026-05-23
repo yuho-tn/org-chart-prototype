@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { ReactFlowProvider } from "reactflow";
 import { GlobalHeader } from "./components/GlobalHeader";
 import { SystemSwitcher } from "./components/SystemSwitcher";
-import { PayrollPlaceholder } from "./components/payroll/PayrollPlaceholder";
+import { SalaryTablePage } from "./components/payroll/SalaryTablePage";
+import { GradesPage } from "./components/payroll/GradesPage";
+import { AuditLogPage } from "./components/payroll/AuditLogPage";
 import { OrgSubNav } from "./components/OrgSubNav";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -397,15 +399,10 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     );
   }
 
-  // Payroll system — currently a placeholder per-section while the
-  // tables/UI are being built out.
-  if (
-    route.name === "salary" ||
-    route.name === "grades" ||
-    route.name === "audit_log"
-  ) {
-    return <PayrollPlaceholder />;
-  }
+  // Payroll system pages
+  if (route.name === "salary") return <SalaryTablePage />;
+  if (route.name === "grades") return <GradesPage />;
+  if (route.name === "audit_log") return <AuditLogPage />;
 
   // Default: org → editor
   return <EditorShell />;

@@ -4918,3 +4918,397 @@ body.is-dragging .dept-card__add-child {
   color: var(--text-muted);
   font-size: 12px;
 }
+
+/* ╭───────────────────────────────────────────────────────────────────╮
+   │ Payroll system (給与・査定)                                       │
+   ╰───────────────────────────────────────────────────────────────────╯ */
+
+.payroll-page--full {
+  /* Salary table needs the full viewport width minus chrome */
+  max-width: none;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* Tabs used on the Grades page */
+.payroll-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.payroll-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  margin-bottom: -1px;
+}
+.payroll-tab:hover { background: var(--bg-soft); color: var(--text); }
+.payroll-tab.is-active {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.payroll-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Grades master table ─────────────────────────────────────────── */
+.grades-table th, .grades-table td {
+  vertical-align: top;
+}
+.grades-table__num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.grades-table__edit td {
+  background: #fffbeb;
+}
+
+/* ── Salary summary bar ──────────────────────────────────────────── */
+.payroll-summary {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  background: var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 12px 0 16px;
+  box-shadow: var(--shadow-1);
+  border: 1px solid var(--border);
+  transition: background 0.18s ease;
+}
+.payroll-summary.is-over-budget {
+  background: #fecaca;
+  border-color: #ef4444;
+  animation: payroll-budget-pulse 1.2s ease-in-out 1;
+}
+@keyframes payroll-budget-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  100% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+}
+.payroll-summary__periodSel {
+  background: var(--bg-soft);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+.payroll-summary__periodSel label {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.payroll-summary__periodSel select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--panel);
+  font-size: 13px;
+}
+.payroll-summary__metric {
+  background: var(--panel);
+  padding: 12px 20px;
+  flex: 1 1 auto;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.payroll-summary__metricLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.payroll-summary__metricValue {
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+}
+.payroll-summary__metricSub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.payroll-summary__delta.is-up    .payroll-summary__metricValue { color: #b91c1c; }
+.payroll-summary__delta.is-down  .payroll-summary__metricValue { color: #047857; }
+.payroll-summary__deltaPct {
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 4px;
+}
+.payroll-summary__budgetInput {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  width: 140px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.payroll-summary__over {
+  font-weight: 700;
+  color: #b91c1c;
+  margin-left: 6px;
+}
+
+/* ── Salary table ────────────────────────────────────────────────── */
+.salary-tableWrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: auto;
+  background: var(--panel);
+  max-height: calc(100vh - 320px);
+  position: relative;
+  box-shadow: var(--shadow-1);
+}
+.salary-table {
+  width: max-content;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+.salary-table th, .salary-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.salary-table tbody tr:hover td { background: #f8fafc; }
+.salary-table tbody tr.is-inactive td { opacity: 0.55; }
+
+/* Fixed columns: sticky left */
+.salary-table__fixed {
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  z-index: 2;
+  box-shadow: inset -1px 0 0 var(--border);
+}
+.salary-table thead .salary-table__fixed { z-index: 4; }
+.salary-table__fixed:nth-of-type(1) { left: 0; min-width: 80px; }
+.salary-table__fixed:nth-of-type(2) { left: 80px; min-width: 110px; max-width: 130px; }
+.salary-table__fixed:nth-of-type(3) { left: 190px; min-width: 90px; }
+.salary-table__fixed:nth-of-type(4) { left: 280px; min-width: 130px; max-width: 160px; }
+.salary-table__fixed:nth-of-type(5) { left: 410px; min-width: 130px; max-width: 180px; box-shadow: inset -2px 0 0 var(--border-strong); }
+.salary-table tbody tr:hover .salary-table__fixed { background: #f8fafc; }
+
+/* Period header (group row) */
+.salary-table__group-row th {
+  background: var(--bg-soft);
+  font-weight: 600;
+  color: var(--text-strong);
+  text-align: center;
+  border-bottom: 1px solid var(--border-strong);
+  font-size: 12.5px;
+  padding: 0;
+}
+.salary-table__group-row .salary-table__fixed {
+  background: var(--bg-soft);
+  text-align: left;
+  padding: 8px 12px;
+}
+.salary-table__period {
+  background: var(--bg-soft);
+  border-left: 1px solid var(--border-strong);
+}
+.salary-table__period.is-expanded {
+  background: #eef2ff;
+}
+.salary-table__periodToggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  color: inherit;
+  font-weight: 600;
+}
+.salary-table__periodToggle:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+.salary-table__periodDates {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.salary-table__caret {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Subhead (etc / etc / 査定 / コメント) */
+.salary-table__head-row th {
+  background: #f3f4f6;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 4px 8px;
+}
+.salary-table__head-row .salary-table__fixed { background: #f3f4f6; }
+.salary-table__subhead { background: #f3f4f6; }
+
+/* Cells */
+.salary-table__cell {
+  background: var(--panel);
+  vertical-align: top;
+  min-width: 90px;
+}
+.salary-table__cell--collapsed { min-width: 88px; padding: 4px 8px; }
+.salary-table__cell--num { text-align: right; font-variant-numeric: tabular-nums; min-width: 130px; }
+.salary-table__cell--comment { min-width: 200px; max-width: 320px; white-space: pre-wrap; }
+.salary-table__cell.is-highlighted {
+  background: #fef9c3;
+  animation: salary-edit-fade 6s ease-out forwards;
+}
+@keyframes salary-edit-fade {
+  0%   { background: #fde68a; }
+  100% { background: var(--panel); }
+}
+.salary-table__compact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: center;
+  font-size: 11.5px;
+}
+.salary-table__compactGrade {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.salary-table__compactMan {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.salary-table__empty { color: var(--text-subtle); }
+
+/* Inputs inside the table */
+.salary-table__input {
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  width: 100%;
+  font-family: inherit;
+}
+.salary-table__input:focus {
+  border-color: #60a5fa;
+  background: #fff;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+.salary-table__input--grade { min-width: 130px; max-width: 200px; }
+.salary-table__input--money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  width: 88px;
+}
+.salary-table__input--eval { width: 60px; text-align: center; }
+.salary-table__input--comment {
+  width: 100%;
+  resize: vertical;
+  min-height: 32px;
+}
+.salary-table__moneyStack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+.salary-table__moneyTotal {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-strong);
+  padding-right: 6px;
+}
+.salary-table__savingDot {
+  width: 6px;
+  height: 6px;
+  background: #f59e0b;
+  border-radius: 50%;
+  animation: salary-saving-pulse 0.9s ease-in-out infinite;
+}
+@keyframes salary-saving-pulse {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+
+/* Track badge */
+.salary-table__trackBadge {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.salary-table__trackBadge:hover { border-color: var(--border-strong); }
+.salary-table__trackBadge--management { background: #dbeafe; color: #1e40af; }
+.salary-table__trackBadge--specialist { background: #ede9fe; color: #5b21b6; }
+.salary-table__trackBadge--diverse    { background: #d1fae5; color: #065f46; }
+.salary-table__trackBadge--unset      { background: #fef3c7; color: #92400e; }
+.salary-table__trackSelect {
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+/* ── Audit log ───────────────────────────────────────────────────── */
+.audit-table td { vertical-align: top; }
+.audit-table__op {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.audit-table__op--insert { background: #d1fae5; color: #065f46; }
+.audit-table__op--update { background: #dbeafe; color: #1e3a8a; }
+.audit-table__op--delete { background: #fee2e2; color: #991b1b; }
+.audit-table__diffList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+.audit-table__diffList li { margin: 2px 0; }
+.audit-table__before {
+  color: #b91c1c;
+  text-decoration: line-through;
+  text-decoration-color: rgba(185, 28, 28, 0.35);
+}
+.audit-table__after { color: #047857; font-weight: 600; }

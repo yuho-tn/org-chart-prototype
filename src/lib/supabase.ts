@@ -63,7 +63,7 @@ export type VersionWithSnapshot = VersionRow & {
   snapshot: { nodes: unknown[] };
 };
 
-/** Row shape of public.employees (migrations 0002 + 0003).
+/** Row shape of public.employees (migrations 0002 + 0003 + 0013).
  *  full_name combines what the CSV may carry as 姓 + 名 OR 氏名 OR
  *  the English equivalents — see useEmployeesStore for the mapping. */
 export type EmployeeRow = {
@@ -76,4 +76,68 @@ export type EmployeeRow = {
   hired_at: string | null;
   left_at: string | null;
   updated_at: string;
+  /** Salary system: which career track this person is on. NULL for those
+   *  not yet assigned (HR picks management vs specialist for 正社員) or
+   *  not in scope (アルバイト/インターン). Added in migration 0013. */
+  career_track?: CareerTrack | null;
+};
+
+// ── Payroll / salary system types (migration 0013) ───────────────────
+
+export type CareerTrack = "management" | "specialist" | "diverse";
+export type GradeTier = "officer" | "manager" | "non_manager";
+export type PeriodCode =
+  | "1H1" | "1H2" | "2H1" | "2H2" | "3H1" | "3H2" | "4H1" | "4H2" | "5H1";
+export type EvaluationGrade = "S" | "A+" | "A" | "B+" | "B" | "B-" | "C" | "D";
+
+export type GradeRow = {
+  code: string;
+  /** Null for non_manager grades shared across management & specialist. */
+  career_track: CareerTrack | null;
+  tier: GradeTier;
+  label: string;
+  expectation: string | null;
+  min_monthly_salary: number | null;  // 円単位
+  bonus_months: number | null;
+  annual_cap: number | null;
+  title_by_function: Record<string, string>;
+  sort_order: number;
+  is_active: boolean;
+  updated_at: string;
+};
+
+export type PeriodRow = {
+  code: PeriodCode;
+  label: string;
+  start_date: string;       // YYYY-MM-DD
+  end_date: string;
+  monthly_salary_budget: number | null;
+  is_closed: boolean;
+  sort_order: number;
+};
+
+export type SalaryRecordRow = {
+  id: string;
+  employee_number: string;
+  period: PeriodCode;
+  grade_code: string | null;
+  career_track: CareerTrack | null;
+  evaluation_grade: EvaluationGrade | null;
+  base_salary: number | null;             // 円単位
+  fixed_overtime_allowance: number | null; // 円単位
+  total_monthly_salary: number;           // generated
+  comment: string | null;
+  updated_at: string;
+  updated_by_email: string | null;
+};
+
+export type SalaryAuditLogRow = {
+  id: number;
+  table_name: string;
+  row_id: string;
+  operation: "INSERT" | "UPDATE" | "DELETE";
+  before_value: Record<string, unknown> | null;
+  after_value: Record<string, unknown> | null;
+  actor_email: string | null;
+  changed_at: string;
 };
