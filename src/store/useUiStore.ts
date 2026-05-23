@@ -3,12 +3,30 @@ import { create } from "zustand";
 export type OrgView = "tree" | "list" | "assignments";
 
 /**
- * Primary navigation sections, shown as the top-tier of the global header.
- * Each section corresponds to one or more concrete routes (e.g. the "org"
- * section covers the chart editor, the announcements list, and an
- * announcement detail page).
+ * Top-level "system" axis. Above the GlobalHeader sits a small system
+ * switcher; choosing a system swaps the entire app shell (header tabs,
+ * color theme, available sections). TalentHub is the original org/HR
+ * tooling; Payroll is the 給与・査定 system added in 0011+.
+ *
+ * Payroll is only visible to master / privileged_admin (canAccessPayroll
+ * in lib/supabase). Routing here is unconditional — the UI gates the
+ * switcher button and App.tsx redirects on direct-hash access.
  */
-export type Section = "org" | "employees" | "users";
+export type SystemKey = "talenthub" | "payroll";
+
+/**
+ * Primary navigation sections, shown as the top-tier of the global header
+ * within each system.
+ *   TalentHub: org / employees / users
+ *   Payroll:   salary / grades / audit_log
+ */
+export type Section =
+  | "org"
+  | "employees"
+  | "users"
+  | "salary"
+  | "grades"
+  | "audit_log";
 
 /**
  * Concrete routes. Most routes belong to exactly one section — see
@@ -17,11 +35,16 @@ export type Section = "org" | "employees" | "users";
  * in the right place.
  */
 export type Route =
+  // TalentHub
   | { name: "editor" }
   | { name: "announcements" }
   | { name: "announcement"; id: string }
   | { name: "employees" }
-  | { name: "users" };
+  | { name: "users" }
+  // Payroll
+  | { name: "salary" }
+  | { name: "grades" }
+  | { name: "audit_log" };
 
 export function sectionOfRoute(r: Route): Section {
   switch (r.name) {
@@ -33,6 +56,23 @@ export function sectionOfRoute(r: Route): Section {
       return "employees";
     case "users":
       return "users";
+    case "salary":
+      return "salary";
+    case "grades":
+      return "grades";
+    case "audit_log":
+      return "audit_log";
+  }
+}
+
+export function systemOfRoute(r: Route): SystemKey {
+  switch (r.name) {
+    case "salary":
+    case "grades":
+    case "audit_log":
+      return "payroll";
+    default:
+      return "talenthub";
   }
 }
 
@@ -45,7 +85,18 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "employees" };
     case "users":
       return { name: "users" };
+    case "salary":
+      return { name: "salary" };
+    case "grades":
+      return { name: "grades" };
+    case "audit_log":
+      return { name: "audit_log" };
   }
+}
+
+/** Default landing route when switching to a system. */
+export function defaultRouteForSystem(s: SystemKey): Route {
+  return s === "payroll" ? { name: "salary" } : { name: "editor" };
 }
 
 function readRouteFromHash(): Route {
@@ -57,6 +108,10 @@ function readRouteFromHash(): Route {
   if (h === "#/announcements") return { name: "announcements" };
   const m = /^#\/announcements\/([0-9a-f-]+)$/i.exec(h);
   if (m) return { name: "announcement", id: m[1] };
+  // Payroll routes
+  if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
+  if (h === "#/payroll/grades") return { name: "grades" };
+  if (h === "#/payroll/audit-log") return { name: "audit_log" };
   return { name: "editor" };
 }
 
@@ -72,6 +127,12 @@ function routeToHash(r: Route): string {
       return "#/announcements";
     case "announcement":
       return `#/announcements/${r.id}`;
+    case "salary":
+      return "#/payroll";
+    case "grades":
+      return "#/payroll/grades";
+    case "audit_log":
+      return "#/payroll/audit-log";
   }
 }
 
@@ -100,6 +161,8 @@ type UiState = {
   filesDrawerOpen: boolean;
   /** Top-level route. */
   route: Route;
+  /** True for ~300ms after a system switch — used to drive a cross-fade. */
+  systemSwitching: boolean;
   setView: (v: OrgView) => void;
   setViewOnly: (b: boolean) => void;
   setSharedVersionLabel: (label: string | null) => void;
@@ -107,15 +170,20 @@ type UiState = {
   setFilesDrawerOpen: (b: boolean) => void;
   /** Navigate. Pass `pushHistory: false` to update the URL without a new history entry. */
   navigate: (r: Route, opts?: { pushHistory?: boolean }) => void;
+  /** Switch to another system's default route with a short fade. */
+  switchSystem: (s: SystemKey) => void;
 };
 
-export const useUiStore = create<UiState>((set) => ({
+const SYSTEM_FADE_MS = 300;
+
+export const useUiStore = create<UiState>((set, get) => ({
   view: "tree",
   viewOnly: false,
   sharedVersionLabel: null,
   showLog: false,
   filesDrawerOpen: false,
   route: readRouteFromHash(),
+  systemSwitching: false,
   setView: (view) => set({ view }),
   setViewOnly: (viewOnly) => set({ viewOnly }),
   setSharedVersionLabel: (sharedVersionLabel) => set({ sharedVersionLabel }),
@@ -131,6 +199,13 @@ export const useUiStore = create<UiState>((set) => ({
     } else {
       writeRouteToHash(route);
     }
+  },
+  switchSystem: (s) => {
+    const current = systemOfRoute(get().route);
+    if (current === s) return;
+    set({ systemSwitching: true });
+    get().navigate(defaultRouteForSystem(s));
+    window.setTimeout(() => set({ systemSwitching: false }), SYSTEM_FADE_MS);
   },
 }));
 

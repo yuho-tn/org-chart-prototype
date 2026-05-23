@@ -29,3 +29,28 @@ export function clearShareParamsFromUrl(): void {
   url.search = "";
   window.history.replaceState({}, "", url.toString());
 }
+
+/**
+ * Reflect the currently-loaded file in the browser address bar by writing
+ * `?v=<id>` (or removing it when the file is unloaded). Preserves the rest
+ * of the URL — pathname and hash-based view routing are left untouched —
+ * so users can copy the address bar to share whatever file is on screen.
+ *
+ * Uses replaceState (no history entry) because file switches inside the
+ * SPA aren't navigations the user expects in their back-button stack.
+ */
+export function syncVersionUrlParam(versionId: string | null): void {
+  const url = new URL(window.location.href);
+  const current = url.searchParams.get("v");
+  if (versionId) {
+    if (current === versionId) return;
+    url.searchParams.set("v", versionId);
+  } else {
+    if (current === null && !url.searchParams.has("view")) return;
+    url.searchParams.delete("v");
+    // The legacy share URL also carried `view=` — strip it together so we
+    // don't leave a stale partial param behind when unloading.
+    url.searchParams.delete("view");
+  }
+  window.history.replaceState({}, "", url.toString());
+}

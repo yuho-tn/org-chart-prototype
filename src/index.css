@@ -2776,10 +2776,11 @@ body.is-dragging .dept-card__add-child {
   border-radius: 999px;
   letter-spacing: 0.04em;
 }
-.usermgr__role--master { background: #fef3c7; color: #92400e; }
-.usermgr__role--admin  { background: #fee2e2; color: #991b1b; }
-.usermgr__role--editor { background: #dbeafe; color: #1e3a8a; }
-.usermgr__role--viewer { background: #f1f5f9; color: #475569; }
+.usermgr__role--master           { background: #fef3c7; color: #92400e; }
+.usermgr__role--privileged_admin { background: #fde68a; color: #78350f; }
+.usermgr__role--admin            { background: #fee2e2; color: #991b1b; }
+.usermgr__role--editor           { background: #dbeafe; color: #1e3a8a; }
+.usermgr__role--viewer           { background: #f1f5f9; color: #475569; }
 
 .usermgr__add {
   margin-top: 6px;
@@ -3275,10 +3276,102 @@ body.is-dragging .dept-card__add-child {
   letter-spacing: 0.05em;
 }
 
-.ghdr__userRole--master { color: #c4b5fd; }
-.ghdr__userRole--admin  { color: #fca5a5; }
-.ghdr__userRole--editor { color: #93c5fd; }
-.ghdr__userRole--viewer { color: #94a3b8; }
+.ghdr__userRole--master           { color: #c4b5fd; }
+.ghdr__userRole--privileged_admin { color: #fbbf24; }
+.ghdr__userRole--admin            { color: #fca5a5; }
+.ghdr__userRole--editor           { color: #93c5fd; }
+.ghdr__userRole--viewer           { color: #94a3b8; }
+
+/* ── Payroll system: amber-tinted header & switcher accent ────────── */
+.ghdr--payroll {
+  background:
+    linear-gradient(135deg, #2b1808 0%, #3b2210 50%, #4f2e15 100%);
+  border-bottom-color: #1a0f06;
+  box-shadow:
+    0 1px 0 rgba(255, 200, 120, 0.06) inset,
+    0 2px 6px rgba(24, 12, 4, 0.22);
+}
+.ghdr--payroll .ghdr__brandMark {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.55);
+}
+.ghdr--payroll .ghdr__tab.is-active {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(251, 191, 36, 0.5);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.18) inset;
+}
+
+/* ── System switcher (thin bar above GlobalHeader) ────────────────── */
+.sysswitch {
+  height: 32px;
+  background: #050913;
+  border-bottom: 1px solid #0a0f1c;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 14px;
+  flex-shrink: 0;
+  z-index: 60;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+.sysswitch__brand {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #f1f5f9;
+}
+.sysswitch__divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(148, 163, 184, 0.25);
+}
+.sysswitch__tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sysswitch__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sysswitch__tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f1f5f9;
+}
+.sysswitch__tab.is-active.sysswitch__tab--talenthub {
+  background: rgba(59, 130, 246, 0.22);
+  color: #f8fafc;
+  border-color: rgba(96, 165, 250, 0.5);
+}
+.sysswitch__tab.is-active.sysswitch__tab--payroll {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fffbeb;
+  border-color: rgba(251, 191, 36, 0.55);
+}
+.sysswitch__tabIcon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* ── System switch cross-fade (300ms) ─────────────────────────────── */
+.app--system-switching > :not(.sysswitch) {
+  animation: sysswitch-fade 300ms ease;
+}
+@keyframes sysswitch-fade {
+  0%   { opacity: 0.35; }
+  100% { opacity: 1; }
+}
 
 /* ── Org sub-nav (under global header in 組織図 section) ──────────── */
 .orgsub {

@@ -8,12 +8,17 @@ const ROLE_OPTIONS: { value: AppUserRole; label: string; hint: string }[] = [
   {
     value: "master",
     label: "マスター",
-    hint: "すべてのファイル（非公開含む）を閲覧・編集 + ユーザー管理（master固定はyuho_tn@forumyu.co.jpのみ）",
+    hint: "すべてのファイル（非公開含む）を閲覧・編集 + ユーザー管理 + 給与・査定の閲覧・編集（master固定はyuho_tn@sho-san.co.jpのみ）",
+  },
+  {
+    value: "privileged_admin",
+    label: "特権管理者",
+    hint: "すべての組織図ファイルを閲覧・編集 + 給与・査定の閲覧・編集（ユーザー権限の変更はできません）",
   },
   {
     value: "admin",
     label: "管理者",
-    hint: "すべてのファイルを閲覧・編集 + ユーザー権限の昇格／降格が可能",
+    hint: "すべての組織図ファイルを閲覧・編集 + ユーザー権限の昇格／降格が可能（給与・査定は対象外）",
   },
   {
     value: "editor",
@@ -56,29 +61,37 @@ export function UsersPage() {
 
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) => {
-      const order: Record<AppUserRole, number> = { master: 0, admin: 1, editor: 2, viewer: 3 };
+      const order: Record<AppUserRole, number> = {
+        master: 0,
+        privileged_admin: 1,
+        admin: 2,
+        editor: 3,
+        viewer: 4,
+      };
       const d = order[a.role] - order[b.role];
       if (d !== 0) return d;
       return a.created_at.localeCompare(b.created_at);
     });
   }, [users]);
 
-  /** Admins can manage editors and viewers, but not other admins or the
-   *  master. Master can manage everyone except themselves (the trigger
-   *  ensures the master row stays as 'master' on every login anyway). */
+  /** Admins can manage editors and viewers, but not the master and not
+   *  privileged_admin (special role that only the master can assign).
+   *  Master can manage everyone except themselves (the trigger ensures
+   *  the master row stays as 'master' on every login anyway). */
   function canEditUser(target: { email: string; role: AppUserRole }): boolean {
     if (!canManage) return false;
     if (currentUser?.email === target.email) return false;
-    if (isMaster) return target.role !== "master" || target.email !== "yuho_tn@forumyu.co.jp";
-    // admin
+    if (isMaster) return target.role !== "master";
+    // admin: can't touch master or privileged_admin
     return target.role === "editor" || target.role === "viewer";
   }
 
   /** Roles an admin/master can assign. Master can assign any role except
    *  re-promote to master (master is fixed to yuho_tn@sho-san.co.jp).
+   *  特権管理者 is master-only because they unlock 給与系 access.
    *  Admins can only set editor/viewer. */
   function assignableRoles(): AppUserRole[] {
-    if (isMaster) return ["admin", "editor", "viewer"];
+    if (isMaster) return ["privileged_admin", "admin", "editor", "viewer"];
     if (currentUser?.role === "admin") return ["editor", "viewer"];
     return [];
   }

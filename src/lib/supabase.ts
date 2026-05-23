@@ -18,7 +18,19 @@ export const supabase = isSupabaseConfigured
     })
   : null;
 
-export type AppUserRole = "master" | "admin" | "editor" | "viewer";
+export type AppUserRole =
+  | "master"
+  | "privileged_admin"
+  | "admin"
+  | "editor"
+  | "viewer";
+
+/** Roles that may access the Payroll system (給与・査定).
+ *  Mirrors the SECURITY DEFINER function `public.is_payroll_manager` —
+ *  keep them in sync. */
+export function canAccessPayroll(role: AppUserRole | undefined | null): boolean {
+  return role === "master" || role === "privileged_admin";
+}
 
 export type AppUserRow = {
   email: string;

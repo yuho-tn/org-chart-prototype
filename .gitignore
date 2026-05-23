@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Supabase CLI local link state (machine-specific)
+supabase/.temp/
+supabase/.branches/

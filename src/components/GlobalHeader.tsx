@@ -1,22 +1,56 @@
-import { useUiStore, sectionOfRoute, defaultRouteForSection, type Section } from "../store/useUiStore";
+import {
+  useUiStore,
+  sectionOfRoute,
+  systemOfRoute,
+  defaultRouteForSection,
+  type Section,
+  type SystemKey,
+} from "../store/useUiStore";
 import { useAuthStore } from "../store/useAuthStore";
+import type { AppUserRole } from "../lib/supabase";
 
-const PRIMARY_TABS: { id: Section; label: string; icon: string }[] = [
-  { id: "org", label: "組織図", icon: "🗂" },
-  { id: "employees", label: "従業員マスター", icon: "👥" },
-  { id: "users", label: "ユーザー", icon: "🔑" },
-];
+const TABS_BY_SYSTEM: Record<SystemKey, { id: Section; label: string; icon: string }[]> = {
+  talenthub: [
+    { id: "org", label: "組織図", icon: "🗂" },
+    { id: "employees", label: "従業員マスター", icon: "👥" },
+    { id: "users", label: "ユーザー", icon: "🔑" },
+  ],
+  payroll: [
+    { id: "salary", label: "給与表", icon: "📋" },
+    { id: "grades", label: "等級マスター", icon: "🏷" },
+    { id: "audit_log", label: "監査ログ", icon: "📜" },
+  ],
+};
+
+const BRAND_BY_SYSTEM: Record<SystemKey, { name: string; sub: string }> = {
+  talenthub: { name: "TalentHub", sub: "組織図 & 従業員管理" },
+  payroll: { name: "Payroll", sub: "給与・査定" },
+};
+
+const ROLE_LABEL: Record<AppUserRole, string> = {
+  master: "master",
+  privileged_admin: "特権管理者",
+  admin: "admin",
+  editor: "editor",
+  viewer: "viewer",
+};
 
 /**
- * Always-on top-level header for the app shell. Shows the three primary
- * sections (組織図 / 従業員マスター / ユーザー) and the signed-in user pill
- * on the right. Section-specific actions live in a secondary header below
- * (see OrgSubNav / TopBar).
+ * Always-on top-level header for the app shell. Renders different tabs
+ * depending on the active system (TalentHub vs Payroll). When in the
+ * Payroll system, the header adopts an amber gradient so the user is
+ * never confused about which system they are looking at.
+ *
+ * Sits BELOW the SystemSwitcher and ABOVE the section-specific subnavs
+ * (see OrgSubNav etc.).
  */
 export function GlobalHeader() {
   const route = useUiStore((s) => s.route);
   const navigate = useUiStore((s) => s.navigate);
   const currentSection = sectionOfRoute(route);
+  const currentSystem = systemOfRoute(route);
+  const tabs = TABS_BY_SYSTEM[currentSystem];
+  const brand = BRAND_BY_SYSTEM[currentSystem];
   const currentUser = useAuthStore((s) => s.currentUser);
   const signOut = useAuthStore((s) => s.signOut);
 
@@ -27,15 +61,15 @@ export function GlobalHeader() {
   }
 
   return (
-    <header className="ghdr">
+    <header className={`ghdr ghdr--${currentSystem}`}>
       <div className="ghdr__brand">
         <span className="ghdr__brandMark" aria-hidden>▣</span>
-        <span className="ghdr__brandName">TalentHub</span>
-        <span className="ghdr__brandSub">組織図 &amp; 従業員管理</span>
+        <span className="ghdr__brandName">{brand.name}</span>
+        <span className="ghdr__brandSub">{brand.sub}</span>
       </div>
 
       <nav className="ghdr__tabs" role="tablist">
-        {PRIMARY_TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"
@@ -63,7 +97,7 @@ export function GlobalHeader() {
           <span className="ghdr__userInfo">
             <span className="ghdr__userName">{currentUser.display_name ?? currentUser.email}</span>
             <span className={`ghdr__userRole ghdr__userRole--${currentUser.role}`}>
-              {currentUser.role}
+              {ROLE_LABEL[currentUser.role] ?? currentUser.role}
             </span>
           </span>
         </button>

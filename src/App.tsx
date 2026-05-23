@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { ReactFlowProvider } from "reactflow";
 import { GlobalHeader } from "./components/GlobalHeader";
+import { SystemSwitcher } from "./components/SystemSwitcher";
+import { PayrollPlaceholder } from "./components/payroll/PayrollPlaceholder";
 import { OrgSubNav } from "./components/OrgSubNav";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -21,11 +23,12 @@ import { PersonDetailModal } from "./components/PersonDetailModal";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useEmployeesStore } from "./store/useEmployeesStore";
-import { useUiStore, sectionOfRoute } from "./store/useUiStore";
+import { useUiStore, sectionOfRoute, systemOfRoute, defaultRouteForSystem } from "./store/useUiStore";
 import { useAuthStore } from "./store/useAuthStore";
+import { canAccessPayroll } from "./lib/supabase";
 import { usePresenceStore } from "./store/usePresenceStore";
 import { useVersionsRealtime } from "./store/useVersionsRealtime";
-import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
+import { parseShareParams, clearShareParamsFromUrl, syncVersionUrlParam } from "./lib/share";
 import {
   STORAGE_KEYS,
   readStorage,
@@ -84,6 +87,19 @@ export default function App() {
   useEffect(() => {
     if (currentRole === "viewer") setViewOnly(true);
   }, [currentRole, setViewOnly]);
+
+  // Guard: if a non-payroll user somehow lands on a #/payroll/* URL (typed
+  // it, bookmarked it, demoted after the fact), bounce them back to the
+  // TalentHub default. We wait until auth has resolved so we don't bounce
+  // a payroll-capable user during the brief window before currentUser is
+  // populated.
+  const navigate = useUiStore((s) => s.navigate);
+  useEffect(() => {
+    if (!authInitialized) return;
+    if (systemOfRoute(route) !== "payroll") return;
+    if (canAccessPayroll(currentRole)) return;
+    navigate(defaultRouteForSystem("talenthub"), { pushHistory: false });
+  }, [authInitialized, route, currentRole, navigate]);
 
   useEffect(() => {
     if (!shareInit.ready) return;
@@ -221,6 +237,10 @@ export default function App() {
 
   const nodes = useOrgStore((s) => s.nodes);
   const dirty = useOrgStore((s) => s.dirty);
+  // Read once at the top so it runs before any early-return branches —
+  // hooks must be called in the same order on every render.
+  const systemSwitching = useUiStore((s) => s.systemSwitching);
+
   useEffect(() => {
     if (viewOnly) return;
     if (!bootReady) return;
@@ -281,6 +301,15 @@ export default function App() {
     presenceUpdateVersionId(currentVersionId);
   }, [currentVersionId, currentUserEmail, viewOnly, presenceUpdateVersionId]);
 
+  // Keep the browser address bar in sync with the currently-open file so
+  // users can copy the URL bar to share whatever they're looking at. Only
+  // runs after boot restore completes — otherwise we'd wipe the ?v= param
+  // the share-init flow is about to consume on initial load.
+  useEffect(() => {
+    if (!bootRestored) return;
+    syncVersionUrlParam(currentVersionId);
+  }, [currentVersionId, bootRestored]);
+
   // Phase 2: subscribe to org_versions Postgres Changes so other users'
   // saves are reflected in this client without a manual reload.
   const realtimeSubscribe = useVersionsRealtime((s) => s.subscribe);
@@ -302,10 +331,23 @@ export default function App() {
   if (!session) return <SignInPage />;
 
   // Render the editor shell or a dedicated section page based on the route.
-  // GlobalHeader is constant across all sections; what's *under* it changes.
+  // SystemSwitcher (Talenthub vs Payroll) sits at the very top; GlobalHeader
+  // adapts its tabs to the active system; the content area swaps below.
+  const system = systemOfRoute(route);
   return (
     <ReactFlowProvider>
-      <div className={`app app--${sectionOfRoute(route)} app--view-${view}`}>
+      <div
+        className={[
+          "app",
+          `app--system-${system}`,
+          `app--${sectionOfRoute(route)}`,
+          `app--view-${view}`,
+          systemSwitching ? "app--system-switching" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <SystemSwitcher />
         <GlobalHeader />
         <SectionContent route={route} />
         <Toast />
@@ -353,6 +395,16 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
         <AnnouncementDetailPage id={route.id} />
       </div>
     );
+  }
+
+  // Payroll system — currently a placeholder per-section while the
+  // tables/UI are being built out.
+  if (
+    route.name === "salary" ||
+    route.name === "grades" ||
+    route.name === "audit_log"
+  ) {
+    return <PayrollPlaceholder />;
   }
 
   // Default: org → editor
