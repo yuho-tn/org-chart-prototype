@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useEmployeesStore, isCasualEmployment } from "../store/useEmployeesStore";
-import { useAuthStore } from "../store/useAuthStore";
+import { useAuthStore, isOrgPowerUser } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import type { EmployeeRow } from "../lib/supabase";
 import type { ImportSummary } from "../store/useEmployeesStore";
@@ -46,7 +46,10 @@ export function EmployeesPage() {
   const currentUser = useAuthStore((s) => s.currentUser);
   const setToast = useOrgStore((s) => s.setToast);
 
-  const isMaster = currentUser?.role === "master";
+  // Full editors (master / privileged_admin / admin) can manage the
+  // employees master incl. CSV import / add / edit / delete. Regular
+  // editors and viewers are read-only.
+  const isMaster = isOrgPowerUser(currentUser?.role);
 
   const [filter, setFilter] = useState("");
   // Retirement state filter: 在籍 (default) / 退職 / 全て

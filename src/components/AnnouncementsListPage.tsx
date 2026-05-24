@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useUiStore } from "../store/useUiStore";
 import { useAnnouncementsStore } from "../store/useAnnouncementsStore";
 import { useVersionsStore } from "../store/useVersionsStore";
-import { useAuthStore } from "../store/useAuthStore";
+import { useAuthStore, isOrgPowerUser } from "../store/useAuthStore";
 import { useEmployeesStore } from "../store/useEmployeesStore";
 import { useOrgStore } from "../store/useOrgStore";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -45,7 +45,9 @@ export function AnnouncementsListPage() {
     refreshEmployees();
   }, [refresh, refreshVersions, refreshEmployees]);
 
-  const isMaster = currentUser?.role === "master";
+  // Org "power users" (master / privileged_admin / admin) can create &
+  // delete any announcement; regular editors only their own.
+  const isMaster = isOrgPowerUser(currentUser?.role);
 
   const sorted = useMemo(
     () => [...list].sort((a, b) => b.period.localeCompare(a.period)),

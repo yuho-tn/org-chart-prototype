@@ -209,13 +209,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
  * Permission helper — given the current user and a version row, decide
  * whether the user can view and/or edit it. Returns null on "no access".
  *
- * Rules (4-tier, post-0008):
+ * Rules (5-tier, post-0011):
  *   • master: full access (all versions, including private).
+ *   • privileged_admin: full editing access (parity with admin for org
+ *      chart files) + payroll system access. Cannot manage user roles.
  *   • admin: full access for non-master operations, can edit any version.
  *   • editor: edits own creations + grants; sees public + own + granted.
  *   • viewer: sees public + own + granted; never edits.
  */
 export type VersionAccess = { view: true; edit: boolean };
+
+// ── Role-based capability helpers ───────────────────────────────────
+// Use these instead of `role === "master"` checks at call sites — they
+// centralize the matrix and stay in sync with the SQL helpers in 0011.
+
+/**
+ * Can mutate other users' roles. Master and admin only — privileged_admin
+ * is deliberately excluded so the "give yourself payroll access" attack
+ * isn't possible.
+ */
+export function isUserManager(role: AppUserRole | undefined | null): boolean {
+  return role === "master" || role === "admin";
+}
+
+/**
+ * Full org-chart editor — can edit any file (private or not), delete,
+ * rename, toggle lock, confirm. Matches the SQL `is_writer()` minus
+ * editor (which is restricted to own/granted via accessForVersion).
+ */
+export function isOrgPowerUser(role: AppUserRole | undefined | null): boolean {
+  return role === "master" || role === "privileged_admin" || role === "admin";
+}
 
 export function accessForVersion(
   user: AppUserRow | null,
@@ -229,7 +253,15 @@ export function accessForVersion(
   const isCreator = !!v.created_by_email && v.created_by_email === user.email;
   const grant = v.grants?.[user.email];
 
-  if (user.role === "master" || user.role === "admin") {
+  // master / privileged_admin / admin all get full edit access to every
+  // org chart file (even private ones). Kept aligned with the SECURITY
+  // DEFINER `public.is_writer()` SQL helper used by RLS — see migration
+  // 0011_privileged_admin_role.sql.
+  if (
+    user.role === "master" ||
+    user.role === "privileged_admin" ||
+    user.role === "admin"
+  ) {
     return { view: true, edit: true };
   }
 

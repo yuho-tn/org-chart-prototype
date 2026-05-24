@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useUiStore } from "../store/useUiStore";
 import { useAnnouncementsStore, type AnnouncementRow } from "../store/useAnnouncementsStore";
-import { useAuthStore } from "../store/useAuthStore";
+import { useAuthStore, isOrgPowerUser } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import {
   formatDeptPath,
@@ -44,7 +44,7 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
   }, [id, getById]);
 
   const isAuthor = !!row && row.created_by_email === currentUser?.email;
-  const canEdit = currentUser?.role === "master" || isAuthor;
+  const canEdit = isOrgPowerUser(currentUser?.role) || isAuthor;
 
   const shareUrl = useMemo(() => {
     if (typeof window === "undefined") return "";

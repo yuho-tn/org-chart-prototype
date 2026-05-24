@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "../store/useVersionsStore";
-import { useAuthStore, accessForVersion } from "../store/useAuthStore";
+import { useAuthStore, accessForVersion, isOrgPowerUser } from "../store/useAuthStore";
 import { useUiStore } from "../store/useUiStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
 import { HoldToConfirm } from "./HoldToConfirm";
@@ -319,13 +319,16 @@ export function VersionsPanel() {
             const isActive = currentVersionId === v.id;
             const isPrivate = !!v.is_private;
             const isCreator = !!v.created_by_email && v.created_by_email === currentUser?.email;
-            const canDelete = currentUser?.role === "master" || isCreator;
-            const canConfirm =
-              currentUser?.role === "master" || currentUser?.role === "editor";
-            // Only the creator (or master) can flip the privacy lock — same
-            // people who already have edit-rights to the file metadata.
-            const canToggleLock = currentUser?.role === "master" || isCreator;
-            const canRename = currentUser?.role === "master" || isCreator;
+            const isPower = isOrgPowerUser(currentUser?.role);
+            const canDelete = isPower || isCreator;
+            // Anyone with full org write privileges (master / privileged_admin /
+            // admin) can confirm a draft as an official version; plain editors
+            // can confirm their own work.
+            const canConfirm = isPower || currentUser?.role === "editor";
+            // Only the creator (or org power user) can flip the privacy lock —
+            // same people who already have edit-rights to the file metadata.
+            const canToggleLock = isPower || isCreator;
+            const canRename = isPower || isCreator;
 
             return (
               <div
