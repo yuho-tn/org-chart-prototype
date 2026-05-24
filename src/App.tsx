@@ -30,7 +30,7 @@ import { useAuthStore } from "./store/useAuthStore";
 import { canAccessPayroll } from "./lib/supabase";
 import { usePresenceStore } from "./store/usePresenceStore";
 import { useVersionsRealtime } from "./store/useVersionsRealtime";
-import { parseShareParams, clearShareParamsFromUrl, syncVersionUrlParam } from "./lib/share";
+import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
 import {
   STORAGE_KEYS,
   readStorage,
@@ -76,14 +76,42 @@ export default function App() {
 
   useEffect(() => {
     const params = parseShareParams();
+    // Stash the parsed params but defer the viewOnly decision until auth
+    // resolves (see effect below). Otherwise a signed-in owner returning
+    // to a tab whose URL still has `?v=<id>` from a prior session would
+    // get locked into viewer mode for their own file.
     if (params.versionId) {
-      setViewOnly(true);
       setView(params.view);
       setShareInit({ versionId: params.versionId, ready: true });
     } else {
       setShareInit({ versionId: null, ready: true });
     }
-  }, [setView, setViewOnly]);
+  }, [setView]);
+
+  // Once auth has resolved, decide what `?v=<id>` actually means:
+  //   - signed-in user → treat as a deep link, clear the URL, open the
+  //     file in editor mode (no viewer trap)
+  //   - anonymous visitor → keep the link as a read-only share
+  // Runs exactly once after the initial share-params parse.
+  useEffect(() => {
+    if (!shareInit.ready) return;
+    if (!authInitialized) return;
+    if (!shareInit.versionId) return;
+    if (session) {
+      // Owner returning to their own URL — strip the share param so the
+      // next reload behaves like a normal sign-in and the main boot
+      // restore picks the file from the local "last opened" pointer
+      // rather than treating it as a share.
+      clearShareParamsFromUrl();
+      setShareInit({ versionId: null, ready: true });
+    } else {
+      // No session: this is a genuine share-link visit. Lock viewer mode.
+      setViewOnly(true);
+    }
+    // Intentionally limited deps: we only want to react to auth resolving
+    // and the initial share-params parse.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareInit.ready, authInitialized, session]);
 
   const currentRole = useAuthStore((s) => s.currentUser?.role);
   useEffect(() => {
@@ -303,14 +331,12 @@ export default function App() {
     presenceUpdateVersionId(currentVersionId);
   }, [currentVersionId, currentUserEmail, viewOnly, presenceUpdateVersionId]);
 
-  // Keep the browser address bar in sync with the currently-open file so
-  // users can copy the URL bar to share whatever they're looking at. Only
-  // runs after boot restore completes — otherwise we'd wipe the ?v= param
-  // the share-init flow is about to consume on initial load.
-  useEffect(() => {
-    if (!bootRestored) return;
-    syncVersionUrlParam(currentVersionId);
-  }, [currentVersionId, bootRestored]);
+  // (Removed) The browser address bar used to auto-mirror the currently-
+  // open file as `?v=<id>`. That clashed with the `?v=` share-link
+  // semantics: on the next visit the boot effect read its own previously-
+  // written URL as a "shared viewer link" and locked the signed-in owner
+  // into viewer mode. Sharing is done explicitly via the Share dialog,
+  // and the file picker shows what's open — the URL doesn't need to.
 
   // Phase 2: subscribe to org_versions Postgres Changes so other users'
   // saves are reflected in this client without a manual reload.
