@@ -1,5 +1,5 @@
 import type { DeptCategory, OrgNode, PersonRole } from "./types";
-import type { EmployeeRow } from "./supabase";
+import { employeeName, type EmployeeRow } from "./supabase";
 
 /**
  * Coarse seniority rank for PersonRole. Used to detect "promotion" — a role
@@ -91,11 +91,17 @@ export type AnnouncementMove = {
   note?: string;
 };
 
+export type PromotionKind = "formal" | "challenge";
+
 export type AnnouncementPromotion = {
   employee_number: string;
   full_name: string;
   from_role: string;
   to_role: string;
+  /** 正式任用（等級を伴う上位概念）か、チャレンジ任用（役割先行・C付き
+   *  役職への任用）か。古いデータには無いので renderer 側は
+   *  promotionKind() でフォールバック判定する。 */
+  kind?: PromotionKind;
   /** Department where this person sits AT THE TIME OF PROMOTION (chart B).
    *  Helps the announcement reader see "where" the person was promoted —
    *  the legacy data model had only roles, so older rows lack these. */
@@ -131,6 +137,72 @@ function isInPeriod(date: string | null | undefined, period: string): boolean {
   return date.startsWith(period); // "2026-07-15".startsWith("2026-07") → true
 }
 
+/** "2026-07" → "2026-06"（年またぎ対応）。不正な入力はそのまま返す。 */
+export function previousPeriod(period: string): string {
+  const m = /^(\d{4})-(\d{1,2})$/.exec(period);
+  if (!m) return period;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = new Date(y, mo - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * チャレンジ任用（C任用）の役職コードか。CDM / CTM / CTL が対象。
+ * CEO / COO / CTO / CFO / CHRO / CRO / CMO などの C-suite は対象外。
+ */
+export function isChallengeRole(role: string | null | undefined): boolean {
+  if (!role) return false;
+  return /^C(DM|TM|TL)$/i.test(role.trim());
+}
+
+/** 行の kind が無い（旧データ）場合は to_role から導出する。 */
+export function promotionKind(p: AnnouncementPromotion): PromotionKind {
+  if (p.kind === "formal" || p.kind === "challenge") return p.kind;
+  return isChallengeRole(p.to_role) ? "challenge" : "formal";
+}
+
+/**
+ * 入社セクション＝従業員マスターで hired_at が対象月のメンバー。
+ * （新規発令の生成と、詳細画面の「マスターから再取得」の両方で使う）
+ */
+export function computeHires(
+  employees: EmployeeRow[],
+  period: string,
+): AnnouncementHire[] {
+  return employees
+    .filter((e) => isInPeriod(e.hired_at, period))
+    .map((e) => ({
+      employee_number: e.employee_number,
+      full_name: employeeName(e),
+      department: e.department,
+      position_title: e.position_title,
+      hired_at: e.hired_at,
+    }))
+    .sort((a, b) => (a.hired_at ?? "").localeCompare(b.hired_at ?? ""));
+}
+
+/**
+ * 退職セクション＝従業員マスターで left_at が「前月」のメンバー。
+ * 発令は月初に出すため、退職の報告は前月分（例: 7月発令 → 6月退職者）。
+ */
+export function computeLeaves(
+  employees: EmployeeRow[],
+  period: string,
+): AnnouncementLeave[] {
+  const target = previousPeriod(period);
+  return employees
+    .filter((e) => isInPeriod(e.left_at, target))
+    .map((e) => ({
+      employee_number: e.employee_number,
+      full_name: employeeName(e),
+      department: e.department,
+      position_title: e.position_title,
+      left_at: e.left_at,
+    }))
+    .sort((a, b) => (a.left_at ?? "").localeCompare(b.left_at ?? ""));
+}
+
 /**
  * Compute the four announcement sections by diffing two charts and a roster.
  *
@@ -153,27 +225,9 @@ export function computeAnnouncement(
   const empByNumber = new Map(employees.map((e) => [e.employee_number, e]));
 
   // Hires / leaves come straight from the master table — chart-independent.
-  const hires: AnnouncementHire[] = employees
-    .filter((e) => isInPeriod(e.hired_at, period))
-    .map((e) => ({
-      employee_number: e.employee_number,
-      full_name: e.full_name ?? "",
-      department: e.department,
-      position_title: e.position_title,
-      hired_at: e.hired_at,
-    }))
-    .sort((a, b) => (a.hired_at ?? "").localeCompare(b.hired_at ?? ""));
-
-  const leaves: AnnouncementLeave[] = employees
-    .filter((e) => isInPeriod(e.left_at, period))
-    .map((e) => ({
-      employee_number: e.employee_number,
-      full_name: e.full_name ?? "",
-      department: e.department,
-      position_title: e.position_title,
-      left_at: e.left_at,
-    }))
-    .sort((a, b) => (a.left_at ?? "").localeCompare(b.left_at ?? ""));
+  // 入社＝対象月、退職＝前月（発令は月初発表なので前月分を報告する）。
+  const hires = computeHires(employees, period);
+  const leaves = computeLeaves(employees, period);
 
   // Build a "person-by-employee_number" projection for each chart.
   type ChartEntry = {
@@ -213,8 +267,8 @@ export function computeAnnouncement(
     const ea = a.get(num);
     if (!ea) continue; // newcomer in chart B (already covered by hires if hired this period)
 
-    const fullName =
-      empByNumber.get(num)?.full_name ?? eb.node.name ?? num;
+    const master = empByNumber.get(num);
+    const fullName = master ? employeeName(master) : eb.node.name ?? num;
     // Both flat (legacy) and structured fields are populated. The flat
     // fields use the moving department's name so older renderers keep
     // working; structured fields give the new full-path renderer all
@@ -253,11 +307,13 @@ export function computeAnnouncement(
     }
 
     if (rankOf(eb.role) > rankOf(ea.role)) {
+      const toRole = eb.role ?? "メンバー";
       promotions.push({
         employee_number: num,
         full_name: fullName,
         from_role: ea.role ?? "メンバー",
-        to_role: eb.role ?? "メンバー",
+        to_role: toRole,
+        kind: isChallengeRole(toRole) ? "challenge" : "formal",
         div: eb.div,
         tm: eb.tm,
         unit: eb.unit,

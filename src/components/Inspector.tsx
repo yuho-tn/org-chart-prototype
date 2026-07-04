@@ -6,6 +6,7 @@ import { ALL_ROLES, ROLE_DESCRIPTIONS } from "../lib/types";
 import type { DeptCategory, OrgNode, PersonRole } from "../lib/types";
 import { PALETTE } from "../lib/palette";
 import { findEmployeeByName } from "../lib/employeeMatch";
+import { employeeName } from "../lib/supabase";
 import { EmployeeLinkDialog } from "./EmployeeLinkDialog";
 
 const CATEGORIES: DeptCategory[] = ["ROOT", "Exe", "DIV", "TM", "Unit", "DEPT"];
@@ -262,7 +263,13 @@ export function Inspector() {
               {linkedEmployee ? (
                 <div className="emplink__current">
                   <div className="emplink__currentName">
-                    {linkedEmployee.full_name || "（氏名なし）"}
+                    {employeeName(linkedEmployee)}
+                    {linkedEmployee.display_name?.trim() &&
+                      linkedEmployee.full_name?.trim() && (
+                        <small style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                          {" "}（戸籍名: {linkedEmployee.full_name}）
+                        </small>
+                      )}
                   </div>
                   <div className="emplink__currentMeta">
                     <code>{linkedEmployee.employee_number}</code>
@@ -322,7 +329,7 @@ export function Inspector() {
                       return (
                         <>
                           <br />
-                          名前一致：<strong>{auto.full_name}</strong>{" "}
+                          名前一致：<strong>{employeeName(auto)}</strong>{" "}
                           <code>{auto.employee_number}</code>
                         </>
                       );
@@ -337,7 +344,7 @@ export function Inspector() {
                           className="btn btn--primary btn--xs"
                           onClick={() =>
                             setEmployeeNumber(selected.id, auto.employee_number, {
-                              name: auto.full_name ?? selected.name,
+                              name: employeeName(auto),
                             })
                           }
                         >
@@ -428,7 +435,7 @@ export function Inspector() {
           onCancel={() => setLinkOpen(false)}
           onPick={(emp) => {
             setEmployeeNumber(selected.id, emp.employee_number, {
-              name: emp.full_name ?? selected.name,
+              name: employeeName(emp),
             });
             setLinkOpen(false);
           }}

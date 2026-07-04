@@ -53,7 +53,8 @@ export function PersonDetailModal() {
     const concurrent = siblings.filter((n) => n.id !== primary?.id);
 
     const master = empNo ? employees.find((e) => e.employee_number === empNo) ?? null : null;
-    const displayName = master?.full_name?.trim() || cleanName(target.name);
+    const displayName =
+      master?.display_name?.trim() || master?.full_name?.trim() || cleanName(target.name);
 
     function entryFor(n: OrgNode) {
       const segs = pathSegments(byId, n);

@@ -18,6 +18,7 @@ function uniqueSorted(values: (string | null)[]): string[] {
 const EMPTY_DRAFT: Partial<EmployeeRow> & { employee_number: string } = {
   employee_number: "",
   full_name: "",
+  display_name: "",
   email: "",
   employment_type: "",
   department: "",
@@ -107,6 +108,7 @@ export function EmployeesPage() {
         const blob = [
           e.employee_number,
           e.full_name,
+          e.display_name,
           e.email,
           e.department,
           e.position_title,
@@ -169,6 +171,7 @@ export function EmployeesPage() {
       employee_number: num,
       email: draft.email ? draft.email.trim().toLowerCase() : null,
       full_name: draft.full_name ? draft.full_name.trim() : null,
+      display_name: draft.display_name ? draft.display_name.trim() : null,
     };
     const res = await upsert(payload);
     if (!res.ok) {
@@ -252,10 +255,13 @@ export function EmployeesPage() {
         <fieldset className="empmgr__import">
           <legend className="field__label">CSVインポート（社員番号で突合・上書き）</legend>
           <p className="modal__body" style={{ fontSize: 12, marginBottom: 8 }}>
-            Google Sheetsの「ファイル ＞ 共有 ＞ ウェブに公開」で
-            <strong>「SmartHR自動連携」タブをCSV形式で公開</strong>
-            したURLを下に貼り付けるか、CSVファイルを直接アップロードしてください。
-            既存の社員番号は上書き、新規番号は追加されます。
+            連携元は従業員名簿スプレッドシートの「SmartHR自動連携」タブです。取込方法は2つ：
+            ①Google Sheetsの「ファイル ＞ 共有 ＞ ウェブに公開」で対象タブを
+            <strong>CSV形式で公開</strong>したURLを貼り付けて「URLから取込」／
+            ②シートをCSVでダウンロードしてファイルアップロード。
+            既存の社員番号は上書き、新規番号は追加されます（削除はされません）。
+            <strong>社員番号が空の行はスキップ</strong>されます。
+            「使用ネーム」は取込では変更されません（手動管理）。
           </p>
           <div className="empmgr__importRow">
             <input
@@ -400,7 +406,16 @@ export function EmployeesPage() {
           <thead>
             <tr>
               <th>社員番号</th>
-              <th>氏名</th>
+              <th>氏名（戸籍名）</th>
+              <th>
+                使用ネーム
+                <span
+                  className="emppage__thHint"
+                  title="Talent Hub上で表示する名前（旧姓の継続利用など）。空欄なら戸籍名を表示します。シート取込では上書きされません。"
+                >
+                  ⓘ
+                </span>
+              </th>
               <th>メール</th>
               <th>雇用形態</th>
               <th>部署</th>
@@ -413,7 +428,7 @@ export function EmployeesPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={9} className="usermgr__empty">読み込み中…</td>
+                <td colSpan={10} className="usermgr__empty">読み込み中…</td>
               </tr>
             )}
             {!loading && editing === "__new__" && (
@@ -427,7 +442,7 @@ export function EmployeesPage() {
             )}
             {!loading && filtered.length === 0 && editing !== "__new__" && (
               <tr>
-                <td colSpan={9} className="usermgr__empty">
+                <td colSpan={10} className="usermgr__empty">
                   {employees.length === 0
                     ? "従業員が登録されていません。CSVインポートか「＋新規追加」から始めてください。"
                     : "条件に一致する従業員がいません。"}
@@ -452,6 +467,13 @@ export function EmployeesPage() {
                   <tr key={emp.employee_number} className={isInactive ? "is-inactive" : ""}>
                     <td><code>{emp.employee_number}</code></td>
                     <td>{emp.full_name ?? "—"}</td>
+                    <td>
+                      {emp.display_name?.trim() ? (
+                        <strong>{emp.display_name}</strong>
+                      ) : (
+                        <span className="emppage__dimmed">—</span>
+                      )}
+                    </td>
                     <td>{emp.email ?? "—"}</td>
                     <td>{emp.employment_type ?? "—"}</td>
                     <td>{emp.department ?? "—"}</td>
@@ -623,6 +645,14 @@ function EditableRow({
           placeholder="例: 山田 太郎"
           value={draft.full_name ?? ""}
           onChange={(e) => set("full_name", e.target.value)}
+        />
+      </td>
+      <td>
+        <input
+          className="field__input field__input--xs"
+          placeholder="例: 旧姓 太郎（空欄=戸籍名）"
+          value={draft.display_name ?? ""}
+          onChange={(e) => set("display_name", e.target.value)}
         />
       </td>
       <td>

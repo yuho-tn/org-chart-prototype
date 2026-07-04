@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
 import { useVersionsStore } from "../store/useVersionsStore";
+import { useVersionsRealtime } from "../store/useVersionsRealtime";
 import { useAuthStore } from "../store/useAuthStore";
 import { SaveVersionDialog } from "./SaveVersionDialog";
 import { ShareDialog } from "./ShareDialog";
@@ -36,6 +37,8 @@ export function TopBar() {
   const copyToClipboard = useOrgStore((s) => s.copyToClipboard);
   const pasteFromClipboard = useOrgStore((s) => s.pasteFromClipboard);
   const setToast = useOrgStore((s) => s.setToast);
+  const remoteAhead = useOrgStore((s) => s.remoteAhead);
+  const setRemoteAhead = useOrgStore((s) => s.setRemoteAhead);
 
   const updateSnapshot = useVersionsStore((s) => s.updateSnapshot);
   const versions = useVersionsStore((s) => s.versions);
@@ -149,6 +152,7 @@ export function TopBar() {
       return;
     }
     markClean({ versionId: row.id, versionLabel: row.name });
+    setRemoteAhead(null);
     setToast({ kind: "info", message: `「${row.name}」を上書き保存しました` });
   }
 
@@ -162,8 +166,37 @@ export function TopBar() {
     newFile();
   }
 
+  async function handlePullLatest() {
+    const ok = window.confirm(
+      "サーバの最新版を読み込みます。あなたの未保存の編集は破棄されます。よろしいですか？",
+    );
+    if (!ok) return;
+    const pulled = await useVersionsRealtime.getState().pullLatest();
+    if (!pulled) {
+      setToast({ kind: "error", message: "最新版の取得に失敗しました" });
+    }
+  }
+
   return (
     <>
+      {remoteAhead && remoteAhead.versionId === currentVersionId && (
+        <div className="remoteahead" role="alert">
+          <span className="remoteahead__msg">
+            ⚠️ 他のメンバーが「{remoteAhead.name}
+            」を更新しました。今あなたが保存すると相手の変更を上書きします。
+          </span>
+          <button className="btn btn--xs" onClick={handlePullLatest}>
+            サーバ最新を読み込む（自分の編集を破棄）
+          </button>
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => setRemoteAhead(null)}
+            title="このまま編集を続ける（保存時に上書き）"
+          >
+            このまま続ける
+          </button>
+        </div>
+      )}
       <div className="toolbar">
         <span className={`toolbar__badge ${dirty ? "is-dirty" : "is-saved"}`}>
           <span className="toolbar__badgeDot" aria-hidden />

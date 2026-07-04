@@ -3,10 +3,17 @@ import { useUiStore } from "../store/useUiStore";
 import { useAnnouncementsStore, type AnnouncementRow } from "../store/useAnnouncementsStore";
 import { useAuthStore, isOrgPowerUser } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
+import { useEmployeesStore } from "../store/useEmployeesStore";
+import { employeeName } from "../lib/supabase";
+import { ConfirmDialog } from "./ConfirmDialog";
 import {
+  computeHires,
+  computeLeaves,
   formatDeptPath,
   formatPeriodHeading,
   moveDestinationGroup,
+  previousPeriod,
+  promotionKind,
   type AnnouncementHire,
   type AnnouncementLeave,
   type AnnouncementMove,
@@ -14,18 +21,105 @@ import {
   type AnnouncementPromotion,
 } from "../lib/announcement";
 
+/* ── Edit-mode data model ──────────────────────────────────────────────
+ * While editing we keep the payload exploded into six flat lists so rows
+ * can be dragged within a section and across compatible sections:
+ *   hires / leaves            (self-contained)
+ *   div_moves ⇄ tm_moves      (same shape — DIV間 ⇄ TM間)
+ *   formal ⇄ challenge        (promotions split by kind)
+ * On save they are merged back into the AnnouncementPayload shape.
+ */
+type EditGroup =
+  | "hires"
+  | "leaves"
+  | "div_moves"
+  | "tm_moves"
+  | "formal"
+  | "challenge";
+
+type EditLists = {
+  hires: AnnouncementHire[];
+  leaves: AnnouncementLeave[];
+  div_moves: AnnouncementMove[];
+  tm_moves: AnnouncementMove[];
+  formal: AnnouncementPromotion[];
+  challenge: AnnouncementPromotion[];
+};
+
+const TRANSFER_TARGETS: Record<EditGroup, EditGroup[]> = {
+  hires: ["hires"],
+  leaves: ["leaves"],
+  div_moves: ["div_moves", "tm_moves"],
+  tm_moves: ["tm_moves", "div_moves"],
+  formal: ["formal", "challenge"],
+  challenge: ["challenge", "formal"],
+};
+
+const ROLE_OPTIONS = [
+  "メンバー",
+  "UL",
+  "TL",
+  "CTL",
+  "TM",
+  "CTM",
+  "DM",
+  "CDM",
+  "CEO",
+  "COO",
+  "CTO",
+  "CFO",
+  "CHRO",
+  "CRO",
+  "CMO",
+];
+
+function explodePayload(p: AnnouncementPayload): EditLists {
+  const promotions = p.promotions ?? [];
+  return {
+    hires: [...(p.hires ?? [])],
+    leaves: [...(p.leaves ?? [])],
+    div_moves: [...(p.div_moves ?? [])],
+    tm_moves: [...(p.tm_moves ?? [])],
+    formal: promotions.filter((x) => promotionKind(x) === "formal"),
+    challenge: promotions.filter((x) => promotionKind(x) === "challenge"),
+  };
+}
+
+function mergeLists(lists: EditLists, notes: string): AnnouncementPayload {
+  return {
+    hires: lists.hires,
+    leaves: lists.leaves,
+    div_moves: lists.div_moves,
+    tm_moves: lists.tm_moves,
+    promotions: [
+      ...lists.formal.map((x) => ({ ...x, kind: "formal" as const })),
+      ...lists.challenge.map((x) => ({ ...x, kind: "challenge" as const })),
+    ],
+    notes,
+  };
+}
+
 export function AnnouncementDetailPage({ id }: { id: string }) {
   const navigate = useUiStore((s) => s.navigate);
   const getById = useAnnouncementsStore((s) => s.getById);
   const update = useAnnouncementsStore((s) => s.update);
+  const removeOne = useAnnouncementsStore((s) => s.remove);
   const currentUser = useAuthStore((s) => s.currentUser);
   const setToast = useOrgStore((s) => s.setToast);
+  const employees = useEmployeesStore((s) => s.employees);
+  const refreshEmployees = useEmployeesStore((s) => s.refresh);
 
   const [row, setRow] = useState<AnnouncementRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<AnnouncementPayload | null>(null);
+  const [lists, setLists] = useState<EditLists | null>(null);
+  const [notes, setNotes] = useState("");
   const [draftTitle, setDraftTitle] = useState("");
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Live drag source (edit mode). Not in React state per-move to avoid
+  // re-rendering on every dragover — only set on start/end.
+  const [drag, setDrag] = useState<{ group: EditGroup; index: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +128,6 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
       const r = await getById(id);
       if (cancelled) return;
       setRow(r);
-      setDraft(r?.payload ?? null);
       setDraftTitle(r?.title ?? "");
       setLoading(false);
     })();
@@ -42,6 +135,10 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
       cancelled = true;
     };
   }, [id, getById]);
+
+  useEffect(() => {
+    if (employees.length === 0) refreshEmployees();
+  }, [employees.length, refreshEmployees]);
 
   const isAuthor = !!row && row.created_by_email === currentUser?.email;
   const canEdit = isOrgPowerUser(currentUser?.role) || isAuthor;
@@ -51,31 +148,78 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
     return `${window.location.origin}${window.location.pathname}#/announcements/${id}`;
   }, [id]);
 
+  // Datalist sources for the edit inputs (プルダウン＋自由入力).
+  const nameOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of employees) {
+      const n = employeeName(e);
+      if (n) s.add(n);
+      if (e.full_name?.trim() && e.full_name.trim() !== n) s.add(e.full_name.trim());
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [employees]);
+
+  const deptOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of employees) {
+      if (e.department?.trim()) s.add(e.department.trim());
+    }
+    if (row) {
+      const p = row.payload;
+      for (const m of [...(p.div_moves ?? []), ...(p.tm_moves ?? [])]) {
+        for (const v of [m.from_div, m.from_tm, m.from_unit, m.to_div, m.to_tm, m.to_unit]) {
+          if (v?.trim()) s.add(v.trim());
+        }
+      }
+      for (const x of p.promotions ?? []) {
+        for (const v of [x.div, x.tm, x.unit]) {
+          if (v?.trim()) s.add(v.trim());
+        }
+      }
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [employees, row]);
+
   function startEdit() {
     if (!row) return;
-    setDraft(row.payload);
+    setLists(explodePayload(row.payload));
+    setNotes(row.payload.notes ?? "");
     setDraftTitle(row.title);
     setEditing(true);
   }
 
   async function saveEdit() {
-    if (!row || !draft) return;
-    const ok = await update(row.id, { payload: draft, title: draftTitle });
+    if (!row || !lists) return;
+    setSaving(true);
+    const payload = mergeLists(lists, notes);
+    const ok = await update(row.id, { payload, title: draftTitle });
+    setSaving(false);
     if (!ok) {
       const detail = useAnnouncementsStore.getState().error;
       setToast({ kind: "error", message: detail ?? "保存に失敗しました" });
       return;
     }
-    setRow({ ...row, payload: draft, title: draftTitle });
+    setRow({ ...row, payload, title: draftTitle });
     setEditing(false);
     setToast({ kind: "info", message: "保存しました" });
   }
 
   function cancelEdit() {
-    if (!row) return;
-    setDraft(row.payload);
-    setDraftTitle(row.title);
+    setLists(null);
     setEditing(false);
+  }
+
+  async function confirmDelete() {
+    if (!row) return;
+    setPendingDelete(false);
+    const ok = await removeOne(row.id);
+    if (!ok) {
+      const detail = useAnnouncementsStore.getState().error;
+      setToast({ kind: "error", message: detail ?? "削除に失敗しました" });
+      return;
+    }
+    setToast({ kind: "info", message: "発令資料を削除しました" });
+    navigate({ name: "announcements" });
   }
 
   async function copyShareUrl() {
@@ -83,10 +227,119 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
       await navigator.clipboard.writeText(shareUrl);
       setToast({ kind: "info", message: "リンクをコピーしました" });
     } catch {
-      // Fallback: select via prompt
       window.prompt("リンクをコピーしてください", shareUrl);
     }
   }
+
+  /* ── DnD plumbing (edit mode) ────────────────────────────────────── */
+
+  function moveRow(to: EditGroup, toIndex: number) {
+    if (!drag || !lists) return;
+    const { group: from, index: fromIndex } = drag;
+    if (!TRANSFER_TARGETS[from].includes(to)) return;
+    const next: EditLists = { ...lists };
+    const src = [...(next[from] as unknown[])];
+    const [item] = src.splice(fromIndex, 1);
+    if (item === undefined) return;
+    if (from === to) {
+      const insertAt = toIndex > fromIndex ? toIndex - 1 : toIndex;
+      src.splice(insertAt, 0, item);
+      (next[from] as unknown[]) = src;
+    } else {
+      (next[from] as unknown[]) = src;
+      const dst = [...(next[to] as unknown[])];
+      dst.splice(toIndex, 0, item);
+      (next[to] as unknown[]) = dst;
+    }
+    setLists(next);
+    setDrag(null);
+  }
+
+  function rowDndProps(group: EditGroup, index: number) {
+    return {
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => {
+        e.dataTransfer.effectAllowed = "move";
+        setDrag({ group, index });
+      },
+      onDragEnd: () => setDrag(null),
+      onDragOver: (e: React.DragEvent) => {
+        if (drag && TRANSFER_TARGETS[drag.group].includes(group)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        moveRow(group, index);
+      },
+    };
+  }
+
+  function sectionDndProps(group: EditGroup) {
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        if (drag && TRANSFER_TARGETS[drag.group].includes(group)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        if (!lists) return;
+        moveRow(group, (lists[group] as unknown[]).length);
+      },
+    };
+  }
+
+  function setItem<G extends EditGroup>(
+    group: G,
+    index: number,
+    next: EditLists[G][number],
+  ) {
+    if (!lists) return;
+    const arr = [...(lists[group] as unknown[])];
+    arr[index] = next;
+    setLists({ ...lists, [group]: arr });
+  }
+
+  function removeItem(group: EditGroup, index: number) {
+    if (!lists) return;
+    const arr = [...(lists[group] as unknown[])];
+    arr.splice(index, 1);
+    setLists({ ...lists, [group]: arr });
+  }
+
+  function addItem(group: EditGroup) {
+    if (!lists) return;
+    const blank: Record<EditGroup, unknown> = {
+      hires: {
+        employee_number: "",
+        full_name: "",
+        department: null,
+        position_title: null,
+        hired_at: null,
+      },
+      leaves: {
+        employee_number: "",
+        full_name: "",
+        department: null,
+        position_title: null,
+        left_at: null,
+      },
+      div_moves: { employee_number: "", full_name: "", from: "", to: "" },
+      tm_moves: { employee_number: "", full_name: "", from: "", to: "" },
+      formal: { employee_number: "", full_name: "", from_role: "", to_role: "", kind: "formal" },
+      challenge: { employee_number: "", full_name: "", from_role: "", to_role: "", kind: "challenge" },
+    };
+    setLists({
+      ...lists,
+      [group]: [...(lists[group] as unknown[]), blank[group]],
+    });
+  }
+
+  /* ── Render ──────────────────────────────────────────────────────── */
 
   if (loading) {
     return (
@@ -96,44 +349,45 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
     );
   }
 
-  if (!row || !draft) {
+  if (!row) {
     return (
       <main className="page">
         <p>発令資料が見つかりません。</p>
-        <button
-          className="btn"
-          onClick={() => navigate({ name: "announcements" })}
-        >
+        <button className="btn" onClick={() => navigate({ name: "announcements" })}>
           一覧へ戻る
         </button>
       </main>
     );
   }
 
-  const data = editing ? draft : row.payload;
+  const view = row.payload;
+  const viewFormal = (view.promotions ?? []).filter((x) => promotionKind(x) === "formal");
+  const viewChallenge = (view.promotions ?? []).filter((x) => promotionKind(x) === "challenge");
 
   return (
     <div className="anndetail">
       <header className="anndetail__head no-print">
-        <button
-          className="btn btn--ghost"
-          onClick={() => navigate({ name: "announcements" })}
-        >
+        <button className="btn btn--ghost" onClick={() => navigate({ name: "announcements" })}>
           ← 一覧へ
         </button>
         <div style={{ flex: 1 }} />
         {canEdit && !editing && (
-          <button className="btn" onClick={startEdit}>
-            編集
-          </button>
+          <>
+            <button className="btn" onClick={startEdit}>
+              ✏️ 編集
+            </button>
+            <button className="btn btn--ghost" onClick={() => setPendingDelete(true)}>
+              🗑 削除
+            </button>
+          </>
         )}
         {editing && (
           <>
             <button className="btn btn--ghost" onClick={cancelEdit}>
               キャンセル
             </button>
-            <button className="btn btn--primary" onClick={saveEdit}>
-              保存
+            <button className="btn btn--primary" onClick={saveEdit} disabled={saving}>
+              {saving ? "保存中…" : "保存"}
             </button>
           </>
         )}
@@ -145,11 +399,37 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
         </button>
       </header>
 
+      {editing && (
+        <p className="anndetail__editHint no-print">
+          行は <span className="anndetail__grip">⠿</span> をドラッグで並べ替え・別セクションへ移動できます
+          （DIV間 ⇄ TM間、正式任用 ⇄ チャレンジ任用）。各項目は候補から選ぶか自由入力できます。
+        </p>
+      )}
+
+      {/* Shared datalists for edit inputs */}
+      {editing && (
+        <>
+          <datalist id="ann-names">
+            {nameOptions.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+          <datalist id="ann-depts">
+            {deptOptions.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+          <datalist id="ann-roles">
+            {ROLE_OPTIONS.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+        </>
+      )}
+
       <article className="anndetail__paper">
         <header className="anndetail__paperHead">
-          <p className="anndetail__period">
-            {formatPeriodHeading(row.period)}
-          </p>
+          <p className="anndetail__period">{formatPeriodHeading(row.period)}</p>
           {editing ? (
             <input
               className="anndetail__titleInput"
@@ -161,506 +441,698 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
           )}
         </header>
 
-        <Section
-          number="①"
-          label="入社"
-          empty="（該当なし）"
-          rows={data.hires}
-          editing={editing}
-          renderRow={(item, set) => (
-            <HireRow item={item} editing={editing} onChange={set} />
-          )}
-          onAdd={() =>
-            setDraft({
-              ...draft,
-              hires: [
-                ...draft.hires,
-                {
-                  employee_number: "",
-                  full_name: "",
-                  department: null,
-                  position_title: null,
-                  hired_at: null,
-                },
-              ],
-            })
-          }
-          onRemove={(i) =>
-            setDraft({ ...draft, hires: draft.hires.filter((_, idx) => idx !== i) })
-          }
-          onUpdate={(i, next) => {
-            const arr = [...draft.hires];
-            arr[i] = next;
-            setDraft({ ...draft, hires: arr });
-          }}
-        />
-
-        <Section
-          number="②"
-          label="退職"
-          empty="（該当なし）"
-          rows={data.leaves}
-          editing={editing}
-          renderRow={(item, set) => (
-            <LeaveRow item={item} editing={editing} onChange={set} />
-          )}
-          onAdd={() =>
-            setDraft({
-              ...draft,
-              leaves: [
-                ...draft.leaves,
-                {
-                  employee_number: "",
-                  full_name: "",
-                  department: null,
-                  position_title: null,
-                  left_at: null,
-                },
-              ],
-            })
-          }
-          onRemove={(i) =>
-            setDraft({ ...draft, leaves: draft.leaves.filter((_, idx) => idx !== i) })
-          }
-          onUpdate={(i, next) => {
-            const arr = [...draft.leaves];
-            arr[i] = next;
-            setDraft({ ...draft, leaves: arr });
-          }}
-        />
-
-        <SectionGroup number="③" label="人事異動">
-          <Section
-            number="A."
-            label="DIV間人事"
-            empty="（該当なし）"
-            rows={data.div_moves}
+        {/* ① 入社 */}
+        <section className="annsec" {...(editing ? sectionDndProps("hires") : {})}>
+          <SectionHead
+            number="①"
+            label="入社"
+            count={(editing ? lists!.hires : view.hires).length}
+            caption={`従業員マスターの ${formatPeriodHeading(row.period)} 入社メンバー`}
             editing={editing}
-            sub
-            groupKey={(item) => moveDestinationGroup(item, "div")}
-            renderRow={(item, set) => (
-              <MoveRow item={item} editing={editing} onChange={set} />
-            )}
-            onAdd={() =>
-              setDraft({
-                ...draft,
-                div_moves: [
-                  ...draft.div_moves,
-                  { employee_number: "", full_name: "", from: "", to: "" },
-                ],
-              })
+            onRefill={
+              editing
+                ? () => {
+                    setLists({ ...lists!, hires: computeHires(employees, row.period) });
+                    setToast({ kind: "info", message: "従業員マスターから入社者を再取得しました" });
+                  }
+                : undefined
             }
-            onRemove={(i) =>
-              setDraft({
-                ...draft,
-                div_moves: draft.div_moves.filter((_, idx) => idx !== i),
-              })
-            }
-            onUpdate={(i, next) => {
-              const arr = [...draft.div_moves];
-              arr[i] = next;
-              setDraft({ ...draft, div_moves: arr });
-            }}
           />
-          <Section
-            number="B."
-            label="TM間人事"
-            empty="（該当なし）"
-            rows={data.tm_moves}
+          <PeopleRows
+            group="hires"
+            rows={editing ? lists!.hires : view.hires}
             editing={editing}
-            sub
-            groupKey={(item) => moveDestinationGroup(item, "tm")}
-            renderRow={(item, set) => (
-              <MoveRow item={item} editing={editing} onChange={set} />
-            )}
-            onAdd={() =>
-              setDraft({
-                ...draft,
-                tm_moves: [
-                  ...draft.tm_moves,
-                  { employee_number: "", full_name: "", from: "", to: "" },
-                ],
-              })
-            }
-            onRemove={(i) =>
-              setDraft({
-                ...draft,
-                tm_moves: draft.tm_moves.filter((_, idx) => idx !== i),
-              })
-            }
-            onUpdate={(i, next) => {
-              const arr = [...draft.tm_moves];
-              arr[i] = next;
-              setDraft({ ...draft, tm_moves: arr });
-            }}
+            dateKey="hired_at"
+            dateSuffix="入社"
+            rowDndProps={rowDndProps}
+            onChange={(i, next) => setItem("hires", i, next as AnnouncementHire)}
+            onRemove={(i) => removeItem("hires", i)}
+            onAdd={() => addItem("hires")}
           />
-        </SectionGroup>
+        </section>
 
-        <Section
-          number="④"
-          label="任用"
-          empty="（該当なし）"
-          rows={data.promotions}
-          editing={editing}
-          groupKey={(item) => item.div ?? "（部署不明）"}
-          renderRow={(item, set) => (
-            <PromotionRow item={item} editing={editing} onChange={set} />
-          )}
-          onAdd={() =>
-            setDraft({
-              ...draft,
-              promotions: [
-                ...draft.promotions,
-                { employee_number: "", full_name: "", from_role: "", to_role: "" },
-              ],
-            })
-          }
-          onRemove={(i) =>
-            setDraft({
-              ...draft,
-              promotions: draft.promotions.filter((_, idx) => idx !== i),
-            })
-          }
-          onUpdate={(i, next) => {
-            const arr = [...draft.promotions];
-            arr[i] = next;
-            setDraft({ ...draft, promotions: arr });
-          }}
-        />
+        {/* ② 退職 */}
+        <section className="annsec" {...(editing ? sectionDndProps("leaves") : {})}>
+          <SectionHead
+            number="②"
+            label="退職"
+            count={(editing ? lists!.leaves : view.leaves).length}
+            caption={`従業員マスターの ${formatPeriodHeading(previousPeriod(row.period))}（前月）退職メンバー`}
+            editing={editing}
+            onRefill={
+              editing
+                ? () => {
+                    setLists({ ...lists!, leaves: computeLeaves(employees, row.period) });
+                    setToast({ kind: "info", message: "従業員マスターから退職者（前月分）を再取得しました" });
+                  }
+                : undefined
+            }
+          />
+          <PeopleRows
+            group="leaves"
+            rows={editing ? lists!.leaves : view.leaves}
+            editing={editing}
+            dateKey="left_at"
+            dateSuffix="退職"
+            rowDndProps={rowDndProps}
+            onChange={(i, next) => setItem("leaves", i, next as AnnouncementLeave)}
+            onRemove={(i) => removeItem("leaves", i)}
+            onAdd={() => addItem("leaves")}
+          />
+        </section>
 
-        {(editing || data.notes) && (
+        {/* ③ 人事異動 */}
+        <section className="annsec annsec--group">
+          <h2 className="annsec__head">
+            <span className="annsec__num">③</span>
+            人事異動
+          </h2>
+
+          <section className="annsec annsec--sub" {...(editing ? sectionDndProps("div_moves") : {})}>
+            <SectionHead
+              number="A."
+              label="DIV間の異動"
+              count={(editing ? lists!.div_moves : view.div_moves).length}
+              editing={editing}
+            />
+            <MoveRows
+              group="div_moves"
+              rows={editing ? lists!.div_moves : view.div_moves}
+              editing={editing}
+              groupKind="div"
+              rowDndProps={rowDndProps}
+              onChange={(i, next) => setItem("div_moves", i, next)}
+              onRemove={(i) => removeItem("div_moves", i)}
+              onAdd={() => addItem("div_moves")}
+            />
+          </section>
+
+          <section className="annsec annsec--sub" {...(editing ? sectionDndProps("tm_moves") : {})}>
+            <SectionHead
+              number="B."
+              label="TM間の異動"
+              count={(editing ? lists!.tm_moves : view.tm_moves).length}
+              editing={editing}
+            />
+            <MoveRows
+              group="tm_moves"
+              rows={editing ? lists!.tm_moves : view.tm_moves}
+              editing={editing}
+              groupKind="tm"
+              rowDndProps={rowDndProps}
+              onChange={(i, next) => setItem("tm_moves", i, next)}
+              onRemove={(i) => removeItem("tm_moves", i)}
+              onAdd={() => addItem("tm_moves")}
+            />
+          </section>
+        </section>
+
+        {/* ④ 任用 — 正式が上位概念なので先＆強調、チャレンジは差別化 */}
+        <section className="annsec annsec--group">
+          <h2 className="annsec__head">
+            <span className="annsec__num">④</span>
+            任用
+          </h2>
+
+          <section
+            className="annsec annsec--sub annsec--formal"
+            {...(editing ? sectionDndProps("formal") : {})}
+          >
+            <SectionHead
+              number="A."
+              label="正式任用"
+              badge="等級を伴う正式な任用"
+              count={(editing ? lists!.formal : viewFormal).length}
+              editing={editing}
+            />
+            <PromotionRows
+              group="formal"
+              rows={editing ? lists!.formal : viewFormal}
+              editing={editing}
+              rowDndProps={rowDndProps}
+              onChange={(i, next) => setItem("formal", i, next)}
+              onRemove={(i) => removeItem("formal", i)}
+              onAdd={() => addItem("formal")}
+              onKindChange={(i) => {
+                // 正式 → チャレンジへ付け替え
+                if (!lists) return;
+                const item = { ...lists.formal[i], kind: "challenge" as const };
+                const formal = lists.formal.filter((_, idx) => idx !== i);
+                setLists({ ...lists, formal, challenge: [...lists.challenge, item] });
+              }}
+              kindLabel="正式"
+              otherKindLabel="チャレンジへ移動"
+            />
+          </section>
+
+          <section
+            className="annsec annsec--sub annsec--challenge"
+            {...(editing ? sectionDndProps("challenge") : {})}
+          >
+            <SectionHead
+              number="B."
+              label="チャレンジ任用"
+              badge="役割先行のチャレンジ任用（C任用）"
+              count={(editing ? lists!.challenge : viewChallenge).length}
+              editing={editing}
+            />
+            <PromotionRows
+              group="challenge"
+              rows={editing ? lists!.challenge : viewChallenge}
+              editing={editing}
+              rowDndProps={rowDndProps}
+              onChange={(i, next) => setItem("challenge", i, next)}
+              onRemove={(i) => removeItem("challenge", i)}
+              onAdd={() => addItem("challenge")}
+              onKindChange={(i) => {
+                if (!lists) return;
+                const item = { ...lists.challenge[i], kind: "formal" as const };
+                const challenge = lists.challenge.filter((_, idx) => idx !== i);
+                setLists({ ...lists, challenge, formal: [...lists.formal, item] });
+              }}
+              kindLabel="チャレンジ"
+              otherKindLabel="正式へ移動"
+            />
+          </section>
+        </section>
+
+        {(editing || view.notes) && (
           <section className="annsec">
             <h2 className="annsec__head">備考</h2>
             {editing ? (
               <textarea
                 className="field__input"
                 rows={3}
-                value={draft.notes}
-                onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
                 placeholder="自由記述（必要な場合）"
               />
             ) : (
-              <p className="annsec__notes">{data.notes}</p>
+              <p className="annsec__notes">{view.notes}</p>
             )}
           </section>
         )}
       </article>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="発令資料の削除"
+          message={
+            <>
+              「{row.title}」（{formatPeriodHeading(row.period)}）を削除します。この操作は元に戻せません。よろしいですか？
+            </>
+          }
+          confirmLabel="削除する"
+          variant="danger"
+          onConfirm={confirmDelete}
+          onCancel={() => setPendingDelete(false)}
+        />
+      )}
     </div>
   );
 }
 
-/* ── Generic section renderer ─────────────────────────────────────── */
+/* ── Section chrome ───────────────────────────────────────────────── */
 
-function SectionGroup({
+function SectionHead({
   number,
   label,
-  children,
+  count,
+  caption,
+  badge,
+  editing,
+  onRefill,
 }: {
   number: string;
   label: string;
-  children: React.ReactNode;
+  count: number;
+  caption?: string;
+  badge?: string;
+  editing: boolean;
+  onRefill?: () => void;
 }) {
   return (
-    <section className="annsec annsec--group">
+    <>
       <h2 className="annsec__head">
         <span className="annsec__num">{number}</span>
         {label}
+        {badge && <span className="annsec__badge">{badge}</span>}
+        <span className="annsec__count">（{count}名）</span>
+        {editing && onRefill && (
+          <button
+            className="btn btn--ghost btn--xs no-print annsec__refill"
+            onClick={onRefill}
+            title="従業員マスターから対象期間の該当者を取り直します（現在の行は置き換わります）"
+          >
+            ⟳ マスターから再取得
+          </button>
+        )}
       </h2>
-      {children}
-    </section>
+      {caption && <p className="annsec__caption">{caption}</p>}
+    </>
   );
 }
 
-type SectionProps<T> = {
-  number: string;
-  label: string;
-  empty: string;
-  rows: T[];
-  editing: boolean;
-  sub?: boolean;
-  /** When provided in view mode, rows are bucketed by this key under the
-   *  destination department. Edit mode keeps a flat list so the user can
-   *  freely add/remove/edit rows without thinking about groupings. */
-  groupKey?: (item: T) => string;
-  renderRow: (item: T, set: (next: T) => void) => React.ReactNode;
-  onAdd: () => void;
-  onRemove: (idx: number) => void;
-  onUpdate: (idx: number, next: T) => void;
-};
+type RowDndProps = (
+  group: EditGroup,
+  index: number,
+) => Record<string, unknown>;
 
-function Section<T>({
-  number,
-  label,
-  empty,
+function Grip() {
+  return (
+    <span className="anndetail__grip no-print" title="ドラッグで並べ替え / 移動" aria-hidden>
+      ⠿
+    </span>
+  );
+}
+
+/* ── ①② 入社・退職 ────────────────────────────────────────────────── */
+
+function PeopleRows<T extends AnnouncementHire | AnnouncementLeave>({
+  group,
   rows,
   editing,
-  sub,
-  groupKey,
-  renderRow,
-  onAdd,
+  dateKey,
+  dateSuffix,
+  rowDndProps,
+  onChange,
   onRemove,
-  onUpdate,
-}: SectionProps<T>) {
-  // Edit mode = flat list (so add/remove indices stay obvious).
-  // View mode = grouped if groupKey is supplied; otherwise flat.
-  const groups = !editing && groupKey && rows.length > 0
-    ? groupRows(rows, groupKey)
-    : null;
-
+  onAdd,
+}: {
+  group: EditGroup;
+  rows: T[];
+  editing: boolean;
+  dateKey: "hired_at" | "left_at";
+  dateSuffix: string;
+  rowDndProps: RowDndProps;
+  onChange: (i: number, next: T) => void;
+  onRemove: (i: number) => void;
+  onAdd: () => void;
+}) {
+  if (rows.length === 0 && !editing) {
+    return <p className="annsec__empty">（該当なし）</p>;
+  }
   return (
-    <section className={`annsec ${sub ? "annsec--sub" : ""}`}>
-      <h2 className="annsec__head">
-        <span className="annsec__num">{number}</span>
-        {label}
-        <span className="annsec__count">（{rows.length}名）</span>
-      </h2>
-      {rows.length === 0 ? (
-        <p className="annsec__empty">{empty}</p>
-      ) : groups ? (
-        <div className="anngrp">
-          {groups.map(({ key, items }) => (
-            <div key={key} className="anngrp__bucket">
-              <h3 className="anngrp__head">
-                {key}
-                <span className="anngrp__count">{items.length}名</span>
-              </h3>
-              <ul className="annsec__list">
-                {items.map(({ item, idx }) => (
-                  <li key={idx} className="annsec__row">
-                    {renderRow(item, (next) => onUpdate(idx, next))}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <ul className="annsec__list">
-          {rows.map((item, i) => (
-            <li key={i} className="annsec__row">
-              {renderRow(item, (next) => onUpdate(i, next))}
-              {editing && (
-                <button
-                  className="btn btn--ghost btn--xs annsec__remove no-print"
-                  onClick={() => onRemove(i)}
-                >
-                  ✕
-                </button>
-              )}
+    <>
+      <ul className="annsec__list">
+        {rows.map((item, i) => {
+          const dateVal = (item as Record<string, string | null>)[dateKey] ?? null;
+          if (!editing) {
+            return (
+              <li key={i} className="annsec__row">
+                <span className="annrow">
+                  <strong>{item.full_name || "—"}</strong>
+                  <span className="annrow__sep">／</span>
+                  <span>{item.department ?? "—"}</span>
+                  {item.position_title && (
+                    <>
+                      <span className="annrow__sep">／</span>
+                      <span>{item.position_title}</span>
+                    </>
+                  )}
+                  {dateVal && (
+                    <>
+                      <span className="annrow__sep">／</span>
+                      <span className="annrow__date">
+                        {dateVal} {dateSuffix}
+                      </span>
+                    </>
+                  )}
+                  {item.note && <span className="annrow__note">（{item.note}）</span>}
+                </span>
+              </li>
+            );
+          }
+          return (
+            <li key={i} className="annsec__row annsec__row--edit" {...rowDndProps(group, i)}>
+              <Grip />
+              <span className="annrow annrow--edit">
+                <input
+                  className="field__input field__input--xs"
+                  placeholder="氏名"
+                  list="ann-names"
+                  value={item.full_name}
+                  onChange={(e) => onChange(i, { ...item, full_name: e.target.value })}
+                />
+                <input
+                  className="field__input field__input--xs"
+                  placeholder="部署"
+                  list="ann-depts"
+                  value={item.department ?? ""}
+                  onChange={(e) => onChange(i, { ...item, department: e.target.value || null })}
+                />
+                <input
+                  className="field__input field__input--xs"
+                  placeholder="役職"
+                  list="ann-roles"
+                  value={item.position_title ?? ""}
+                  onChange={(e) =>
+                    onChange(i, { ...item, position_title: e.target.value || null })
+                  }
+                />
+                <input
+                  className="field__input field__input--xs"
+                  type="date"
+                  value={dateVal ?? ""}
+                  onChange={(e) =>
+                    onChange(i, { ...item, [dateKey]: e.target.value || null } as T)
+                  }
+                />
+                <input
+                  className="field__input field__input--xs"
+                  placeholder="備考"
+                  value={item.note ?? ""}
+                  onChange={(e) => onChange(i, { ...item, note: e.target.value || undefined })}
+                />
+              </span>
+              <button
+                className="btn btn--ghost btn--xs annsec__remove no-print"
+                onClick={() => onRemove(i)}
+              >
+                ✕
+              </button>
             </li>
-          ))}
-        </ul>
-      )}
+          );
+        })}
+      </ul>
       {editing && (
         <button className="btn btn--ghost btn--xs no-print" onClick={onAdd}>
           ＋行追加
         </button>
       )}
-    </section>
+    </>
   );
 }
 
-function groupRows<T>(
-  rows: T[],
-  keyOf: (item: T) => string,
-): { key: string; items: { item: T; idx: number }[] }[] {
-  const m = new Map<string, { item: T; idx: number }[]>();
-  rows.forEach((item, idx) => {
-    const k = keyOf(item) || "（未指定）";
-    const arr = m.get(k) ?? [];
-    arr.push({ item, idx });
-    m.set(k, arr);
-  });
-  // Stable: groups appear in first-seen order; within each group rows
-  // keep their original array order (stable sort by name happens in
-  // computeAnnouncement).
-  return [...m.entries()].map(([key, items]) => ({ key, items }));
-}
+/* ── ③ 異動 ──────────────────────────────────────────────────────── */
 
-/* ── Row renderers ────────────────────────────────────────────────── */
-
-function HireRow({
-  item,
+function MoveRows({
+  group,
+  rows,
   editing,
+  groupKind,
+  rowDndProps,
   onChange,
+  onRemove,
+  onAdd,
 }: {
-  item: AnnouncementHire;
+  group: EditGroup;
+  rows: AnnouncementMove[];
   editing: boolean;
-  onChange: (next: AnnouncementHire) => void;
+  groupKind: "div" | "tm";
+  rowDndProps: RowDndProps;
+  onChange: (i: number, next: AnnouncementMove) => void;
+  onRemove: (i: number) => void;
+  onAdd: () => void;
 }) {
   if (!editing) {
+    if (rows.length === 0) return <p className="annsec__empty">（該当なし）</p>;
+    // View: bucket by destination so long lists read as「受け入れ先ごと」
+    const buckets = new Map<string, { item: AnnouncementMove; idx: number }[]>();
+    rows.forEach((item, idx) => {
+      const k = moveDestinationGroup(item, groupKind) || "（未指定）";
+      const arr = buckets.get(k) ?? [];
+      arr.push({ item, idx });
+      buckets.set(k, arr);
+    });
     return (
-      <span className="annrow">
-        <strong>{item.full_name || "—"}</strong>
-        <span className="annrow__sep">／</span>
-        <span>{item.department ?? "—"}</span>
-        <span className="annrow__sep">／</span>
-        <span>{item.position_title ?? "—"}</span>
-        {item.hired_at && (
-          <>
-            <span className="annrow__sep">／</span>
-            <span className="annrow__date">{item.hired_at} 入社</span>
-          </>
-        )}
-        {item.note && <span className="annrow__note">（{item.note}）</span>}
-      </span>
+      <div className="anngrp anngrp--compact">
+        {[...buckets.entries()].map(([key, items]) => (
+          <div key={key} className="anngrp__bucket">
+            <h3 className="anngrp__head">
+              <span className="anngrp__dest">{key}</span>
+              <span className="anngrp__count">{items.length}名</span>
+            </h3>
+            <table className="annmoves">
+              <tbody>
+                {items.map(({ item, idx }) => {
+                  const fromPath =
+                    formatDeptPath(item.from_div, item.from_tm, item.from_unit) ??
+                    item.from ??
+                    "—";
+                  const toPath =
+                    formatDeptPath(item.to_div, item.to_tm, item.to_unit) ?? item.to ?? "—";
+                  return (
+                    <tr key={idx}>
+                      <td className="annmoves__name">{item.full_name || "—"}</td>
+                      <td className="annmoves__path">
+                        <span>{fromPath}</span>
+                        <span className="annrow__arrow">→</span>
+                        <strong>{toPath}</strong>
+                      </td>
+                      <td className="annmoves__note">{item.note ? `（${item.note}）` : ""}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
     );
   }
+
   return (
-    <span className="annrow annrow--edit">
-      <input className="field__input field__input--xs" placeholder="氏名"
-        value={item.full_name} onChange={(e) => onChange({ ...item, full_name: e.target.value })} />
-      <input className="field__input field__input--xs" placeholder="部署"
-        value={item.department ?? ""} onChange={(e) => onChange({ ...item, department: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="役職"
-        value={item.position_title ?? ""} onChange={(e) => onChange({ ...item, position_title: e.target.value || null })} />
-      <input className="field__input field__input--xs" type="date"
-        value={item.hired_at ?? ""} onChange={(e) => onChange({ ...item, hired_at: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="備考"
-        value={item.note ?? ""} onChange={(e) => onChange({ ...item, note: e.target.value || undefined })} />
-    </span>
+    <>
+      <ul className="annsec__list">
+        {rows.map((item, i) => (
+          <li key={i} className="annsec__row annsec__row--edit" {...rowDndProps(group, i)}>
+            <Grip />
+            <span className="annrow annrow--edit">
+              <input
+                className="field__input field__input--xs"
+                placeholder="氏名"
+                list="ann-names"
+                value={item.full_name}
+                onChange={(e) => onChange(i, { ...item, full_name: e.target.value })}
+              />
+              <span className="annrow__editLabel">変更前</span>
+              <input
+                className="field__input field__input--xs"
+                placeholder="DIV"
+                list="ann-depts"
+                value={item.from_div ?? ""}
+                onChange={(e) => onChange(i, { ...item, from_div: e.target.value || null })}
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="TM"
+                list="ann-depts"
+                value={item.from_tm ?? ""}
+                onChange={(e) => onChange(i, { ...item, from_tm: e.target.value || null })}
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="Unit"
+                list="ann-depts"
+                value={item.from_unit ?? ""}
+                onChange={(e) => onChange(i, { ...item, from_unit: e.target.value || null })}
+              />
+              <span className="annrow__arrow">→</span>
+              <span className="annrow__editLabel">変更後</span>
+              <input
+                className="field__input field__input--xs"
+                placeholder="DIV"
+                list="ann-depts"
+                value={item.to_div ?? ""}
+                onChange={(e) => onChange(i, { ...item, to_div: e.target.value || null })}
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="TM"
+                list="ann-depts"
+                value={item.to_tm ?? ""}
+                onChange={(e) => onChange(i, { ...item, to_tm: e.target.value || null })}
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="Unit"
+                list="ann-depts"
+                value={item.to_unit ?? ""}
+                onChange={(e) => onChange(i, { ...item, to_unit: e.target.value || null })}
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="備考"
+                value={item.note ?? ""}
+                onChange={(e) => onChange(i, { ...item, note: e.target.value || undefined })}
+              />
+            </span>
+            <button
+              className="btn btn--ghost btn--xs annsec__remove no-print"
+              onClick={() => onRemove(i)}
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button className="btn btn--ghost btn--xs no-print" onClick={onAdd}>
+        ＋行追加
+      </button>
+    </>
   );
 }
 
-function LeaveRow({
-  item,
-  editing,
-  onChange,
-}: {
-  item: AnnouncementLeave;
-  editing: boolean;
-  onChange: (next: AnnouncementLeave) => void;
-}) {
-  if (!editing) {
-    return (
-      <span className="annrow">
-        <strong>{item.full_name || "—"}</strong>
-        <span className="annrow__sep">／</span>
-        <span>{item.department ?? "—"}</span>
-        <span className="annrow__sep">／</span>
-        <span>{item.position_title ?? "—"}</span>
-        {item.left_at && (
-          <>
-            <span className="annrow__sep">／</span>
-            <span className="annrow__date">{item.left_at} 退職</span>
-          </>
-        )}
-        {item.note && <span className="annrow__note">（{item.note}）</span>}
-      </span>
-    );
-  }
-  return (
-    <span className="annrow annrow--edit">
-      <input className="field__input field__input--xs" placeholder="氏名"
-        value={item.full_name} onChange={(e) => onChange({ ...item, full_name: e.target.value })} />
-      <input className="field__input field__input--xs" placeholder="部署"
-        value={item.department ?? ""} onChange={(e) => onChange({ ...item, department: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="役職"
-        value={item.position_title ?? ""} onChange={(e) => onChange({ ...item, position_title: e.target.value || null })} />
-      <input className="field__input field__input--xs" type="date"
-        value={item.left_at ?? ""} onChange={(e) => onChange({ ...item, left_at: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="備考"
-        value={item.note ?? ""} onChange={(e) => onChange({ ...item, note: e.target.value || undefined })} />
-    </span>
-  );
-}
+/* ── ④ 任用 ──────────────────────────────────────────────────────── */
 
-function MoveRow({
-  item,
+function PromotionRows({
+  group,
+  rows,
   editing,
+  rowDndProps,
   onChange,
+  onRemove,
+  onAdd,
+  onKindChange,
+  kindLabel,
+  otherKindLabel,
 }: {
-  item: AnnouncementMove;
+  group: EditGroup;
+  rows: AnnouncementPromotion[];
   editing: boolean;
-  onChange: (next: AnnouncementMove) => void;
+  rowDndProps: RowDndProps;
+  onChange: (i: number, next: AnnouncementPromotion) => void;
+  onRemove: (i: number) => void;
+  onAdd: () => void;
+  onKindChange: (i: number) => void;
+  kindLabel: string;
+  otherKindLabel: string;
 }) {
   if (!editing) {
-    // Prefer the structured DIV / TM / Unit path. Fall back to the
-    // legacy single-string form for older saved announcements that
-    // don't have the structured fields populated.
-    const fromPath =
-      formatDeptPath(item.from_div, item.from_tm, item.from_unit) ??
-      item.from ??
-      "—";
-    const toPath =
-      formatDeptPath(item.to_div, item.to_tm, item.to_unit) ?? item.to ?? "—";
+    if (rows.length === 0) return <p className="annsec__empty">（該当なし）</p>;
+    // Bucket by DIV (fall back to TM) for readability.
+    const buckets = new Map<string, { item: AnnouncementPromotion; idx: number }[]>();
+    rows.forEach((item, idx) => {
+      const k = item.div?.trim() || item.tm?.trim() || "（部署不明）";
+      const arr = buckets.get(k) ?? [];
+      arr.push({ item, idx });
+      buckets.set(k, arr);
+    });
     return (
-      <span className="annrow">
-        <strong>{item.full_name || "—"}</strong>
-        <span className="annrow__sep">：</span>
-        <span className="annrow__path">{fromPath}</span>
-        <span className="annrow__arrow">→</span>
-        <span className="annrow__path">{toPath}</span>
-        {item.note && <span className="annrow__note">（{item.note}）</span>}
-      </span>
+      <div className="anngrp anngrp--compact">
+        {[...buckets.entries()].map(([key, items]) => (
+          <div key={key} className="anngrp__bucket">
+            <h3 className="anngrp__head">
+              <span className="anngrp__dest">{key}</span>
+              <span className="anngrp__count">{items.length}名</span>
+            </h3>
+            <table className="annmoves">
+              <tbody>
+                {items.map(({ item, idx }) => {
+                  const path = formatDeptPath(item.div, item.tm, item.unit);
+                  return (
+                    <tr key={idx}>
+                      <td className="annmoves__name">{item.full_name || "—"}</td>
+                      <td className="annmoves__path">
+                        {path && (
+                          <span className="annmoves__deptPath" style={{ marginRight: 8 }}>
+                            {path}
+                          </span>
+                        )}
+                        <span>{item.from_role || "メンバー"}</span>
+                        <span className="annrow__arrow">→</span>
+                        <strong className="annmoves__toRole">{item.to_role || "—"}</strong>
+                      </td>
+                      <td className="annmoves__note">{item.note ? `（${item.note}）` : ""}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
     );
   }
-  return (
-    <span className="annrow annrow--edit">
-      <input className="field__input field__input--xs" placeholder="氏名"
-        value={item.full_name} onChange={(e) => onChange({ ...item, full_name: e.target.value })} />
-      <input className="field__input field__input--xs" placeholder="変更前 DIV"
-        value={item.from_div ?? ""} onChange={(e) => onChange({ ...item, from_div: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="変更前 TM"
-        value={item.from_tm ?? ""} onChange={(e) => onChange({ ...item, from_tm: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="変更前 Unit"
-        value={item.from_unit ?? ""} onChange={(e) => onChange({ ...item, from_unit: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="変更後 DIV"
-        value={item.to_div ?? ""} onChange={(e) => onChange({ ...item, to_div: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="変更後 TM"
-        value={item.to_tm ?? ""} onChange={(e) => onChange({ ...item, to_tm: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="変更後 Unit"
-        value={item.to_unit ?? ""} onChange={(e) => onChange({ ...item, to_unit: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="備考"
-        value={item.note ?? ""} onChange={(e) => onChange({ ...item, note: e.target.value || undefined })} />
-    </span>
-  );
-}
 
-function PromotionRow({
-  item,
-  editing,
-  onChange,
-}: {
-  item: AnnouncementPromotion;
-  editing: boolean;
-  onChange: (next: AnnouncementPromotion) => void;
-}) {
-  if (!editing) {
-    const path = formatDeptPath(item.div, item.tm, item.unit);
-    return (
-      <span className="annrow">
-        <strong>{item.full_name || "—"}</strong>
-        {path && (
-          <>
-            <span className="annrow__sep">／</span>
-            <span className="annrow__path">{path}</span>
-          </>
-        )}
-        <span className="annrow__sep">：</span>
-        <span>{item.from_role || "メンバー"}</span>
-        <span className="annrow__arrow">→</span>
-        <span><strong>{item.to_role || "—"}</strong></span>
-        {item.note && <span className="annrow__note">（{item.note}）</span>}
-      </span>
-    );
-  }
   return (
-    <span className="annrow annrow--edit">
-      <input className="field__input field__input--xs" placeholder="氏名"
-        value={item.full_name} onChange={(e) => onChange({ ...item, full_name: e.target.value })} />
-      <input className="field__input field__input--xs" placeholder="DIV"
-        value={item.div ?? ""} onChange={(e) => onChange({ ...item, div: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="TM"
-        value={item.tm ?? ""} onChange={(e) => onChange({ ...item, tm: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="Unit"
-        value={item.unit ?? ""} onChange={(e) => onChange({ ...item, unit: e.target.value || null })} />
-      <input className="field__input field__input--xs" placeholder="変更前役職"
-        value={item.from_role} onChange={(e) => onChange({ ...item, from_role: e.target.value })} />
-      <input className="field__input field__input--xs" placeholder="変更後役職"
-        value={item.to_role} onChange={(e) => onChange({ ...item, to_role: e.target.value })} />
-      <input className="field__input field__input--xs" placeholder="備考"
-        value={item.note ?? ""} onChange={(e) => onChange({ ...item, note: e.target.value || undefined })} />
-    </span>
+    <>
+      <ul className="annsec__list">
+        {rows.map((item, i) => (
+          <li key={i} className="annsec__row annsec__row--edit" {...rowDndProps(group, i)}>
+            <Grip />
+            <span className="annrow annrow--edit">
+              <input
+                className="field__input field__input--xs"
+                placeholder="氏名"
+                list="ann-names"
+                value={item.full_name}
+                onChange={(e) => onChange(i, { ...item, full_name: e.target.value })}
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="DIV"
+                list="ann-depts"
+                value={item.div ?? ""}
+                onChange={(e) => onChange(i, { ...item, div: e.target.value || null })}
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="TM"
+                list="ann-depts"
+                value={item.tm ?? ""}
+                onChange={(e) => onChange(i, { ...item, tm: e.target.value || null })}
+              />
+              <select
+                className="field__input field__input--xs"
+                value={item.from_role}
+                onChange={(e) => onChange(i, { ...item, from_role: e.target.value })}
+                title="変更前役職"
+              >
+                <option value="">変更前役職</option>
+                {ROLE_OPTIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+                {item.from_role && !ROLE_OPTIONS.includes(item.from_role) && (
+                  <option value={item.from_role}>{item.from_role}</option>
+                )}
+              </select>
+              <span className="annrow__arrow">→</span>
+              <select
+                className="field__input field__input--xs"
+                value={item.to_role}
+                onChange={(e) => onChange(i, { ...item, to_role: e.target.value })}
+                title="変更後役職"
+              >
+                <option value="">変更後役職</option>
+                {ROLE_OPTIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+                {item.to_role && !ROLE_OPTIONS.includes(item.to_role) && (
+                  <option value={item.to_role}>{item.to_role}</option>
+                )}
+              </select>
+              <input
+                className="field__input field__input--xs"
+                placeholder="備考"
+                value={item.note ?? ""}
+                onChange={(e) => onChange(i, { ...item, note: e.target.value || undefined })}
+              />
+              <button
+                className="btn btn--ghost btn--xs no-print"
+                onClick={() => onKindChange(i)}
+                title={`この行を${otherKindLabel}`}
+              >
+                ⇄ {otherKindLabel}
+              </button>
+            </span>
+            <button
+              className="btn btn--ghost btn--xs annsec__remove no-print"
+              onClick={() => onRemove(i)}
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button className="btn btn--ghost btn--xs no-print" onClick={onAdd}>
+        ＋{kindLabel}任用の行追加
+      </button>
+    </>
   );
 }

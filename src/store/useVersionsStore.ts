@@ -184,7 +184,12 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     }
     const row = resp.data as VersionRow;
     set({ versions: [row, ...get().versions] });
-    useVersionsRealtime.getState().markSelfSave(row.id);
+    useVersionsRealtime.getState().markSelfSave(row.id, row.updated_at);
+    useVersionsRealtime.getState().broadcastChange({
+      kind: "created",
+      versionId: row.id,
+      name: row.name,
+    });
     return row;
   },
 
@@ -253,7 +258,12 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     set({
       versions: get().versions.map((v) => (v.id === id ? merged : v)),
     });
-    useVersionsRealtime.getState().markSelfSave(id);
+    useVersionsRealtime.getState().markSelfSave(id, merged.updated_at);
+    useVersionsRealtime.getState().broadcastChange({
+      kind: "saved",
+      versionId: id,
+      name: merged.name,
+    });
     return merged;
   },
 
@@ -344,7 +354,11 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
         v.id === id ? { ...v, name: trimmed } : v,
       ),
     });
-    useVersionsRealtime.getState().markSelfSave(id);
+    useVersionsRealtime.getState().broadcastChange({
+      kind: "renamed",
+      versionId: id,
+      name: trimmed,
+    });
     return true;
   },
 
@@ -407,6 +421,10 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
         v.id === id ? { ...v, ...patch } : v,
       ),
     });
+    useVersionsRealtime.getState().broadcastChange({
+      kind: "confirmed",
+      versionId: id,
+    });
     return true;
   },
 
@@ -435,6 +453,10 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
       return false;
     }
     set({ versions: get().versions.filter((v) => v.id !== id) });
+    useVersionsRealtime.getState().broadcastChange({
+      kind: "deleted",
+      versionId: id,
+    });
     return true;
   },
 }));

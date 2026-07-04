@@ -66,7 +66,8 @@ export function AuditLogPage() {
   const employeeNameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const e of employees) {
-      if (e.full_name) map.set(e.employee_number, e.full_name);
+      const name = e.display_name?.trim() || e.full_name;
+      if (name) map.set(e.employee_number, name);
     }
     return map;
   }, [employees]);

@@ -110,7 +110,7 @@ function exportCsv(
   ];
   const rows = employees.map((e) => {
     const base = [
-      e.employee_number, e.full_name ?? "", e.employment_type ?? "",
+      e.employee_number, e.display_name?.trim() || e.full_name || "", e.employment_type ?? "",
       e.department ?? "", e.position_title ?? "", e.career_track ?? "",
     ];
     for (const p of periods) {
@@ -220,7 +220,7 @@ export function SalaryTablePage() {
       if (filter.track && filter.track !== "unset" && e.career_track !== filter.track) return false;
       if (!q) return true;
       const blob = [
-        e.employee_number, e.full_name, e.email, e.department, e.position_title, e.employment_type,
+        e.employee_number, e.full_name, e.display_name, e.email, e.department, e.position_title, e.employment_type,
       ].filter(Boolean).join(" ").toLowerCase();
       return blob.includes(q);
     }).sort((a, b) => a.employee_number.localeCompare(b.employee_number));
@@ -549,7 +549,9 @@ function SalaryRow({
   return (
     <tr className={isRetired ? "is-inactive" : ""}>
       <td className="salary-table__fixed"><code>{employee.employee_number}</code></td>
-      <td className="salary-table__fixed">{employee.full_name ?? "—"}</td>
+      <td className="salary-table__fixed">
+        {employee.display_name?.trim() || employee.full_name || "—"}
+      </td>
       <td className="salary-table__fixed">{employee.employment_type ?? "—"}</td>
       <td className="salary-table__fixed">{employee.department ?? "—"}</td>
       <td className="salary-table__fixed">

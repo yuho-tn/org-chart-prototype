@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useEmployeesStore } from "../store/useEmployeesStore";
-import type { EmployeeRow } from "../lib/supabase";
+import { employeeName, type EmployeeRow } from "../lib/supabase";
 
 /**
  * Modal that lets the user pick an employee from the master to link to a
@@ -42,6 +42,7 @@ export function EmployeeLinkDialog({
       .filter((e) => {
         return (
           e.full_name?.toLowerCase().includes(q) ||
+          e.display_name?.toLowerCase().includes(q) ||
           e.employee_number.toLowerCase().includes(q) ||
           e.department?.toLowerCase().includes(q) ||
           e.position_title?.toLowerCase().includes(q)
@@ -88,7 +89,10 @@ export function EmployeeLinkDialog({
                   onClick={() => onPick(e)}
                 >
                   <span className="emplink__name">
-                    {e.full_name || "（氏名なし）"}
+                    {employeeName(e)}
+                    {e.display_name?.trim() && e.full_name?.trim() && (
+                      <span className="emplink__legalName">（戸籍名: {e.full_name}）</span>
+                    )}
                     {isCurrent && <span className="emplink__currentBadge">現在の紐付け</span>}
                   </span>
                   <span className="emplink__meta">

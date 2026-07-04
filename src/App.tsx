@@ -1,27 +1,16 @@
-import { useEffect, useState } from "react";
-import { ReactFlowProvider } from "reactflow";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { GlobalHeader } from "./components/GlobalHeader";
 import { SystemSwitcher } from "./components/SystemSwitcher";
 import { SalaryTablePage } from "./components/payroll/SalaryTablePage";
 import { GradesPage } from "./components/payroll/GradesPage";
 import { AuditLogPage } from "./components/payroll/AuditLogPage";
 import { OrgSubNav } from "./components/OrgSubNav";
-import { TopBar } from "./components/TopBar";
-import { Sidebar } from "./components/Sidebar";
-import { Canvas } from "./components/Canvas";
-import { Inspector } from "./components/Inspector";
-import { LogPanel } from "./components/LogPanel";
 import { Toast } from "./components/Toast";
 import { SignInPage } from "./components/SignInPage";
 import { EmployeesPage } from "./components/EmployeesPage";
 import { UsersPage } from "./components/UsersPage";
 import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
 import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
-import { ListView } from "./components/ListView";
-import { AssignmentsView } from "./components/AssignmentsView";
-import { ViewTabs } from "./components/ViewTabs";
-import { FilesDrawer } from "./components/FilesDrawer";
-import { PersonDetailModal } from "./components/PersonDetailModal";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useEmployeesStore } from "./store/useEmployeesStore";
@@ -39,6 +28,12 @@ import {
   writeDraft,
   clearDraft,
 } from "./lib/storageKeys";
+
+// The org-chart editor & share-link viewer pull in reactflow (~the largest
+// dependency in the bundle). Load them lazily so 従業員マスター / 人事発令 /
+// 給与 pages don't pay for it — this is what makes those pages open fast.
+const EditorShell = lazy(() => import("./components/EditorShell"));
+const ViewerShell = lazy(() => import("./components/ViewerShell"));
 
 export default function App() {
   const hydrateDraft = useOrgStore((s) => s.hydrateDraft);
@@ -351,7 +346,13 @@ export default function App() {
     };
   }, [bootReady, viewOnly, realtimeSubscribe, realtimeUnsubscribe]);
 
-  if (viewOnly) return <ViewerLayout view={view} />;
+  if (viewOnly) {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <ViewerShell view={view} />
+      </Suspense>
+    );
+  }
 
   // Auth gate. While Supabase is resolving the session, hold a short
   // splash; after that, route to SignInPage when there's no session.
@@ -363,24 +364,22 @@ export default function App() {
   // adapts its tabs to the active system; the content area swaps below.
   const system = systemOfRoute(route);
   return (
-    <ReactFlowProvider>
-      <div
-        className={[
-          "app",
-          `app--system-${system}`,
-          `app--${sectionOfRoute(route)}`,
-          `app--view-${view}`,
-          systemSwitching ? "app--system-switching" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        <SystemSwitcher />
-        <GlobalHeader />
-        <SectionContent route={route} />
-        <Toast />
-      </div>
-    </ReactFlowProvider>
+    <div
+      className={[
+        "app",
+        `app--system-${system}`,
+        `app--${sectionOfRoute(route)}`,
+        `app--view-${view}`,
+        systemSwitching ? "app--system-switching" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <SystemSwitcher />
+      <GlobalHeader />
+      <SectionContent route={route} />
+      <Toast />
+    </div>
   );
 }
 
@@ -430,77 +429,17 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
   if (route.name === "grades") return <GradesPage />;
   if (route.name === "audit_log") return <AuditLogPage />;
 
-  // Default: org → editor
-  return <EditorShell />;
-}
-
-function ViewBody({ view }: { view: ReturnType<typeof useUiStore.getState>["view"] }) {
-  if (view === "tree") {
-    return (
-      <div className="app__canvas">
-        <Canvas />
-      </div>
-    );
-  }
-  if (view === "assignments") {
-    return <AssignmentsView />;
-  }
-  return <ListView />;
-}
-
-function EditorShell() {
-  const view = useUiStore((s) => s.view);
+  // Default: org → editor (lazy — pulls in reactflow on demand)
   return (
-    <div className="orgshell">
-      <OrgSubNav />
-      <TopBar />
-      <ViewTabs />
-      <div className="app__main">
-        <div className="app__leftPane">
-          <Sidebar />
-          <Inspector />
+    <Suspense
+      fallback={
+        <div className="orgshell">
+          <OrgSubNav />
+          <p style={{ padding: 24, color: "var(--text-muted)" }}>エディタを読み込み中…</p>
         </div>
-        <div className="app__content">
-          <ViewBody view={view} />
-        </div>
-      </div>
-      <LogPanel />
-      <FilesDrawer />
-    </div>
-  );
-}
-
-function ViewerLayout({ view }: { view: ReturnType<typeof useUiStore.getState>["view"] }) {
-  const sharedLabel = useUiStore((s) => s.sharedVersionLabel);
-
-  function openInEditor() {
-    clearShareParamsFromUrl();
-    window.location.reload();
-  }
-
-  return (
-    <ReactFlowProvider>
-      <div className={`app app--viewer app--view-${view}`}>
-        <header className="topbar topbar--viewer">
-          <div className="topbar__brand">TalentHub</div>
-          <span className="topbar__badge is-saved">閲覧モード</span>
-          {sharedLabel && (
-            <span className="topbar__viewer-version">{sharedLabel}</span>
-          )}
-          <div className="topbar__spacer" />
-          <button className="btn" onClick={openInEditor} title="編集モードで開く">
-            編集モードで開く
-          </button>
-        </header>
-        <ViewTabs />
-        <div className="app__main app__main--viewer">
-          <div className="app__content">
-            <ViewBody view={view} />
-          </div>
-        </div>
-        <PersonDetailModal />
-        <Toast />
-      </div>
-    </ReactFlowProvider>
+      }
+    >
+      <EditorShell />
+    </Suspense>
   );
 }

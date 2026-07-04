@@ -6,7 +6,7 @@ import {
   isCasualEmployment,
 } from "../store/useEmployeesStore";
 import { useUiStore } from "../store/useUiStore";
-import { isSupabaseConfigured } from "../lib/supabase";
+import { isSupabaseConfigured, employeeName } from "../lib/supabase";
 
 /**
  * Sidebar panel listing employees from the master who are NOT yet referenced
@@ -58,6 +58,7 @@ export function UnplacedEmployeesPanel() {
         if (!q) return true;
         const blob = [
           e.full_name,
+          e.display_name,
           e.email,
           e.department,
           e.position_title,
@@ -148,7 +149,7 @@ export function UnplacedEmployeesPanel() {
               ) : (
                 <ul className="unplaced__list">
                   {candidates.slice(0, 50).map((e) => {
-                    const fullName = (e.full_name ?? "").trim() || e.employee_number;
+                    const fullName = employeeName(e);
                     const isPlaced = placed.has(e.employee_number);
                     return (
                       <li

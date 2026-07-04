@@ -37,7 +37,11 @@ export function findEmployeeByName(
   let hit: EmployeeRow | null = null;
   let count = 0;
   for (const e of employees) {
-    if (normalizeName(e.full_name) === target) {
+    // 使用ネーム（旧姓など）でも戸籍名でもヒットさせる。
+    const matches =
+      normalizeName(e.display_name) === target ||
+      normalizeName(e.full_name) === target;
+    if (matches) {
       count += 1;
       if (count > 1) return null;
       hit = e;

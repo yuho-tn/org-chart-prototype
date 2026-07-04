@@ -30,6 +30,10 @@ type Store = AppState & {
   currentVersionLabel: string | null;
   /** in-memory clipboard for Cmd+C / Cmd+V */
   clipboard: Clipboard;
+  /** Set when the server has a newer revision of the open file than what
+   *  the local (dirty) editor shows. Drives the "サーバが先行" banner. */
+  remoteAhead: { versionId: string; name: string; updatedAt: string } | null;
+  setRemoteAhead: (v: Store["remoteAhead"]) => void;
 
   addDepartment: (
     parentId: string | null,
@@ -188,6 +192,7 @@ export const useOrgStore = create<Store>((set, get) => ({
   dirty: false,
   currentVersionId: null,
   currentVersionLabel: null,
+  remoteAhead: null,
   clipboard: null,
 
   addDepartment: (parentId, opts) => {
@@ -756,6 +761,8 @@ export const useOrgStore = create<Store>((set, get) => ({
   setSelected: (id) => set({ selectedId: id }),
   setToast: (toast) => set({ toast }),
 
+  setRemoteAhead: (remoteAhead) => set({ remoteAhead }),
+
   undo: () => {
     const state = get();
     if (state.past.length === 0) return;
@@ -853,6 +860,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       currentVersionId: meta?.versionId ?? null,
       currentVersionLabel: meta?.versionLabel ?? null,
       dirty: false,
+      remoteAhead: null,
       log: logEntry(
         state,
         "reset",

@@ -5312,3 +5312,135 @@ body.is-dragging .dept-card__add-child {
   text-decoration-color: rgba(185, 28, 28, 0.35);
 }
 .audit-table__after { color: #047857; font-weight: 600; }
+
+/* ═══════════════════ 2026-07 improvements ═══════════════════ */
+
+/* ── Remote-ahead banner (collab sync) ── */
+.remoteahead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: #fef3c7;
+  border-bottom: 1px solid #f59e0b;
+  font-size: 12.5px;
+  color: #92400e;
+}
+.remoteahead__msg { font-weight: 600; }
+
+/* ── EmployeesPage 使用ネーム ── */
+.emppage__thHint {
+  margin-left: 4px;
+  cursor: help;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 400;
+}
+.emppage__dimmed { color: var(--text-muted, #cbd5e1); }
+.emplink__legalName {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 400;
+}
+
+/* ── Announcement detail: captions & badges ── */
+.annsec__caption {
+  margin: -4px 0 8px;
+  font-size: 11.5px;
+  color: var(--text-muted, #94a3b8);
+}
+.annsec__badge {
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  vertical-align: middle;
+}
+.annsec__refill { margin-left: auto; }
+.annsec__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+
+/* ── 任用: 正式(上位・強調) vs チャレンジ(差別化) ── */
+.annsec--formal {
+  border-left: 4px solid #1d4ed8;
+  background: #eff6ff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+.annsec--formal .annsec__badge { background: #1d4ed8; color: #fff; }
+.annsec--formal .annmoves__toRole { color: #1d4ed8; font-size: 1.05em; }
+.annsec--challenge {
+  border-left: 4px dashed #9333ea;
+  background: #faf5ff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+.annsec--challenge .annsec__badge { background: #f3e8ff; color: #7e22ce; }
+.annsec--challenge .annmoves__toRole { color: #7e22ce; }
+
+/* ── 異動・任用のコンパクト表 ── */
+.anngrp--compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 10px 18px;
+  align-items: start;
+}
+.anngrp__dest { font-weight: 700; }
+.annmoves {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.annmoves td {
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px dashed #e2e8f0;
+  vertical-align: top;
+}
+.annmoves tr:last-child td { border-bottom: none; }
+.annmoves__name { font-weight: 600; white-space: nowrap; width: 7em; }
+.annmoves__path .annrow__arrow { margin: 0 6px; color: #94a3b8; }
+.annmoves__deptPath { color: var(--text-muted, #64748b); font-size: 11.5px; }
+.annmoves__note { color: var(--text-muted, #94a3b8); font-size: 11.5px; white-space: nowrap; }
+
+/* ── 編集モード: D&D行 ── */
+.anndetail__editHint {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  margin: 6px 0 0;
+}
+.annsec__row--edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+.annsec__row--edit .annrow--edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  flex: 1;
+}
+.annsec__row--edit[draggable="true"] { cursor: grab; }
+.annsec__row--edit[draggable="true"]:active { cursor: grabbing; }
+.anndetail__grip {
+  color: #94a3b8;
+  cursor: grab;
+  user-select: none;
+  padding: 0 2px;
+  font-size: 14px;
+}
+.annrow__editLabel {
+  font-size: 10.5px;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+}
+
+@media print {
+  .annsec--formal, .annsec--challenge { background: none; }
+}

@@ -105,7 +105,8 @@ function buildAssignments(nodes: OrgNode[], employees: EmployeeRow[]): Assignmen
       if (e?.role) roleSet.add(e.role);
     }
 
-    const displayName = master?.full_name?.trim() || g.name;
+    const displayName =
+      master?.display_name?.trim() || master?.full_name?.trim() || g.name;
     out.push({
       key: g.key,
       name: displayName,

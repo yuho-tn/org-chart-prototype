@@ -69,6 +69,9 @@ export type VersionWithSnapshot = VersionRow & {
 export type EmployeeRow = {
   employee_number: string;
   full_name: string | null;
+  /** Talent Hub上の使用ネーム（旧姓など）。NULLなら full_name を使う。
+   *  シート/CSV取込では上書きされない（手動管理・migration 0014）。 */
+  display_name?: string | null;
   email: string | null;
   employment_type: string | null;
   department: string | null;
@@ -81,6 +84,21 @@ export type EmployeeRow = {
    *  not in scope (アルバイト/インターン). Added in migration 0013. */
   career_track?: CareerTrack | null;
 };
+
+/**
+ * The name to show for an employee anywhere in the app: the Talent Hub
+ * 使用ネーム (display_name — e.g. 旧姓) when set, otherwise the legal
+ * full_name, otherwise the employee number as a last resort.
+ */
+export function employeeName(
+  e: Pick<EmployeeRow, "employee_number" | "full_name" | "display_name">,
+): string {
+  return (
+    e.display_name?.trim() ||
+    e.full_name?.trim() ||
+    e.employee_number
+  );
+}
 
 // ── Payroll / salary system types (migration 0013) ───────────────────
 

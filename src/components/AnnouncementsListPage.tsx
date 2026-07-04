@@ -10,6 +10,8 @@ import {
   computeAnnouncement,
   emptyPayload,
   formatPeriodHeading,
+  previousPeriod,
+  promotionKind,
 } from "../lib/announcement";
 import type { OrgNode } from "../lib/types";
 
@@ -166,7 +168,10 @@ export function AnnouncementsListPage() {
               退職 {row.payload?.leaves?.length ?? 0} ／
               DIV間 {row.payload?.div_moves?.length ?? 0} ／
               TM間 {row.payload?.tm_moves?.length ?? 0} ／
-              任用 {row.payload?.promotions?.length ?? 0}
+              正式任用{" "}
+              {(row.payload?.promotions ?? []).filter((p) => promotionKind(p) === "formal").length} ／
+              チャレンジ任用{" "}
+              {(row.payload?.promotions ?? []).filter((p) => promotionKind(p) === "challenge").length}
             </div>
           </article>
         ))}
@@ -240,8 +245,10 @@ function CreateDialog({
         <h3 className="modal__title">新しい人事発令資料を作成</h3>
         <p className="modal__body">
           対象月と、比較する2つの確定版を選んでください。差分から自動的に
-          入社・退職・DIV間異動・TM間異動・任用の各セクションが生成されます。
-          作成後にすべての項目を編集できます。
+          DIV間異動・TM間異動・任用（正式／チャレンジ）が生成されます。
+          入社は<strong>従業員マスターの対象月入社者</strong>、退職は
+          <strong>前月（{formatPeriodHeading(previousPeriod(period))}）の退職者</strong>
+          が自動で記載されます。作成後にすべての項目を編集できます。
         </p>
 
         <label className="field">
