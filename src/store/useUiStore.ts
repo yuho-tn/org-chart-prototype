@@ -17,13 +17,14 @@ export type SystemKey = "talenthub" | "payroll";
 /**
  * Primary navigation sections, shown as the top-tier of the global header
  * within each system.
- *   TalentHub: org / employees / users
+ *   TalentHub: org / employees / users / permissions
  *   Payroll:   salary / grades / audit_log
  */
 export type Section =
   | "org"
   | "employees"
   | "users"
+  | "permissions"
   | "salary"
   | "grades"
   | "audit_log";
@@ -40,7 +41,9 @@ export type Route =
   | { name: "announcements" }
   | { name: "announcement"; id: string }
   | { name: "employees" }
+  | { name: "employee"; num: string }
   | { name: "users" }
+  | { name: "permissions" }
   // Payroll
   | { name: "salary" }
   | { name: "grades" }
@@ -53,9 +56,12 @@ export function sectionOfRoute(r: Route): Section {
     case "announcement":
       return "org";
     case "employees":
+    case "employee":
       return "employees";
     case "users":
       return "users";
+    case "permissions":
+      return "permissions";
     case "salary":
       return "salary";
     case "grades":
@@ -85,6 +91,8 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "employees" };
     case "users":
       return { name: "users" };
+    case "permissions":
+      return { name: "permissions" };
     case "salary":
       return { name: "salary" };
     case "grades":
@@ -105,9 +113,20 @@ function readRouteFromHash(): Route {
   if (h === "" || h === "#" || h === "#/") return { name: "editor" };
   if (h === "#/employees") return { name: "employees" };
   if (h === "#/users") return { name: "users" };
+  if (h === "#/permissions") return { name: "permissions" };
   if (h === "#/announcements") return { name: "announcements" };
   const m = /^#\/announcements\/([0-9a-f-]+)$/i.exec(h);
   if (m) return { name: "announcement", id: m[1] };
+  // 従業員詳細: #/employees/:num（社員番号はURLエンコードされている想定）
+  const emp = /^#\/employees\/([^/]+)$/.exec(h);
+  if (emp) {
+    try {
+      return { name: "employee", num: decodeURIComponent(emp[1]) };
+    } catch {
+      // 不正な %xx シーケンス（URIError）は一覧へフォールバック
+      return { name: "employees" };
+    }
+  }
   // Payroll routes
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
   if (h === "#/payroll/grades") return { name: "grades" };
@@ -121,8 +140,12 @@ function routeToHash(r: Route): string {
       return "";
     case "employees":
       return "#/employees";
+    case "employee":
+      return `#/employees/${encodeURIComponent(r.num)}`;
     case "users":
       return "#/users";
+    case "permissions":
+      return "#/permissions";
     case "announcements":
       return "#/announcements";
     case "announcement":

@@ -7,13 +7,15 @@ import {
   type SystemKey,
 } from "../store/useUiStore";
 import { useAuthStore } from "../store/useAuthStore";
-import type { AppUserRole } from "../lib/supabase";
+import { canManagePermissions, type AppUserRole } from "../lib/supabase";
 
 const TABS_BY_SYSTEM: Record<SystemKey, { id: Section; label: string; icon: string }[]> = {
   talenthub: [
     { id: "org", label: "組織図", icon: "🗂" },
     { id: "employees", label: "従業員マスター", icon: "👥" },
     { id: "users", label: "ユーザー", icon: "🔑" },
+    // 権限管理は master / privileged_admin のみ表示（下のフィルタ参照）
+    { id: "permissions", label: "権限", icon: "🛡" },
   ],
   payroll: [
     { id: "salary", label: "給与表", icon: "📋" },
@@ -49,9 +51,13 @@ export function GlobalHeader() {
   const navigate = useUiStore((s) => s.navigate);
   const currentSection = sectionOfRoute(route);
   const currentSystem = systemOfRoute(route);
-  const tabs = TABS_BY_SYSTEM[currentSystem];
-  const brand = BRAND_BY_SYSTEM[currentSystem];
   const currentUser = useAuthStore((s) => s.currentUser);
+  // 権限管理タブは master / privileged_admin のみ（SystemSwitcher の
+  // payroll ゲートと同じパターン）。
+  const tabs = TABS_BY_SYSTEM[currentSystem].filter(
+    (t) => t.id !== "permissions" || canManagePermissions(currentUser?.role),
+  );
+  const brand = BRAND_BY_SYSTEM[currentSystem];
   const signOut = useAuthStore((s) => s.signOut);
 
   async function handleSignOut() {

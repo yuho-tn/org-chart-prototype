@@ -32,6 +32,12 @@ export function canAccessPayroll(role: AppUserRole | undefined | null): boolean 
   return role === "master" || role === "privileged_admin";
 }
 
+/** Roles that may open the 権限管理 page (migration 0015).
+ *  master / privileged_admin のみ — payroll と同じ組。 */
+export function canManagePermissions(role: AppUserRole | undefined | null): boolean {
+  return role === "master" || role === "privileged_admin";
+}
+
 export type AppUserRow = {
   email: string;
   display_name: string | null;

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useEmployeesStore, isCasualEmployment } from "../store/useEmployeesStore";
 import { useAuthStore, isOrgPowerUser } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
-import type { EmployeeRow } from "../lib/supabase";
+import { useProfilesStore } from "../store/useProfilesStore";
+import { useUiStore } from "../store/useUiStore";
+import { employeeName, type EmployeeRow } from "../lib/supabase";
 import type { ImportSummary } from "../store/useEmployeesStore";
 
 const PAGE_SIZE = 50;
@@ -46,6 +48,13 @@ export function EmployeesPage() {
   const setSheetCsvUrl = useEmployeesStore((s) => s.setSheetCsvUrl);
   const currentUser = useAuthStore((s) => s.currentUser);
   const setToast = useOrgStore((s) => s.setToast);
+  const navigate = useUiStore((s) => s.navigate);
+
+  // P1: プロフィール（アバター・あだ名）— ギャラリービューと詳細リンク用
+  const profiles = useProfilesStore((s) => s.profilesByNumber);
+  const refreshProfiles = useProfilesStore((s) => s.refresh);
+  const ensurePhotoUrls = useProfilesStore((s) => s.ensurePhotoUrls);
+  const photoUrls = useProfilesStore((s) => s.photoUrls);
 
   // Full editors (master / privileged_admin / admin) can manage the
   // employees master incl. CSV import / add / edit / delete. Regular
@@ -53,6 +62,8 @@ export function EmployeesPage() {
   const isMaster = isOrgPowerUser(currentUser?.role);
 
   const [filter, setFilter] = useState("");
+  // 一覧（テーブル）とギャラリー（写真カード）の切替
+  const [viewMode, setViewMode] = useState<"list" | "gallery">("list");
   // Retirement state filter: 在籍 (default) / 退職 / 全て
   const [retirementMode, setRetirementMode] = useState<"active" | "retired" | "all">("active");
   const [empTypeFilter, setEmpTypeFilter] = useState<string>("");
@@ -69,7 +80,8 @@ export function EmployeesPage() {
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    refreshProfiles();
+  }, [refresh, refreshProfiles]);
 
   useEffect(() => {
     setUrlDraft(sheetCsvUrl);
@@ -144,6 +156,19 @@ export function EmployeesPage() {
 
   const pageStart = (page - 1) * PAGE_SIZE;
   const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
+  // ギャラリー表示中のページのアバター signed URL をまとめて確保
+  useEffect(() => {
+    if (viewMode !== "gallery") return;
+    const paths = pageRows
+      .map((e) => profiles[e.employee_number]?.avatar_path)
+      .filter((p): p is string => !!p);
+    if (paths.length > 0) ensurePhotoUrls(paths);
+  }, [viewMode, pageRows, profiles, ensurePhotoUrls]);
+
+  function openDetail(emp: EmployeeRow) {
+    navigate({ name: "employee", num: emp.employee_number });
+  }
 
   function startEdit(emp: EmployeeRow) {
     setEditing(emp.employee_number);
@@ -347,6 +372,24 @@ export function EmployeesPage() {
       )}
 
       <div className="emppage__filters">
+        <div className="emppage__viewToggle" role="tablist" aria-label="表示切替">
+          <button
+            role="tab"
+            aria-selected={viewMode === "list"}
+            className={`emppage__viewBtn ${viewMode === "list" ? "is-active" : ""}`}
+            onClick={() => setViewMode("list")}
+          >
+            ☰ 一覧
+          </button>
+          <button
+            role="tab"
+            aria-selected={viewMode === "gallery"}
+            className={`emppage__viewBtn ${viewMode === "gallery" ? "is-active" : ""}`}
+            onClick={() => setViewMode("gallery")}
+          >
+            ▦ ギャラリー
+          </button>
+        </div>
         <input
           className="field__input"
           placeholder="氏名 / 部署 / メール / 役職などで絞り込み"
@@ -436,6 +479,57 @@ export function EmployeesPage() {
         </span>
       </div>
 
+      {viewMode === "gallery" && (
+        <div className="emppage__galleryWrap">
+          {loading && <p className="usermgr__empty">読み込み中…</p>}
+          {!loading && filtered.length === 0 && (
+            <p className="usermgr__empty">
+              {employees.length === 0
+                ? "従業員が登録されていません。CSVインポートか「＋新規追加」から始めてください。"
+                : "条件に一致する従業員がいません。"}
+            </p>
+          )}
+          <div className="emppage__gallery">
+            {!loading &&
+              pageRows.map((emp) => {
+                const prof = profiles[emp.employee_number];
+                const avatarUrl = prof?.avatar_path
+                  ? photoUrls[prof.avatar_path]
+                  : undefined;
+                const name = employeeName(emp);
+                const isInactive = !!emp.left_at && emp.left_at <= today;
+                return (
+                  <button
+                    key={emp.employee_number}
+                    className={`empcard ${isInactive ? "is-inactive" : ""}`}
+                    onClick={() => openDetail(emp)}
+                    title="クリックで詳細ページへ"
+                  >
+                    <span className="empcard__photo" aria-hidden>
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span className="empcard__initial">
+                          {name.trim()[0]?.toUpperCase() ?? "?"}
+                        </span>
+                      )}
+                    </span>
+                    <span className="empcard__body">
+                      <span className="empcard__name">{name}</span>
+                      {prof?.nickname && (
+                        <span className="empcard__nickname">（{prof.nickname}）</span>
+                      )}
+                      <span className="empcard__sub">{emp.department ?? "—"}</span>
+                      <span className="empcard__sub">{emp.position_title ?? "—"}</span>
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {viewMode === "list" && (
       <div className="emppage__tableWrap">
         <table className="empmgr__table emppage__table">
           <thead>
@@ -501,7 +595,19 @@ export function EmployeesPage() {
                 return (
                   <tr key={emp.employee_number} className={isInactive ? "is-inactive" : ""}>
                     <td><code>{emp.employee_number}</code></td>
-                    <td>{emp.full_name ?? "—"}</td>
+                    <td>
+                      {emp.full_name ? (
+                        <button
+                          className="emppage__nameLink"
+                          onClick={() => openDetail(emp)}
+                          title="クリックで詳細ページへ"
+                        >
+                          {emp.full_name}
+                        </button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td>
                       {emp.display_name?.trim() ? (
                         <strong>{emp.display_name}</strong>
@@ -545,6 +651,7 @@ export function EmployeesPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       <Pagination
         page={page}
@@ -561,6 +668,10 @@ export function EmployeesPage() {
             <p className="modal__body">
               <code>{pendingDelete.employee_number}</code>{" "}
               {pendingDelete.full_name ?? ""} を削除します。
+              <br />
+              <strong>
+                本人のプロフィール・人事機密情報・写真も一緒に削除されます（復元できません）。
+              </strong>
               <br />
               退職した方は削除ではなく「退職日」を入れることをお勧めします（履歴が残せます）。
             </p>

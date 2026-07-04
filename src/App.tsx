@@ -16,7 +16,7 @@ import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore
 import { useEmployeesStore } from "./store/useEmployeesStore";
 import { useUiStore, sectionOfRoute, systemOfRoute, defaultRouteForSystem } from "./store/useUiStore";
 import { useAuthStore } from "./store/useAuthStore";
-import { canAccessPayroll } from "./lib/supabase";
+import { canAccessPayroll, canManagePermissions } from "./lib/supabase";
 import { usePresenceStore } from "./store/usePresenceStore";
 import { useVersionsRealtime } from "./store/useVersionsRealtime";
 import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
@@ -34,6 +34,14 @@ import {
 // 給与 pages don't pay for it — this is what makes those pages open fast.
 const EditorShell = lazy(() => import("./components/EditorShell"));
 const ViewerShell = lazy(() => import("./components/ViewerShell"));
+// P1: 従業員詳細（プロフィール）と権限管理も lazy — 通常の一覧閲覧では
+// ロードさせない。
+const EmployeeDetailPage = lazy(() =>
+  import("./components/EmployeeDetailPage").then((m) => ({ default: m.EmployeeDetailPage })),
+);
+const PermissionsPage = lazy(() =>
+  import("./components/PermissionsPage").then((m) => ({ default: m.PermissionsPage })),
+);
 
 export default function App() {
   const hydrateDraft = useOrgStore((s) => s.hydrateDraft);
@@ -123,6 +131,15 @@ export default function App() {
     if (!authInitialized) return;
     if (systemOfRoute(route) !== "payroll") return;
     if (canAccessPayroll(currentRole)) return;
+    navigate(defaultRouteForSystem("talenthub"), { pushHistory: false });
+  }, [authInitialized, route, currentRole, navigate]);
+
+  // Same guard for the 権限管理 page (#/permissions) — master /
+  // privileged_admin only.
+  useEffect(() => {
+    if (!authInitialized) return;
+    if (route.name !== "permissions") return;
+    if (canManagePermissions(currentRole)) return;
     navigate(defaultRouteForSystem("talenthub"), { pushHistory: false });
   }, [authInitialized, route, currentRole, navigate]);
 
@@ -383,6 +400,14 @@ export default function App() {
   );
 }
 
+function PageLoading() {
+  return (
+    <main className="page">
+      <p style={{ padding: 24, color: "var(--text-muted)" }}>読み込み中…</p>
+    </main>
+  );
+}
+
 function BootSplash() {
   return (
     <div className="signin">
@@ -402,8 +427,24 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     );
   }
 
+  if (route.name === "employee") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <EmployeeDetailPage num={route.num} />
+      </Suspense>
+    );
+  }
+
   if (route.name === "users") {
     return <UsersPage />;
+  }
+
+  if (route.name === "permissions") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PermissionsPage />
+      </Suspense>
+    );
   }
 
   if (route.name === "announcements") {

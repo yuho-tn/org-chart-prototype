@@ -5444,3 +5444,452 @@ body.is-dragging .dept-card__add-child {
 @media print {
   .annsec--formal, .annsec--challenge { background: none; }
 }
+
+/* ── P1: 従業員プロフィール（詳細ページ / ギャラリー / 権限管理） ──── */
+
+/* 一覧/ギャラリー切替トグル（EmployeesPage フィルタ行の先頭） */
+.emppage__viewToggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.emppage__viewBtn {
+  background: var(--panel);
+  border: none;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.emppage__viewBtn + .emppage__viewBtn {
+  border-left: 1px solid var(--border);
+}
+
+.emppage__viewBtn.is-active {
+  background: var(--primary);
+  color: #fff;
+  cursor: default;
+}
+
+/* 一覧の氏名クリック → 詳細ページ */
+.emppage__nameLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.emppage__nameLink:hover {
+  text-decoration: underline;
+}
+
+/* ギャラリービュー（写真カード） */
+.emppage__galleryWrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.emppage__gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 2px;
+}
+
+.empcard {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 0.1s, box-shadow 0.1s, transform 0.06s;
+}
+
+.empcard:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.empcard.is-inactive {
+  opacity: 0.55;
+}
+
+.empcard__photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.empcard__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.empcard__initial {
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.empcard__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px 12px;
+}
+
+.empcard__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.empcard__nickname {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.empcard__sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 従業員詳細ページ（#/employees/:num） ─────────────────────────── */
+.empdetail {
+  overflow-y: auto;
+}
+
+.empdetail__hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+}
+
+.empdetail__avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.empdetail__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.empdetail__avatarInitial {
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.empdetail__heroBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.empdetail__name {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.empdetail__nickname {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.empdetail__meta {
+  margin: 0 0 4px;
+}
+
+.empdetail__gradeChip {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+  font-weight: 700;
+}
+
+.empdetail__metaSub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.empdetail__heroActions {
+  flex-shrink: 0;
+}
+
+.empdetail__section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 14px;
+}
+
+.empdetail__section--confidential {
+  border-color: #fca5a5;
+  background: #fff7f7;
+}
+
+.empdetail__sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.empdetail__sectionTitle {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong, var(--text));
+}
+
+.empdetail__sectionActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.empdetail__empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+.empdetail__hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 異動歴（確定版から自動生成） */
+.empdetail__history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.empdetail__historyRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.empdetail__historyPeriod {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.empdetail__historyPath {
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+.empdetail__historyArrow {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+/* プロフィール項目（表示） */
+.empdetail__fields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.empdetail__field {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.empdetail__field dt {
+  flex: 0 0 170px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.empdetail__field dd {
+  margin: 0;
+  flex: 1;
+  font-size: 13px;
+  min-width: 0;
+}
+
+/* プロフィール編集フォーム */
+.empdetail__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.empdetail__formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.empdetail__itemRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+/* 写真ギャラリー */
+.empdetail__photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.empdetail__photo {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.empdetail__photo img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+}
+
+.empdetail__photoLoading {
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.empdetail__photo figcaption {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+.empdetail__photoActions {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px 6px;
+  justify-content: flex-end;
+}
+
+/* ── 権限管理ページ（#/permissions） ─────────────────────────────── */
+.permpage__warn {
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #78350f;
+  margin-bottom: 10px;
+}
+
+.permpage__warnList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.permpage__level {
+  display: inline-block;
+  min-width: 34px;
+  text-align: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.permpage__level--high {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.permpage__level--mid {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.permpage__level--zero {
+  background: var(--bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.permpage__code {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.permpage__grantForm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
