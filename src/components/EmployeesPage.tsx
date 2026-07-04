@@ -219,6 +219,31 @@ export function EmployeesPage() {
     }
   }
 
+  /** 保存済みの「ウェブに公開」URLからワンクリックで再取込。 */
+  async function handleQuickReimport() {
+    if (!sheetCsvUrl) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const summary = await importFromSheetUrl(sheetCsvUrl);
+      setImportResult(summary);
+      if (summary.errors.length > 0) {
+        setShowImporter(true);
+        setToast({
+          kind: "error",
+          message: `シート再取込でエラー ${summary.errors.length} 件（詳細はインポート欄）`,
+        });
+      } else {
+        setToast({
+          kind: "info",
+          message: `シートから再取込：新規 ${summary.inserted} ／ 更新 ${summary.updated} ／ スキップ ${summary.skipped}`,
+        });
+      }
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <main className="page">
       <div className="page__header">
@@ -233,6 +258,16 @@ export function EmployeesPage() {
           </p>
         </div>
         <div className="page__actions">
+          {isMaster && sheetCsvUrl && (
+            <button
+              className="btn"
+              onClick={handleQuickReimport}
+              disabled={importing}
+              title="保存済みの「ウェブに公開」URL（SmartHR自動連携タブ）から最新の名簿を再取込します"
+            >
+              {importing ? "取り込み中…" : "⟳ シートから再取込"}
+            </button>
+          )}
           {isMaster && (
             <button
               className="btn btn--ghost"

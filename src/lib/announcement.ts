@@ -3,8 +3,8 @@ import { employeeName, type EmployeeRow } from "./supabase";
 
 /**
  * Coarse seniority rank for PersonRole. Used to detect "promotion" — a role
- * change that strictly increases the rank. Roles within the same band are
- * treated as equal (e.g. moving TM ↔ CTM is not a promotion).
+ * change that strictly increases the rank, or a challenge→formal move within
+ * the same band (CTL→TL / CTM→TM / CDM→DM = 正式任用).
  *
  * Bands (high → low):
  *   100  CEO
@@ -50,6 +50,28 @@ function ancestorOfCategory(
     cur = cur.parentId ? byId.get(cur.parentId) : undefined;
   }
   return null;
+}
+
+/**
+ * Topmost department ancestor that still has a parent (= direct child of the
+ * chart root, e.g. 事業統括 / コーポレートTM / （株）ハウジングナビ).
+ * DIV配下でない人（ROOT・Exe直下のTMや関連会社所属）のDIV欄フォールバックに
+ * 使う。これが無いと発令の異動元/先が「（未所属）」になる。
+ */
+function topLevelAncestor(
+  node: OrgNode,
+  byId: Map<string, OrgNode>,
+): OrgNode | null {
+  let cur: OrgNode | undefined = node;
+  let best: OrgNode | null = null;
+  while (cur) {
+    const parent: OrgNode | undefined = cur.parentId
+      ? byId.get(cur.parentId)
+      : undefined;
+    if (cur.kind !== "person" && parent) best = cur; // 絶対ルート自身は除外
+    cur = parent;
+  }
+  return best;
 }
 
 export type AnnouncementHire = {
@@ -243,14 +265,23 @@ export function computeAnnouncement(
     for (const n of nodes) {
       if (n.kind !== "person" || !n.employeeNumber) continue;
       if (n.isUnplaced) continue;
-      const div = ancestorOfCategory(n, byId, "DIV")?.name ?? null;
-      const tm = ancestorOfCategory(n, byId, "TM")?.name ?? null;
-      const unit = ancestorOfCategory(n, byId, "Unit")?.name ?? null;
+      const tmNode = ancestorOfCategory(n, byId, "TM");
+      const unitNode = ancestorOfCategory(n, byId, "Unit");
+      let div = ancestorOfCategory(n, byId, "DIV")?.name ?? null;
+      if (!div) {
+        // DIV配下でない所属（事業統括直下のHR TM・ROOT直下のコーポレートTM・
+        // 関連会社など）はトップレベル部署をDIV欄として扱う。ただしTM/Unit
+        // 自身と同一ノードなら重複表示になるのでフォールバックしない。
+        const top = topLevelAncestor(n, byId);
+        if (top && top.id !== tmNode?.id && top.id !== unitNode?.id) {
+          div = top.name;
+        }
+      }
       out.set(n.employeeNumber, {
         node: n,
         div,
-        tm,
-        unit,
+        tm: tmNode?.name ?? null,
+        unit: unitNode?.name ?? null,
         role: n.roleLabel ?? null,
       });
     }
@@ -306,7 +337,12 @@ export function computeAnnouncement(
       });
     }
 
-    if (rankOf(eb.role) > rankOf(ea.role)) {
+    // 同帯（同ランク）でも「チャレンジ任用 → 正式任用」（CTL→TL 等）は昇格。
+    const formalized =
+      rankOf(eb.role) === rankOf(ea.role) &&
+      isChallengeRole(ea.role) &&
+      !isChallengeRole(eb.role);
+    if (rankOf(eb.role) > rankOf(ea.role) || formalized) {
       const toRole = eb.role ?? "メンバー";
       promotions.push({
         employee_number: num,
@@ -361,7 +397,8 @@ export function moveDestinationGroup(
   kind: "div" | "tm",
 ): string {
   if (kind === "div") {
-    return m.to_div ?? m.to ?? "（未指定）";
+    // DIVが無い異動先（コーポレートTM等のトップレベルTM）はTM名で束ねる。
+    return m.to_div ?? m.to_tm ?? m.to ?? "（未指定）";
   }
   return m.to_tm ?? m.to ?? "（未指定）";
 }
