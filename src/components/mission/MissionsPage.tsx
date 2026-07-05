@@ -427,6 +427,7 @@ function DashboardTab({
               <th>部署</th>
               <th>役職</th>
               <th style={{ width: 130 }}>ステージ</th>
+              <th style={{ width: 70 }}>ランク</th>
               <th style={{ width: 150 }}>締切</th>
               <th style={{ width: 100 }} />
             </tr>
@@ -443,6 +444,15 @@ function DashboardTab({
                   <td>{emp?.position_title ?? "—"}</td>
                   <td>
                     <StageBadge stage={sheet.stage} />
+                  </td>
+                  <td>
+                    {sheet.final_grade ? (
+                      <span className="mission__rankBadge mission__rankBadge--sm">
+                        {sheet.final_grade}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td>
                     {dl ? (

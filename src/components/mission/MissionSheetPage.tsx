@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState, type FocusEvent } from "react";
 import { useMissionsStore, periodLabel, findAnswer } from "../../store/useMissionsStore";
+import { useAuthStore } from "../../store/useAuthStore";
 import { useEmployeesStore } from "../../store/useEmployeesStore";
 import { useProfilesStore } from "../../store/useProfilesStore";
 import { useOrgStore } from "../../store/useOrgStore";
 import { useUiStore } from "../../store/useUiStore";
-import { employeeName } from "../../lib/supabase";
+import { canAccessPayroll, employeeName } from "../../lib/supabase";
 import {
   answerKey,
   canWriteAnswerClient,
+  collectFinalMissing,
   isAnswerFilled,
   isEvaluatorOfClient,
   questionPhase,
@@ -18,6 +20,7 @@ import {
   type MissionQuestion,
   type MissionRespondent,
   type MissionStage,
+  type RankComputedResult,
 } from "../../lib/mission";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { StageBadge, DeadlineBanner, StageProgress } from "./shared";
@@ -30,8 +33,9 @@ type SaveState = "saving" | "saved" | "error";
  * 自動保存する。活性制御は canWriteAnswerClient のクライアントミラー —
  * 真の強制はサーバ側 RLS（mission_can_write_answer）で、0 行 upsert は
  * エラートーストとして表面化する。
- * ステージ操作は必ず rpc('mission_set_stage') 経由。第2弾ステージ
- * （mid/final/assessed）の操作ボタンは UI 非表示（表示のみ対応）。
+ * ステージ操作は必ず rpc('mission_set_stage') 経由。査定確定のみ
+ * rpc('mission_assess')（計算・凍結を伴う）。ランク計算はサーバの
+ * calc_mission_rank_v1() を単一実装として共用する（プレビューも同関数）。
  */
 export function MissionSheetPage({ id }: { id: string }) {
   const sheets = useMissionsStore((s) => s.sheets);
@@ -42,6 +46,9 @@ export function MissionSheetPage({ id }: { id: string }) {
   const fetchSheetDetail = useMissionsStore((s) => s.fetchSheetDetail);
   const saveAnswer = useMissionsStore((s) => s.saveAnswer);
   const setStage = useMissionsStore((s) => s.setStage);
+  const previewRank = useMissionsStore((s) => s.previewRank);
+  const assess = useMissionsStore((s) => s.assess);
+  const currentUser = useAuthStore((s) => s.currentUser);
 
   const employees = useEmployeesStore((s) => s.employees);
   const refreshEmployees = useEmployeesStore((s) => s.refresh);
@@ -115,9 +122,18 @@ export function MissionSheetPage({ id }: { id: string }) {
   // required 未記入で提出しようとした時の警告リスト
   const [missingLabels, setMissingLabels] = useState<string[]>([]);
   // ステージ操作の確認ダイアログ
-  const [confirming, setConfirming] = useState<"submit" | "confirm" | null>(null);
+  const [confirming, setConfirming] = useState<
+    "submit" | "confirm" | "mid" | "finalSubmit" | "assess" | null
+  >(null);
   const [returning, setReturning] = useState(false);
   const [returnReason, setReturnReason] = useState("");
+  // ランク計算プレビュー（sheetId 込みで持ち、別シートへの持ち越しを防ぐ）
+  const [preview, setPreview] = useState<{
+    sheetId: string;
+    result: RankComputedResult;
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [assessing, setAssessing] = useState(false);
 
   async function handleSaveAnswer(
     q: MissionQuestion,
@@ -130,6 +146,9 @@ export function MissionSheetPage({ id }: { id: string }) {
     setSaveStates((s) => ({ ...s, [key]: res.ok ? "saved" : "error" }));
     if (!res.ok) {
       setToast({ kind: "error", message: res.reason ?? "回答の保存に失敗しました" });
+    } else {
+      // 回答が変わったら計算プレビューは陳腐化するので破棄する
+      setPreview(null);
     }
   }
 
@@ -165,13 +184,55 @@ export function MissionSheetPage({ id }: { id: string }) {
     setConfirming("submit");
   }
 
+  /** 期末提出前のクライアント側チェック（真の強制はサーバ側 RPC）。 */
+  function handleFinalSubmitClick() {
+    const missing = template ? collectFinalMissing(template.definition, answers) : [];
+    if (missing.length > 0) {
+      setMissingLabels(missing);
+      setToast({
+        kind: "error",
+        message: `期末の必須項目が${missing.length}件未記入です。記入してから提出してください。`,
+      });
+      return;
+    }
+    setMissingLabels([]);
+    setConfirming("finalSubmit");
+  }
+
   async function doSetStage(toStage: MissionStage, reason?: string) {
     const res = await setStage(id, toStage, reason);
     if (!res.ok) {
       setToast({ kind: "error", message: res.reason ?? "ステージ変更に失敗しました" });
       return;
     }
+    setPreview(null); // ステージが変わったらプレビューは陳腐化
     setToast({ kind: "info", message: `「${STAGE_LABELS[toStage]}」に更新しました` });
+  }
+
+  async function handlePreviewRank() {
+    setPreviewLoading(true);
+    const res = await previewRank(id);
+    setPreviewLoading(false);
+    if (!res.ok || !res.result) {
+      setToast({ kind: "error", message: res.reason ?? "ランク計算に失敗しました" });
+      return;
+    }
+    setPreview({ sheetId: id, result: res.result });
+  }
+
+  async function doAssess() {
+    setAssessing(true);
+    const res = await assess(id);
+    setAssessing(false);
+    if (!res.ok) {
+      setToast({ kind: "error", message: res.reason ?? "査定確定に失敗しました" });
+      return;
+    }
+    setPreview(null);
+    setToast({
+      kind: "info",
+      message: `査定を確定しました（ランク: ${res.result?.rank ?? "—"}）`,
+    });
   }
 
   if (detailLoading && !sheet) {
@@ -205,10 +266,27 @@ export function MissionSheetPage({ id }: { id: string }) {
   }
 
   const stage = sheet.stage;
-  // 差し戻し先（第1弾は goal 段階のみ UI 提供）
+  // 差し戻し先（1つ戻す）。assessed からの取り消しは manage のみ
+  //（サーバ側でも強制・凍結値クリア）。
   const returnTarget: MissionStage | null =
-    stage === "goal_submitted" ? "issued" : stage === "goal_confirmed" ? "goal_submitted" : null;
+    stage === "goal_submitted"
+      ? "issued"
+      : stage === "goal_confirmed"
+        ? "goal_submitted"
+        : stage === "mid_done"
+          ? "goal_confirmed"
+          : stage === "final_submitted"
+            ? "mid_done"
+            : stage === "assessed" && canManage
+              ? "final_submitted"
+              : null;
   const showEvaluatorActions = (isEvaluator || canManage) && !isSelf;
+  // 査定確定後の凍結結果（プレビューと同じ形）
+  const frozenResult =
+    stage === "assessed" && sheet.computed_result
+      ? (sheet.computed_result as unknown as RankComputedResult)
+      : null;
+  const payrollAllowed = canAccessPayroll(currentUser?.role);
 
   return (
     <main className="page mission__sheetPage">
@@ -297,6 +375,7 @@ export function MissionSheetPage({ id }: { id: string }) {
                         value={ans?.value ?? null}
                         editable={editable}
                         showActual={stageIndex(stage) >= stageIndex("mid_done")}
+                        goalLocked={stageIndex(stage) >= stageIndex("goal_confirmed")}
                         onSave={(v) => handleSaveAnswer(q, role, v)}
                       />
                       <span className="mission__savestate">
@@ -313,7 +392,63 @@ export function MissionSheetPage({ id }: { id: string }) {
         </div>
       ))}
 
-      {/* ── アクション（第1弾: 期初面談=goal_confirmed まで） ── */}
+      {/* ── ランク計算（final_submitted: プレビュー／assessed: 凍結結果） ── */}
+      {(isEvaluator || canManage) && stage === "final_submitted" && (
+        <div className="mission__rankPanel">
+          <div className="mission__rankPanelHead">
+            <h3 className="mission__sectionTitle">ランク計算プレビュー</h3>
+            <button
+              className="btn btn--ghost btn--xs"
+              disabled={previewLoading}
+              onClick={handlePreviewRank}
+            >
+              {previewLoading ? "計算中…" : preview ? "再計算" : "計算する"}
+            </button>
+          </div>
+          <p className="empdetail__hint">
+            計算式: Σ(ウエイト×達成度) ＋ 加点。アタリマエ評価に✕があるとCが上限。
+            確定するまでシートには保存されません。
+          </p>
+          {preview?.sheetId === id && <RankResultView result={preview.result} />}
+          {canManage && (
+            <div className="mission__actions" style={{ marginTop: 12 }}>
+              <button
+                className="btn btn--primary"
+                disabled={assessing}
+                onClick={() => setConfirming("assess")}
+              >
+                {assessing ? "確定中…" : "査定を確定する（assessed）"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {frozenResult && (
+        <div className="mission__rankPanel mission__rankPanel--frozen">
+          <div className="mission__rankPanelHead">
+            <h3 className="mission__sectionTitle">査定結果（確定済み）</h3>
+            <span className="mission__rankBadge">{sheet.final_grade ?? frozenResult.rank}</span>
+          </div>
+          <RankResultView result={frozenResult} />
+          {payrollAllowed && (
+            <div className="mission__actions" style={{ marginTop: 12 }}>
+              <button
+                className="btn btn--ghost"
+                onClick={() => navigate({ name: "salary" })}
+              >
+                💰 給与管理（Payroll）で査定グレードを反映する
+              </button>
+              <p className="empdetail__hint">
+                salary_records への自動書込みは行いません。給与表画面で該当者の
+                評価ランク・次期給与を手動確定してください。
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── アクション ── */}
       <div className="mission__actions">
         {isSelf && stage === "issued" && (
           <button className="btn btn--primary" onClick={handleSubmitClick}>
@@ -325,12 +460,32 @@ export function MissionSheetPage({ id }: { id: string }) {
             上長の確認待ちです。期初確定までは記入内容を修正できます。
           </p>
         )}
+        {isSelf && stage === "goal_confirmed" && (
+          <p className="empdetail__hint">
+            期初目標は確定済みです。中間振り返り設問を記入できます（中間面談の完了操作は上長が行います）。
+          </p>
+        )}
+        {isSelf && stage === "mid_done" && (
+          <p className="empdetail__hint">
+            期末フェーズです。KPIの実績値と期末設問を記入してください（期末提出の操作は上長が行います）。
+          </p>
+        )}
         {showEvaluatorActions && stage === "goal_submitted" && (
           <button className="btn btn--primary" onClick={() => setConfirming("confirm")}>
             期初面談完了として確定
           </button>
         )}
-        {showEvaluatorActions && returnTarget && (
+        {showEvaluatorActions && stage === "goal_confirmed" && (
+          <button className="btn btn--primary" onClick={() => setConfirming("mid")}>
+            中間面談完了として記録
+          </button>
+        )}
+        {showEvaluatorActions && stage === "mid_done" && (
+          <button className="btn btn--primary" onClick={handleFinalSubmitClick}>
+            期末評価を提出する
+          </button>
+        )}
+        {(showEvaluatorActions || (stage === "assessed" && canManage)) && returnTarget && (
           <button
             className="btn btn--ghost"
             onClick={() => {
@@ -389,10 +544,65 @@ export function MissionSheetPage({ id }: { id: string }) {
         />
       )}
 
+      {confirming === "mid" && (
+        <ConfirmDialog
+          title="中間面談完了として記録"
+          message="中間振り返りを完了し、期末フェーズ（KPI実績・期末設問の記入）へ進めます。中間設問は以後編集できなくなります。よろしいですか？"
+          confirmLabel="中間完了にする"
+          onConfirm={() => {
+            setConfirming(null);
+            void doSetStage("mid_done");
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+
+      {confirming === "finalSubmit" && (
+        <ConfirmDialog
+          title="期末評価の提出"
+          message="期末評価を提出します。提出後は記入内容を編集できません（査定確定は管理者が行います）。よろしいですか？"
+          confirmLabel="提出する"
+          onConfirm={() => {
+            setConfirming(null);
+            void doSetStage("final_submitted");
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+
+      {confirming === "assess" && (
+        <ConfirmDialog
+          title="査定を確定する"
+          message={
+            <>
+              ランクを計算してシートに凍結し、ステージを「査定確定」にします。
+              確定後は全設問が読み取り専用になります。
+              {preview?.sheetId === id && (
+                <>
+                  <br />
+                  現在のプレビュー: <strong>合計 {preview.result.total}点 → ランク {preview.result.rank}</strong>
+                </>
+              )}
+              よろしいですか？
+            </>
+          }
+          confirmLabel="確定する"
+          onConfirm={() => {
+            setConfirming(null);
+            void doAssess();
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+
       {returning && returnTarget && (
         <ConfirmDialog
           title="差し戻す"
-          message={`ステージを「${STAGE_LABELS[returnTarget]}」に戻します。差し戻し理由は必須です（本人に履歴として表示されます）。`}
+          message={
+            stage === "assessed"
+              ? `査定確定を取り消してステージを「${STAGE_LABELS[returnTarget]}」に戻します。凍結済みのランク・計算結果はクリアされます。差し戻し理由は必須です。`
+              : `ステージを「${STAGE_LABELS[returnTarget]}」に戻します。差し戻し理由は必須です（本人に履歴として表示されます）。`
+          }
           confirmLabel="差し戻す"
           variant="danger"
           onConfirm={() => {
@@ -419,6 +629,75 @@ export function MissionSheetPage({ id }: { id: string }) {
   );
 }
 
+// ── ランク計算結果の表示（プレビュー・凍結結果 共用） ─────────────────
+
+function RankResultView({ result }: { result: RankComputedResult }) {
+  const warn: string[] = [];
+  if (result.weights_total !== 100) {
+    warn.push(`ウエイト合計が${result.weights_total}点です（100点想定）`);
+  }
+  for (const l of result.missing_inputs ?? []) warn.push(`上長の達成度が未入力: ${l}`);
+  for (const l of result.fundamental_missing ?? []) warn.push(`アタリマエ評価が未入力: ${l}`);
+  return (
+    <div className="mission__rankResult">
+      <div className="mission__rankSummary">
+        <div className="mission__rankTotal">
+          <span className="mission__rankTotalNum">{result.total}</span>点
+          <span className="mission__rankArrow">→</span>
+          <span className="mission__rankBadge">{result.rank}</span>
+        </div>
+        <div className="mission__rankBreakdownNums">
+          ミッション {result.mission_score}点 ＋ 加点 {result.bonus_score}点
+          {result.fundamental_fail && (
+            <span className="mission__rankCapNote">
+              ⚠ アタリマエ✕（{(result.fundamental_fails ?? []).join("、")}）→ C上限
+              {result.rank_before_cap !== result.rank &&
+                `（計算上は${result.rank_before_cap}）`}
+            </span>
+          )}
+        </div>
+      </div>
+      {(result.items ?? []).length > 0 && (
+        <table className="empmgr__table mission__rankTable">
+          <thead>
+            <tr>
+              <th>ミッション</th>
+              <th style={{ width: 90 }}>ウエイト</th>
+              <th style={{ width: 100 }}>達成度</th>
+              <th style={{ width: 90 }}>点数</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.items.map((it) => (
+              <tr key={it.question_id}>
+                <td>{it.label}</td>
+                <td>{it.weight}</td>
+                <td>{it.achievement_rate != null ? `${it.achievement_rate}%` : "—"}</td>
+                <td>{it.score}</td>
+              </tr>
+            ))}
+            {(result.bonus_items ?? []).map((b) => (
+              <tr key={b.question_id}>
+                <td>{b.label}（加点）</td>
+                <td>—</td>
+                <td>—</td>
+                <td>{b.points ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {warn.length > 0 && (
+        <ul className="mission__rankWarns">
+          {warn.map((w) => (
+            <li key={w}>⚠ {w}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── 設問入力フィールド ────────────────────────────────────────────────
 
 function AnswerField({
@@ -426,13 +705,16 @@ function AnswerField({
   value,
   editable,
   showActual,
+  goalLocked,
   onSave,
 }: {
   question: MissionQuestion;
   value: AnswerValue | null;
   editable: boolean;
-  /** kpi_goal の実績欄（第2弾領域）を表示するか（mid_done 以降）。 */
+  /** kpi_goal の実績欄を表示するか（mid_done 以降）。 */
   showActual: boolean;
+  /** 期初確定済みか（kpi_goal の目標系4フィールドをロック。サーバトリガのミラー）。 */
+  goalLocked: boolean;
   onSave: (v: AnswerValue) => void;
 }) {
   if (question.type === "kpi_goal") {
@@ -441,6 +723,7 @@ function AnswerField({
         value={value}
         editable={editable}
         showActual={showActual}
+        goalLocked={goalLocked}
         onSave={onSave}
       />
     );
@@ -593,13 +876,17 @@ function KpiField({
   value,
   editable,
   showActual,
+  goalLocked,
   onSave,
 }: {
   value: AnswerValue | null;
   editable: boolean;
   showActual: boolean;
+  /** 期初確定後は目標系4フィールドを不活性化（編集してもサーバトリガで拒否されるため）。 */
+  goalLocked: boolean;
   onSave: (v: AnswerValue) => void;
 }) {
+  const goalEditable = editable && !goalLocked;
   const fromValue = (v: AnswerValue | null): AnswerValue => ({
     title: v?.title ?? "",
     metric: v?.metric ?? "",
@@ -629,10 +916,16 @@ function KpiField({
       (value?.metric ?? "") === (kpi.metric ?? "") &&
       (value?.target_value ?? null) === (kpi.target_value ?? null) &&
       (value?.unit ?? "") === (kpi.unit ?? "") &&
-      (value?.actual_value ?? null) === (kpi.actual_value ?? null);
+      (value?.actual_value ?? null) === (kpi.actual_value ?? null) &&
+      (value?.achievement_rate ?? null) === (kpi.achievement_rate ?? null);
     if (same) return;
     onSave(kpi);
   }
+  // 実績/目標から機械計算した参考値（達成度は加点基準等を踏まえた手入力が正）
+  const suggestedRate =
+    kpi.actual_value != null && kpi.target_value != null && kpi.target_value !== 0
+      ? Math.round((kpi.actual_value / kpi.target_value) * 1000) / 10
+      : null;
   return (
     <div
       className="mission__kpi"
@@ -644,7 +937,7 @@ function KpiField({
         <input
           className="field__input field__input--xs"
           value={kpi.title ?? ""}
-          disabled={!editable}
+          disabled={!goalEditable}
           onChange={(e) => setKpi({ ...kpi, title: e.target.value })}
         />
       </label>
@@ -653,7 +946,7 @@ function KpiField({
         <input
           className="field__input field__input--xs"
           value={kpi.metric ?? ""}
-          disabled={!editable}
+          disabled={!goalEditable}
           placeholder="例: 受注金額"
           onChange={(e) => setKpi({ ...kpi, metric: e.target.value })}
         />
@@ -664,7 +957,7 @@ function KpiField({
           className="field__input field__input--xs"
           type="number"
           value={kpi.target_value ?? ""}
-          disabled={!editable}
+          disabled={!goalEditable}
           onChange={(e) =>
             setKpi({
               ...kpi,
@@ -678,27 +971,50 @@ function KpiField({
         <input
           className="field__input field__input--xs"
           value={kpi.unit ?? ""}
-          disabled={!editable}
+          disabled={!goalEditable}
           placeholder="例: 万円"
           onChange={(e) => setKpi({ ...kpi, unit: e.target.value })}
         />
       </label>
       {showActual && (
-        <label className="mission__kpiField">
-          実績値（期末）
-          <input
-            className="field__input field__input--xs"
-            type="number"
-            value={kpi.actual_value ?? ""}
-            disabled={!editable}
-            onChange={(e) =>
-              setKpi({
-                ...kpi,
-                actual_value: e.target.value === "" ? null : Number(e.target.value),
-              })
-            }
-          />
-        </label>
+        <>
+          <label className="mission__kpiField">
+            実績値（期末）
+            <input
+              className="field__input field__input--xs"
+              type="number"
+              value={kpi.actual_value ?? ""}
+              disabled={!editable}
+              onChange={(e) =>
+                setKpi({
+                  ...kpi,
+                  actual_value: e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="mission__kpiField">
+            達成度（%）
+            <input
+              className="field__input field__input--xs"
+              type="number"
+              value={kpi.achievement_rate ?? ""}
+              disabled={!editable}
+              placeholder="100=達成"
+              title="100=達成基準クリア。加点基準クリアで110など。上長側の達成度がランク計算に使われます。"
+              onChange={(e) =>
+                setKpi({
+                  ...kpi,
+                  achievement_rate:
+                    e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+            />
+            {suggestedRate != null && (
+              <span className="mission__kpiHint">実績/目標 = {suggestedRate}%</span>
+            )}
+          </label>
+        </>
       )}
     </div>
   );

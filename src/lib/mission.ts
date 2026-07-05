@@ -78,10 +78,12 @@ export type MissionQuestion = {
   help?: string;
   /** type=select のみ。 */
   choices?: string[];
-  /** 任意・配点ウエイト（第2弾計算用）。 */
+  /** 任意・配点ウエイト（kpi_goal のみ計算対象。単位=点・合計100想定）。 */
   weight?: number;
-  /** アタリマエフラグ（✕→強制C・第2弾計算用）。 */
+  /** アタリマエフラグ（上長評価が✕1つでも→Cを天井にする）。 */
   is_fundamental?: boolean;
+  /** 加点評価フラグ（type=number のみ。上長入力点をそのまま合計へ加算）。 */
+  is_bonus?: boolean;
 };
 
 export type MissionSection = {
@@ -91,8 +93,57 @@ export type MissionSection = {
   questions: MissionQuestion[];
 };
 
+/** ランク閾値1行（下限含む・上限未満。min の大きい順に判定）。 */
+export type RankThreshold = { grade: string; min: number };
+
+/**
+ * ランク計算パラメータ（3層分離のパラメータ層）。テンプレ definition.calc
+ * に持つ。未指定時はサーバ・クライアントとも DEFAULT_RANK_THRESHOLDS
+ * （4期下期 xlsx「等級テーブル評価点設定」の実値）を使う。
+ */
+export type MissionCalcParams = {
+  thresholds?: RankThreshold[];
+};
+
 export type MissionDefinition = {
   sections: MissionSection[];
+  calc?: MissionCalcParams;
+};
+
+/** xlsx 照合済みの既定閾値（D <71 / C 71- / B- 91- / B 101- / B+ 111- / A 121- / A+ 141-）。 */
+export const DEFAULT_RANK_THRESHOLDS: RankThreshold[] = [
+  { grade: "A+", min: 141 },
+  { grade: "A", min: 121 },
+  { grade: "B+", min: 111 },
+  { grade: "B", min: 101 },
+  { grade: "B-", min: 91 },
+  { grade: "C", min: 71 },
+  { grade: "D", min: 0 },
+];
+
+/** calc_mission_rank_v1() の返り値（computed_result にもこの形で凍結される）。 */
+export type RankComputedResult = {
+  calc_version: number;
+  weights_total: number;
+  mission_score: number;
+  bonus_score: number;
+  total: number;
+  fundamental_fail: boolean;
+  fundamental_fails: string[];
+  fundamental_missing: string[];
+  missing_inputs: string[];
+  rank_before_cap: string;
+  rank: string;
+  items: {
+    question_id: string;
+    label: string;
+    weight: number;
+    achievement_rate: number | null;
+    score: number;
+  }[];
+  bonus_items: { question_id: string; label: string; points: number | null }[];
+  assessed_by?: string;
+  assessed_at?: string;
 };
 
 /** deadlines jsonb: ISO 日付文字列（YYYY-MM-DD）。 */
@@ -172,7 +223,7 @@ export type MissionStageEventRow = {
 /** jsonb の取りうる null / 不正値を安全な MissionDefinition に正規化。 */
 export function normalizeDefinition(raw: unknown): MissionDefinition {
   if (!raw || typeof raw !== "object") return { sections: [] };
-  const sections = (raw as { sections?: unknown }).sections;
+  const { sections, calc } = raw as { sections?: unknown; calc?: unknown };
   if (!Array.isArray(sections)) return { sections: [] };
   return {
     sections: sections
@@ -181,6 +232,7 @@ export function normalizeDefinition(raw: unknown): MissionDefinition {
         ...s,
         questions: Array.isArray(s.questions) ? s.questions : [],
       })),
+    ...(calc && typeof calc === "object" ? { calc: calc as MissionCalcParams } : {}),
   };
 }
 
@@ -251,6 +303,8 @@ export function isEvaluatorOfClient(
  *   final→mid_done で記入可。
  * - role='evaluator': 評価者 or manage。phase=goal→goal_submitted、
  *   mid→goal_confirmed、final→mid_done で記入可。
+ * - kpi_goal（phase=goal）のみ両ロールとも mid_done でも記入可（期末の
+ *   実績値・達成度の入力窓。目標系フィールドはサーバトリガで凍結）。
  * - heading は回答を持たない。assessed は常に false。
  */
 export function canWriteAnswerClient(
@@ -265,11 +319,17 @@ export function canWriteAnswerClient(
   if (sheet.stage === "assessed") return false;
   const phase = questionPhase(question);
   const resp = questionRespondent(question);
+  const kpiActualWindow =
+    question.type === "kpi_goal" && phase === "goal" && sheet.stage === "mid_done";
   if (role === "self") {
     if (resp !== "self" && resp !== "both") return false;
     if (!meNumber || sheet.employee_number !== meNumber) return false;
     if (phase === "goal") {
-      return sheet.stage === "issued" || sheet.stage === "goal_submitted";
+      return (
+        sheet.stage === "issued" ||
+        sheet.stage === "goal_submitted" ||
+        kpiActualWindow
+      );
     }
     if (phase === "mid") return sheet.stage === "goal_confirmed";
     return sheet.stage === "mid_done";
@@ -277,9 +337,49 @@ export function canWriteAnswerClient(
   // role === 'evaluator'
   if (resp !== "evaluator" && resp !== "both") return false;
   if (!isEvaluator && !canManage) return false;
-  if (phase === "goal") return sheet.stage === "goal_submitted";
+  if (phase === "goal") return sheet.stage === "goal_submitted" || kpiActualWindow;
   if (phase === "mid") return sheet.stage === "goal_confirmed";
   return sheet.stage === "mid_done";
+}
+
+/**
+ * サーバ側 mission_required_missing(p_kind='final_submit') のクライアント
+ * ミラー: 期末提出前の未記入チェック（required な final 設問＋ウエイト付
+ * kpi_goal の上長達成度）。返り値は未記入ラベル配列。
+ */
+export function collectFinalMissing(
+  def: MissionDefinition,
+  answers: MissionAnswerRow[] | undefined,
+): string[] {
+  const labels: string[] = [];
+  const find = (qid: string, role: MissionRespondent) =>
+    answers?.find((a) => a.question_id === qid && a.respondent_role === role) ??
+    null;
+  for (const sec of def.sections) {
+    for (const q of sec.questions) {
+      if (q.type === "heading") continue;
+      const resp = questionRespondent(q);
+      if (q.required && questionPhase(q) === "final") {
+        if (
+          (resp === "self" || resp === "both") &&
+          !isAnswerFilled(q, find(q.id, "self")?.value)
+        ) {
+          labels.push(`${q.label}（本人）`);
+        }
+        if (
+          (resp === "evaluator" || resp === "both") &&
+          !isAnswerFilled(q, find(q.id, "evaluator")?.value)
+        ) {
+          labels.push(`${q.label}（上長）`);
+        }
+      }
+      if (q.type === "kpi_goal" && (q.weight ?? 0) > 0) {
+        const rate = find(q.id, "evaluator")?.value?.achievement_rate;
+        if (rate == null) labels.push(`${q.label}（上長の達成度）`);
+      }
+    }
+  }
+  return labels;
 }
 
 // ── 締切バナー ───────────────────────────────────────────────────────
@@ -462,7 +562,114 @@ export const DEFAULT_TEMPLATE_DEFINITION: MissionDefinition = {
         },
       ],
     },
+    {
+      id: "midterm",
+      title: "中間振り返り",
+      description:
+        "期の折り返しでの進捗・課題・後半のアクションを整理します（中間面談で使用）。",
+      questions: [
+        {
+          id: "mid_self_review",
+          label: "進捗と後半のアクション（本人）",
+          type: "textarea",
+          respondent: "self",
+          phase: "mid",
+        },
+        {
+          id: "mid_evaluator_comment",
+          label: "中間面談での上長コメント",
+          type: "textarea",
+          respondent: "evaluator",
+          phase: "mid",
+        },
+      ],
+    },
+    {
+      id: "fundamental",
+      title: "アタリマエ評価",
+      description:
+        "社会人・SHO-SANメンバーとしてのアタリマエ基準。上長評価で✕が1つでもあるとランクはCが上限になります（期末に○/×で評価）。",
+      questions: [
+        {
+          id: "fund_punctual",
+          label: "遅刻数（前日までの報告以外の遅刻が半期3回以下・例外なし）",
+          type: "select",
+          choices: ["○", "×"],
+          respondent: "both",
+          phase: "final",
+          is_fundamental: true,
+        },
+        {
+          id: "fund_attitude",
+          label: "勤務態度",
+          type: "select",
+          choices: ["○", "×"],
+          respondent: "both",
+          phase: "final",
+          is_fundamental: true,
+        },
+        {
+          id: "fund_hourensou",
+          label: "報連相",
+          type: "select",
+          choices: ["○", "×"],
+          respondent: "both",
+          phase: "final",
+          is_fundamental: true,
+        },
+        {
+          id: "fund_rules",
+          label: "ルール遵守",
+          type: "select",
+          choices: ["○", "×"],
+          respondent: "both",
+          phase: "final",
+          is_fundamental: true,
+        },
+        {
+          id: "fund_ai_media",
+          label: "AI情報局の視聴（毎月参加or録画視聴＋出席クイズ期限内正解）",
+          type: "select",
+          choices: ["○", "×"],
+          respondent: "both",
+          phase: "final",
+          is_fundamental: true,
+        },
+      ],
+    },
+    {
+      id: "bonus",
+      title: "加点評価",
+      description:
+        "ミッション外の会社貢献・チャレンジへの加点（上長が点数を手入力。目安1件3点）。",
+      questions: [
+        {
+          id: "bonus_points",
+          label: "加点（点）",
+          type: "number",
+          respondent: "evaluator",
+          phase: "final",
+          is_bonus: true,
+          help: "加点対象の取り組みと点数の根拠は上長コメントに記載してください。",
+        },
+        {
+          id: "bonus_comment",
+          label: "加点理由・期末総評（上長コメント）",
+          type: "textarea",
+          respondent: "evaluator",
+          phase: "final",
+        },
+        {
+          id: "final_self_review",
+          label: "期末の自己振り返り",
+          type: "textarea",
+          respondent: "self",
+          phase: "final",
+        },
+      ],
+    },
   ],
+  calc: { thresholds: DEFAULT_RANK_THRESHOLDS },
 };
 
 /** periods テーブルが読めない場合（RLS で payroll 管理者限定）のフォールバック。 */

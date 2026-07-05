@@ -6,6 +6,7 @@ import { useUiStore } from "../../store/useUiStore";
 import type { PeriodCode } from "../../lib/supabase";
 import {
   questionRespondent,
+  DEFAULT_RANK_THRESHOLDS,
   type MissionDeadlines,
   type MissionDefinition,
   type MissionPhase,
@@ -336,6 +337,41 @@ export function MissionTemplateEditorPage({ id }: { id: string }) {
             </label>
           </div>
 
+          {/* ── ランク計算パラメータ（3層分離のパラメータ層） ── */}
+          <div className="mission__editorSection">
+            <div className="mission__editorSectionHead">
+              <span className="mission__editorSectionTitle mission__editorSectionTitle--static">
+                ランク閾値（点数の下限。下限含む・上限未満で判定）
+              </span>
+            </div>
+            <p className="empdetail__hint" style={{ marginTop: 0 }}>
+              計算式: Σ(ウエイト×達成度) ＋ 加点。アタリマエ✕でC上限。
+              既定値は4期下期の実運用シート（D&lt;71 / C71 / B-91 / B101 / B+111 / A121 / A+141）です。
+            </p>
+            <div className="mission__thresholdGrid">
+              {(definition.calc?.thresholds ?? DEFAULT_RANK_THRESHOLDS).map((t, i, arr) => (
+                <label key={t.grade} className="mission__metaField">
+                  {t.grade}
+                  <input
+                    className="field__input field__input--xs"
+                    type="number"
+                    value={t.min}
+                    disabled={!editable || t.grade === "D"}
+                    title={t.grade === "D" ? "最下位グレードの下限は0固定です" : undefined}
+                    onChange={(e) => {
+                      const min = e.target.value === "" ? 0 : Number(e.target.value);
+                      const next = arr.map((x, j) => (j === i ? { ...x, min } : x));
+                      setDefinitionD({
+                        ...definition,
+                        calc: { ...definition.calc, thresholds: next },
+                      });
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
           {/* ── セクション編集 ── */}
           {definition.sections.map((sec, secIdx) => (
             <div key={sec.id} className="mission__editorSection">
@@ -454,7 +490,7 @@ export function MissionTemplateEditorPage({ id }: { id: string }) {
                       />
                       必須
                     </label>
-                    <label className="payroll-checkbox" style={{ alignSelf: "end" }} title="アタリマエ項目（✕→強制C・第2弾計算用）">
+                    <label className="payroll-checkbox" style={{ alignSelf: "end" }} title="アタリマエ項目（上長評価に✕が1つでもあるとランクはC上限）">
                       <input
                         type="checkbox"
                         checked={!!q.is_fundamental}
@@ -463,6 +499,24 @@ export function MissionTemplateEditorPage({ id }: { id: string }) {
                       />
                       アタリマエ
                     </label>
+                    {q.type === "number" && (
+                      <label className="payroll-checkbox" style={{ alignSelf: "end" }} title="加点評価（上長が入力した点数をそのまま合計へ加算。計算は上長回答のみを見るため記入者は上長評価に固定されます）">
+                        <input
+                          type="checkbox"
+                          checked={!!q.is_bonus}
+                          disabled={!editable}
+                          onChange={(e) =>
+                            updateQuestion(secIdx, qIdx, {
+                              is_bonus: e.target.checked || undefined,
+                              // 計算はevaluator行しか読まないため、self のままだと
+                              // 黙って0点になる。チェック時は記入者を上長へ寄せる
+                              ...(e.target.checked ? { respondent: "evaluator" as const } : {}),
+                            })
+                          }
+                        />
+                        加点評価
+                      </label>
+                    )}
                   </div>
                   <input
                     className="field__input field__input--xs"

@@ -13,6 +13,7 @@ import {
   type MissionRespondent,
   type MissionStage,
   type AnswerValue,
+  type RankComputedResult,
 } from "../lib/mission";
 
 /**
@@ -111,6 +112,21 @@ type MissionsState = {
     toStage: MissionStage,
     reason?: string,
   ) => Promise<SaveResult>;
+
+  /**
+   * rpc('calc_mission_rank_v1') — ランク計算プレビュー（書込みなし）。
+   * 評価者 or manage のみ（サーバ側で強制）。計算ロジックはサーバの
+   * 単一実装を共用し、クライアントで二重実装しない。
+   */
+  previewRank: (
+    sheetId: string,
+  ) => Promise<SaveResult & { result?: RankComputedResult }>;
+
+  /** rpc('mission_assess') — 査定確定（計算・凍結・assessed 遷移）。manage のみ。 */
+  assess: (
+    sheetId: string,
+    reason?: string,
+  ) => Promise<SaveResult & { result?: RankComputedResult }>;
 };
 
 export const useMissionsStore = create<MissionsState>((set, get) => ({
@@ -380,6 +396,26 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
     // stage・遷移履歴・（ステージ連動の）記入可否が変わるので詳細を取り直す
     await get().fetchSheetDetail(sheetId);
     return { ok: true };
+  },
+
+  previewRank: async (sheetId) => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    const { data, error } = await supabase.rpc("calc_mission_rank_v1", {
+      p_sheet_id: sheetId,
+    });
+    if (error) return { ok: false, reason: error.message };
+    return { ok: true, result: data as RankComputedResult };
+  },
+
+  assess: async (sheetId, reason) => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    const { data, error } = await supabase.rpc("mission_assess", {
+      p_sheet_id: sheetId,
+      p_reason: reason ?? null,
+    });
+    if (error) return { ok: false, reason: error.message };
+    await get().fetchSheetDetail(sheetId);
+    return { ok: true, result: data as RankComputedResult };
   },
 }));
 
