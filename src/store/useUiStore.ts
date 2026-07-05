@@ -23,6 +23,7 @@ export type SystemKey = "talenthub" | "payroll";
 export type Section =
   | "org"
   | "employees"
+  | "missions"
   | "users"
   | "permissions"
   | "salary"
@@ -44,6 +45,11 @@ export type Route =
   | { name: "employee"; num: string }
   | { name: "users" }
   | { name: "permissions" }
+  // P2: ミッションシート
+  | { name: "missions" }
+  | { name: "mission_templates" }
+  | { name: "mission_template"; id: string }
+  | { name: "mission_sheet"; id: string }
   // Payroll
   | { name: "salary" }
   | { name: "grades" }
@@ -58,6 +64,11 @@ export function sectionOfRoute(r: Route): Section {
     case "employees":
     case "employee":
       return "employees";
+    case "missions":
+    case "mission_templates":
+    case "mission_template":
+    case "mission_sheet":
+      return "missions";
     case "users":
       return "users";
     case "permissions":
@@ -89,6 +100,8 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "editor" };
     case "employees":
       return { name: "employees" };
+    case "missions":
+      return { name: "missions" };
     case "users":
       return { name: "users" };
     case "permissions":
@@ -127,6 +140,13 @@ function readRouteFromHash(): Route {
       return { name: "employees" };
     }
   }
+  // P2: ミッションシート（system="talenthub"）
+  if (h === "#/missions") return { name: "missions" };
+  if (h === "#/missions/templates") return { name: "mission_templates" };
+  const mt = /^#\/missions\/templates\/([0-9a-f-]+)$/i.exec(h);
+  if (mt) return { name: "mission_template", id: mt[1] };
+  const msh = /^#\/missions\/sheet\/([0-9a-f-]+)$/i.exec(h);
+  if (msh) return { name: "mission_sheet", id: msh[1] };
   // Payroll routes
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
   if (h === "#/payroll/grades") return { name: "grades" };
@@ -150,6 +170,14 @@ function routeToHash(r: Route): string {
       return "#/announcements";
     case "announcement":
       return `#/announcements/${r.id}`;
+    case "missions":
+      return "#/missions";
+    case "mission_templates":
+      return "#/missions/templates";
+    case "mission_template":
+      return `#/missions/templates/${r.id}`;
+    case "mission_sheet":
+      return `#/missions/sheet/${r.id}`;
     case "salary":
       return "#/payroll";
     case "grades":

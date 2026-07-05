@@ -73,6 +73,7 @@ export const MODULE_LABEL: Record<string, string> = {
   profiles: "プロフィール",
   payroll: "給与・査定",
   survey: "サーベイ",
+  mission: "ミッションシート",
 };
 
 export const ACTION_LABEL: Record<string, string> = {
@@ -82,6 +83,8 @@ export const ACTION_LABEL: Record<string, string> = {
   edit: "編集",
   view_realname: "実名閲覧",
   manage_alerts: "アラート管理",
+  manage: "管理（テンプレ・発行・査定）",
+  evaluate_any: "全員の評価者として記入",
 };
 
 /** 表示用のアバターパス。avatar_path 未設定なら最初の写真にフォールバック

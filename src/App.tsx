@@ -42,6 +42,19 @@ const EmployeeDetailPage = lazy(() =>
 const PermissionsPage = lazy(() =>
   import("./components/PermissionsPage").then((m) => ({ default: m.PermissionsPage })),
 );
+// P2: ミッションシート系も lazy — 通常閲覧では読み込ませない。
+const MissionsPage = lazy(() =>
+  import("./components/mission/MissionsPage").then((m) => ({ default: m.MissionsPage })),
+);
+const MissionTemplatesPage = lazy(() =>
+  import("./components/mission/MissionTemplatesPage").then((m) => ({ default: m.MissionTemplatesPage })),
+);
+const MissionTemplateEditorPage = lazy(() =>
+  import("./components/mission/MissionTemplateEditorPage").then((m) => ({ default: m.MissionTemplateEditorPage })),
+);
+const MissionSheetPage = lazy(() =>
+  import("./components/mission/MissionSheetPage").then((m) => ({ default: m.MissionSheetPage })),
+);
 
 export default function App() {
   const hydrateDraft = useOrgStore((s) => s.hydrateDraft);
@@ -431,6 +444,38 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     return (
       <Suspense fallback={<PageLoading />}>
         <EmployeeDetailPage num={route.num} />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "missions") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <MissionsPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "mission_templates") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <MissionTemplatesPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "mission_template") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <MissionTemplateEditorPage id={route.id} />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "mission_sheet") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <MissionSheetPage id={route.id} />
       </Suspense>
     );
   }

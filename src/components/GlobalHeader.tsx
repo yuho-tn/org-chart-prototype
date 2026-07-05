@@ -13,6 +13,8 @@ const TABS_BY_SYSTEM: Record<SystemKey, { id: Section; label: string; icon: stri
   talenthub: [
     { id: "org", label: "組織図", icon: "🗂" },
     { id: "employees", label: "従業員マスター", icon: "👥" },
+    // ミッションは全ログインユーザーに表示（自分のシートがあるため）
+    { id: "missions", label: "ミッション", icon: "🎯" },
     { id: "users", label: "ユーザー", icon: "🔑" },
     // 権限管理は master / privileged_admin のみ表示（下のフィルタ参照）
     { id: "permissions", label: "権限", icon: "🛡" },
