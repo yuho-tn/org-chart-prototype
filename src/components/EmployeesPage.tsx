@@ -5,6 +5,7 @@ import { useOrgStore } from "../store/useOrgStore";
 import { useProfilesStore } from "../store/useProfilesStore";
 import { useUiStore } from "../store/useUiStore";
 import { employeeName, type EmployeeRow } from "../lib/supabase";
+import { avatarPathOf } from "../lib/profile";
 import type { ImportSummary } from "../store/useEmployeesStore";
 
 const PAGE_SIZE = 50;
@@ -161,7 +162,7 @@ export function EmployeesPage() {
   useEffect(() => {
     if (viewMode !== "gallery") return;
     const paths = pageRows
-      .map((e) => profiles[e.employee_number]?.avatar_path)
+      .map((e) => avatarPathOf(profiles[e.employee_number]))
       .filter((p): p is string => !!p);
     if (paths.length > 0) ensurePhotoUrls(paths);
   }, [viewMode, pageRows, profiles, ensurePhotoUrls]);
@@ -493,9 +494,8 @@ export function EmployeesPage() {
             {!loading &&
               pageRows.map((emp) => {
                 const prof = profiles[emp.employee_number];
-                const avatarUrl = prof?.avatar_path
-                  ? photoUrls[prof.avatar_path]
-                  : undefined;
+                const avatarPath = avatarPathOf(prof);
+                const avatarUrl = avatarPath ? photoUrls[avatarPath] : undefined;
                 const name = employeeName(emp);
                 const isInactive = !!emp.left_at && emp.left_at <= today;
                 return (

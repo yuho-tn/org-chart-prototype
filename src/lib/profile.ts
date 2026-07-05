@@ -84,6 +84,15 @@ export const ACTION_LABEL: Record<string, string> = {
   manage_alerts: "アラート管理",
 };
 
+/** 表示用のアバターパス。avatar_path 未設定なら最初の写真にフォールバック
+ *  する（写真をアップしたがアバター指定していない人もサムネが出るように）。 */
+export function avatarPathOf(
+  profile: Pick<ProfileRow, "avatar_path" | "photos"> | null | undefined,
+): string | null {
+  if (!profile) return null;
+  return profile.avatar_path ?? profile.photos?.[0]?.path ?? null;
+}
+
 /** 役職名 → レベル。辞書に無い役職は 0 扱い（SQL 側 current_position_level と同じ規則）。 */
 export function levelForPositionTitle(
   positionTitle: string | null | undefined,

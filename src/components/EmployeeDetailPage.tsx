@@ -6,6 +6,7 @@ import { usePayrollStore } from "../store/usePayrollStore";
 import { useUiStore } from "../store/useUiStore";
 import { useOrgStore } from "../store/useOrgStore";
 import { supabase, canAccessPayroll, employeeName } from "../lib/supabase";
+import { avatarPathOf } from "../lib/profile";
 import type { ProfileRow, CustomItem } from "../lib/profile";
 import type { OrgNode } from "../lib/types";
 
@@ -223,7 +224,8 @@ export function EmployeeDetailPage({ num }: { num: string }) {
     if (paths.length > 0) ensurePhotoUrls(paths);
   }, [profile, ensurePhotoUrls]);
 
-  const avatarUrl = profile?.avatar_path ? photoUrls[profile.avatar_path] : undefined;
+  const avatarPath = avatarPathOf(profile);
+  const avatarUrl = avatarPath ? photoUrls[avatarPath] : undefined;
 
   // ── カルチャー層 編集フォーム ───────────────────────────────────────
   const [editing, setEditing] = useState(false);

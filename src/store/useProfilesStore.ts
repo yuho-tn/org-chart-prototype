@@ -291,7 +291,14 @@ export const useProfilesStore = create<ProfilesState>((set, get) => ({
       ...(current?.photos ?? []),
       caption ? { path, caption } : { path },
     ];
-    const res = await get().saveProfile({ employee_number: employeeNumber, photos });
+    // アバター未設定なら最初にアップした写真を自動でアバターにする
+    // （顔写真をアップしたのにギャラリーのサムネに出ない、を防ぐ）。
+    const patch: Partial<ProfileRow> & { employee_number: string } = {
+      employee_number: employeeNumber,
+      photos,
+    };
+    if (!current?.avatar_path) patch.avatar_path = path;
+    const res = await get().saveProfile(patch);
     if (!res.ok) {
       // jsonb 更新に失敗したら storage 側の孤児ファイルを掃除しておく
       await supabase.storage.from(PROFILE_PHOTOS_BUCKET).remove([path]);
