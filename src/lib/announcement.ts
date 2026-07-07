@@ -74,12 +74,22 @@ function topLevelAncestor(
   return best;
 }
 
+/** 社員 / インターン の区分。入社・退職セクションを見出し（H3）で
+ *  切り分けるために使う。未設定（旧データ）は department に
+ *  「アルバイト・インターン」を含むかどうかで推定する（staffTypeOf）。 */
+export type StaffType = "社員" | "インターン";
+
 export type AnnouncementHire = {
   employee_number: string;
   full_name: string;
+  /** 主務組織（7月確定＝組織図マスター準拠） */
   department: string | null;
   position_title: string | null;
   hired_at: string | null;
+  /** 兼務組織（正式名称・複数は「／」区切り）。無ければ null */
+  concurrent?: string | null;
+  /** 社員 / インターン 区分（H3見出しの切り分け用） */
+  staff_type?: StaffType | null;
   note?: string;
 };
 
@@ -89,8 +99,20 @@ export type AnnouncementLeave = {
   department: string | null;
   position_title: string | null;
   left_at: string | null;
+  concurrent?: string | null;
+  staff_type?: StaffType | null;
   note?: string;
 };
+
+/** 行の staff_type を返す。未設定なら department から推定
+ *  （「インターン」「アルバイト」を含めば インターン、それ以外は 社員）。 */
+export function staffTypeOf(
+  row: { staff_type?: StaffType | null; department: string | null },
+): StaffType {
+  if (row.staff_type) return row.staff_type;
+  const d = row.department ?? "";
+  return /インターン|アルバイト/.test(d) ? "インターン" : "社員";
+}
 
 export type AnnouncementMove = {
   employee_number: string;
@@ -110,6 +132,9 @@ export type AnnouncementMove = {
   to_div?: string | null;
   to_tm?: string | null;
   to_unit?: string | null;
+  /** 新所属の兼務（正式名称・複数は「／」区切り）。主務＝to_div/tm/unit の
+   *  下に「兼務：…」として表示する。無ければ null。 */
+  to_concurrent?: string | null;
   note?: string;
 };
 

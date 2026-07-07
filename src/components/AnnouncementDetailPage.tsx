@@ -14,11 +14,13 @@ import {
   moveDestinationGroup,
   previousPeriod,
   promotionKind,
+  staffTypeOf,
   type AnnouncementHire,
   type AnnouncementLeave,
   type AnnouncementMove,
   type AnnouncementPayload,
   type AnnouncementPromotion,
+  type StaffType,
 } from "../lib/announcement";
 
 /* ── Edit-mode data model ──────────────────────────────────────────────
@@ -729,40 +731,72 @@ function PeopleRows<T extends AnnouncementHire | AnnouncementLeave>({
   onRemove: (i: number) => void;
   onAdd: () => void;
 }) {
-  if (rows.length === 0 && !editing) {
-    return <p className="annsec__empty">（該当なし）</p>;
+  const dateOf = (item: T) =>
+    (item as Record<string, string | null>)[dateKey] ?? null;
+
+  // ── View mode: split into 社員 / インターン with an H3 sub-heading each ──
+  if (!editing) {
+    if (rows.length === 0) return <p className="annsec__empty">（該当なし）</p>;
+    const order: StaffType[] = ["社員", "インターン"];
+    const groups = order
+      .map((label) => [label, rows.filter((r) => staffTypeOf(r) === label)] as const)
+      .filter(([, list]) => list.length > 0);
+    return (
+      <div className="annstaff">
+        {groups.map(([label, list]) => (
+          <div key={label} className="annstaff__grp">
+            <h3 className="annstaff__head">
+              {label}
+              <span className="annstaff__count">{list.length}名</span>
+            </h3>
+            <ul className="annsec__list">
+              {list.map((item, i) => {
+                const dateVal = dateOf(item);
+                return (
+                  <li key={i} className="annsec__row">
+                    <span className="annrow">
+                      <strong>{item.full_name || "—"}</strong>
+                      <span className="annrow__sep">／</span>
+                      <span>{item.department ?? "—"}</span>
+                      {item.concurrent && (
+                        <span className="annrow__kenmu">
+                          兼務：{item.concurrent}
+                        </span>
+                      )}
+                      {item.position_title && (
+                        <>
+                          <span className="annrow__sep">／</span>
+                          <span>{item.position_title}</span>
+                        </>
+                      )}
+                      {dateVal && (
+                        <>
+                          <span className="annrow__sep">／</span>
+                          <span className="annrow__date">
+                            {dateVal} {dateSuffix}
+                          </span>
+                        </>
+                      )}
+                      {item.note && (
+                        <span className="annrow__note">（{item.note}）</span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    );
   }
+
+  // ── Edit mode: flat list (drag/reorder across staff types stays possible) ──
   return (
     <>
       <ul className="annsec__list">
         {rows.map((item, i) => {
-          const dateVal = (item as Record<string, string | null>)[dateKey] ?? null;
-          if (!editing) {
-            return (
-              <li key={i} className="annsec__row">
-                <span className="annrow">
-                  <strong>{item.full_name || "—"}</strong>
-                  <span className="annrow__sep">／</span>
-                  <span>{item.department ?? "—"}</span>
-                  {item.position_title && (
-                    <>
-                      <span className="annrow__sep">／</span>
-                      <span>{item.position_title}</span>
-                    </>
-                  )}
-                  {dateVal && (
-                    <>
-                      <span className="annrow__sep">／</span>
-                      <span className="annrow__date">
-                        {dateVal} {dateSuffix}
-                      </span>
-                    </>
-                  )}
-                  {item.note && <span className="annrow__note">（{item.note}）</span>}
-                </span>
-              </li>
-            );
-          }
+          const dateVal = dateOf(item);
           return (
             <li key={i} className="annsec__row annsec__row--edit" {...rowDndProps(group, i)}>
               <Grip />
@@ -774,12 +808,32 @@ function PeopleRows<T extends AnnouncementHire | AnnouncementLeave>({
                   value={item.full_name}
                   onChange={(e) => onChange(i, { ...item, full_name: e.target.value })}
                 />
+                <select
+                  className="field__input field__input--xs"
+                  value={staffTypeOf(item)}
+                  onChange={(e) =>
+                    onChange(i, { ...item, staff_type: e.target.value as StaffType })
+                  }
+                  title="社員 / インターン"
+                >
+                  <option value="社員">社員</option>
+                  <option value="インターン">インターン</option>
+                </select>
                 <input
                   className="field__input field__input--xs"
-                  placeholder="部署"
+                  placeholder="主務（所属）"
                   list="ann-depts"
                   value={item.department ?? ""}
                   onChange={(e) => onChange(i, { ...item, department: e.target.value || null })}
+                />
+                <input
+                  className="field__input field__input--xs"
+                  placeholder="兼務（正式名称／複数は「／」区切り）"
+                  list="ann-depts"
+                  value={item.concurrent ?? ""}
+                  onChange={(e) =>
+                    onChange(i, { ...item, concurrent: e.target.value || null })
+                  }
                 />
                 <input
                   className="field__input field__input--xs"
@@ -863,7 +917,15 @@ function MoveRows({
               <span className="anngrp__dest">{key}</span>
               <span className="anngrp__count">{items.length}名</span>
             </h3>
-            <table className="annmoves">
+            <table className="annmoves annmoves--cols">
+              <thead>
+                <tr>
+                  <th className="annmoves__name">対象者</th>
+                  <th className="annmoves__from">旧所属</th>
+                  <th className="annmoves__sep" aria-hidden></th>
+                  <th className="annmoves__to">新所属</th>
+                </tr>
+              </thead>
               <tbody>
                 {items.map(({ item, idx }) => {
                   const fromPath =
@@ -875,12 +937,21 @@ function MoveRows({
                   return (
                     <tr key={idx}>
                       <td className="annmoves__name">{item.full_name || "—"}</td>
-                      <td className="annmoves__path">
-                        <span>{fromPath}</span>
-                        <span className="annrow__arrow">→</span>
-                        <strong>{toPath}</strong>
+                      <td className="annmoves__from">{fromPath}</td>
+                      <td className="annmoves__sep" aria-hidden>
+                        →
                       </td>
-                      <td className="annmoves__note">{item.note ? `（${item.note}）` : ""}</td>
+                      <td className="annmoves__to">
+                        <strong>{toPath}</strong>
+                        {item.note && (
+                          <span className="annmoves__inlnote">（{item.note}）</span>
+                        )}
+                        {item.to_concurrent && (
+                          <span className="annmoves__kenmu">
+                            兼務：{item.to_concurrent}
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -953,6 +1024,15 @@ function MoveRows({
               />
               <input
                 className="field__input field__input--xs"
+                placeholder="新所属の兼務（正式名称／「／」区切り）"
+                list="ann-depts"
+                value={item.to_concurrent ?? ""}
+                onChange={(e) =>
+                  onChange(i, { ...item, to_concurrent: e.target.value || null })
+                }
+              />
+              <input
+                className="field__input field__input--xs"
                 placeholder="備考"
                 value={item.note ?? ""}
                 onChange={(e) => onChange(i, { ...item, note: e.target.value || undefined })}
@@ -1021,20 +1101,34 @@ function PromotionRows({
               <tbody>
                 {items.map(({ item, idx }) => {
                   const path = formatDeptPath(item.div, item.tm, item.unit);
+                  const hasBefore = !!(item.from_role && item.from_role.trim());
                   return (
                     <tr key={idx}>
                       <td className="annmoves__name">{item.full_name || "—"}</td>
-                      <td className="annmoves__path">
+                      <td className="annmoves__to">
                         {path && (
-                          <span className="annmoves__deptPath" style={{ marginRight: 8 }}>
-                            {path}
-                          </span>
+                          <span className="annmoves__deptPath">{path}</span>
                         )}
-                        <span>{item.from_role || "メンバー"}</span>
-                        <span className="annrow__arrow">→</span>
-                        <strong className="annmoves__toRole">{item.to_role || "—"}</strong>
+                        {hasBefore ? (
+                          <>
+                            <span>{item.from_role}</span>
+                            <span className="annrow__arrow">→</span>
+                            <strong className="annmoves__toRole">
+                              {item.to_role || "—"}
+                            </strong>
+                          </>
+                        ) : (
+                          <>
+                            <strong className="annmoves__toRole">
+                              {item.to_role || "—"}
+                            </strong>
+                            <span className="annmoves__appoint">に就任</span>
+                          </>
+                        )}
+                        {item.note && (
+                          <span className="annmoves__inlnote">（{item.note}）</span>
+                        )}
                       </td>
-                      <td className="annmoves__note">{item.note ? `（${item.note}）` : ""}</td>
                     </tr>
                   );
                 })}
