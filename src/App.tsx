@@ -132,12 +132,19 @@ export default function App() {
     if (!authInitialized) return;
     if (!shareInit.versionId) return;
     if (session) {
-      // Owner returning to their own URL — strip the share param so the
-      // next reload behaves like a normal sign-in and the main boot
-      // restore picks the file from the local "last opened" pointer
-      // rather than treating it as a share.
+      // Owner (signed in) opening a share link: don't drop them on the
+      // blank home — show the shared file itself. Convert ?v=<id> into the
+      // #/org/<id> deep link and strip the search param; the URL-driven
+      // loader below then fetches & displays that file (editable, since a
+      // signed-in owner isn't a viewer). This is what makes the link work
+      // for 丹野 himself, not just anonymous recipients.
+      const sharedVersionId = shareInit.versionId;
       clearShareParamsFromUrl();
       setShareInit({ versionId: null, ready: true });
+      navigate(
+        { name: "editor", versionId: sharedVersionId },
+        { pushHistory: false },
+      );
     } else {
       // No session: this is a genuine share-link visit. Lock viewer mode.
       setViewOnly(true);
