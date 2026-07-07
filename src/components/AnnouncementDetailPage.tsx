@@ -18,6 +18,7 @@ import {
   isExecutivePromotion,
   executivePromotionTitle,
   executiveRank,
+  promotionRoleLabel,
   EXECUTIVE_BUCKET_LABEL,
   staffTypeOf,
   type AnnouncementHire,
@@ -1358,7 +1359,7 @@ function PromotionRows({
                     !isExec && !!(item.from_role && item.from_role.trim());
                   const toDisplay = isExec
                     ? executivePromotionTitle(item)
-                    : item.to_role || "—";
+                    : promotionRoleLabel(item.to_role) || "—";
                   return (
                     <tr key={idx}>
                       <td className="annmoves__name">{item.full_name || "—"}</td>
@@ -1368,7 +1369,7 @@ function PromotionRows({
                         )}
                         {hasBefore ? (
                           <>
-                            <span>{item.from_role}</span>
+                            <span>{promotionRoleLabel(item.from_role)}</span>
                             <span className="annrow__arrow">→</span>
                             <strong className="annmoves__toRole">
                               {toDisplay}

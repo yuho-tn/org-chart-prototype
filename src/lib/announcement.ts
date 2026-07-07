@@ -259,6 +259,27 @@ export function executiveRank(p: AnnouncementPromotion): number {
   return i === -1 ? EXEC_CODES.length : i;
 }
 
+/** 任用エリアの表示用：役職コードの正式名称（裕鵬さん指定の正式表記）。
+ *  発令の任用行で「CTL（チャレンジチームリーダー）」の形に整形するために使う。 */
+export const PROMOTION_ROLE_NAMES: Record<string, string> = {
+  DM: "ディビジョンマネージャー",
+  TM: "チームマネージャー",
+  TL: "チームリーダー",
+  UL: "ユニットリーダー",
+  CDM: "チャレンジディビジョンマネージャー",
+  CTM: "チャレンジチームマネージャー",
+  CTL: "チャレンジチームリーダー",
+};
+
+/** 役職を「CTL（チャレンジチームリーダー）」形式に整形。役職コードなら括弧で
+ *  正式名称を併記し、未知の文字列（役員肩書き等）や空はそのまま返す。 */
+export function promotionRoleLabel(role: string | null | undefined): string {
+  const r = (role ?? "").trim();
+  if (!r) return "";
+  const name = PROMOTION_ROLE_NAMES[r.toUpperCase()];
+  return name ? `${r}（${name}）` : r;
+}
+
 /**
  * 入社セクション＝従業員マスターで hired_at が対象月のメンバー。
  * （新規発令の生成と、詳細画面の「マスターから再取得」の両方で使う）
