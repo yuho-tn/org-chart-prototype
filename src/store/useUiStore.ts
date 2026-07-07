@@ -21,6 +21,7 @@ export type SystemKey = "talenthub" | "payroll";
  *   Payroll:   salary / grades / audit_log
  */
 export type Section =
+  | "home"
   | "org"
   | "employees"
   | "missions"
@@ -38,6 +39,7 @@ export type Section =
  */
 export type Route =
   // TalentHub
+  | { name: "home" }
   | { name: "editor" }
   | { name: "announcements" }
   | { name: "announcement"; id: string }
@@ -57,6 +59,8 @@ export type Route =
 
 export function sectionOfRoute(r: Route): Section {
   switch (r.name) {
+    case "home":
+      return "home";
     case "editor":
     case "announcements":
     case "announcement":
@@ -96,6 +100,8 @@ export function systemOfRoute(r: Route): SystemKey {
 /** Default landing route for a section when the user clicks its primary tab. */
 export function defaultRouteForSection(s: Section): Route {
   switch (s) {
+    case "home":
+      return { name: "home" };
     case "org":
       return { name: "editor" };
     case "employees":
@@ -117,13 +123,15 @@ export function defaultRouteForSection(s: Section): Route {
 
 /** Default landing route when switching to a system. */
 export function defaultRouteForSystem(s: SystemKey): Route {
-  return s === "payroll" ? { name: "salary" } : { name: "editor" };
+  return s === "payroll" ? { name: "salary" } : { name: "home" };
 }
 
 function readRouteFromHash(): Route {
-  if (typeof window === "undefined") return { name: "editor" };
+  if (typeof window === "undefined") return { name: "home" };
   const h = window.location.hash;
-  if (h === "" || h === "#" || h === "#/") return { name: "editor" };
+  // TOP は「ホーム」。組織図は #/org に退避（旧来の TOP=組織図から分離）。
+  if (h === "" || h === "#" || h === "#/") return { name: "home" };
+  if (h === "#/org" || h === "#/editor") return { name: "editor" };
   if (h === "#/employees") return { name: "employees" };
   if (h === "#/users") return { name: "users" };
   if (h === "#/permissions") return { name: "permissions" };
@@ -151,13 +159,15 @@ function readRouteFromHash(): Route {
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
   if (h === "#/payroll/grades") return { name: "grades" };
   if (h === "#/payroll/audit-log") return { name: "audit_log" };
-  return { name: "editor" };
+  return { name: "home" };
 }
 
 function routeToHash(r: Route): string {
   switch (r.name) {
-    case "editor":
+    case "home":
       return "";
+    case "editor":
+      return "#/org";
     case "employees":
       return "#/employees";
     case "employee":

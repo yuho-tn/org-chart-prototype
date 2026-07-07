@@ -6559,3 +6559,82 @@ body.is-dragging .dept-card__add-child {
   font-weight: 600;
   font-size: 13px;
 }
+
+/* ── ホーム（TalentHub トップ：機能ハブ＋軽ダッシュボード） ──────────── */
+.home { max-width: 1040px; }
+.home__hero { margin: 4px 0 20px; }
+.home__hello {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-strong, #0f172a);
+  margin: 0 0 4px;
+}
+.home__sub { color: var(--text-muted, #64748b); font-size: 13.5px; margin: 0; }
+
+.home__widget {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 18px;
+  margin: 0 0 22px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-left: 4px solid var(--primary, #2563eb);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f8fafc, #eef2ff);
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.1s;
+}
+.home__widget:hover { box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12); transform: translateY(-1px); }
+.home__widgetIcon { font-size: 22px; }
+.home__widgetBody { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.home__widgetLabel { font-size: 11px; font-weight: 700; color: var(--primary, #2563eb); letter-spacing: 0.04em; }
+.home__widgetTitle { font-size: 14px; font-weight: 600; color: var(--text-strong, #0f172a); }
+.home__widgetArrow { color: var(--primary, #2563eb); font-weight: 700; font-size: 18px; }
+
+.home__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.home__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  padding: 18px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.1s, border-color 0.15s;
+}
+.home__card:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+  border-color: var(--primary, #2563eb);
+}
+.home__card--soon { opacity: 0.6; cursor: default; }
+.home__cardIcon { font-size: 26px; }
+.home__cardLabel {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.home__cardDesc { font-size: 12px; color: var(--text-muted, #64748b); line-height: 1.5; }
+.home__badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+/* ブランドをホームリンク（button）化した際の既定装飾リセット */
+.ghdr__brand { background: none; border: none; cursor: pointer; font: inherit; }

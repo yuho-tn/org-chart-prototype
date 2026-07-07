@@ -11,6 +11,7 @@ import { EmployeesPage } from "./components/EmployeesPage";
 import { UsersPage } from "./components/UsersPage";
 import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
 import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
+import { HomePage } from "./components/HomePage";
 import { useOrgStore } from "./store/useOrgStore";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useEmployeesStore } from "./store/useEmployeesStore";
@@ -432,6 +433,10 @@ function BootSplash() {
 }
 
 function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getState>["route"] }) {
+  if (route.name === "home") {
+    return <HomePage />;
+  }
+
   if (route.name === "employees") {
     return (
       <>
