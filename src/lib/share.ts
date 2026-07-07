@@ -19,6 +19,10 @@ export function parseShareParams(): ShareParams {
 export function buildShareUrl(versionId: string, view: OrgView = "tree"): string {
   const url = new URL(window.location.href);
   url.search = "";
+  // Clear the hash too: since files are now routed as #/org/<id>, a share
+  // link generated while a file is open would otherwise carry a stale
+  // "#/org/<id>" tail (harmless for the read-only viewer, but confusing).
+  url.hash = "";
   url.searchParams.set("v", versionId);
   if (view !== "tree") url.searchParams.set("view", view);
   return url.toString();
