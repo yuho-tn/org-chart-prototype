@@ -22,9 +22,6 @@ import { usePresenceStore } from "./store/usePresenceStore";
 import { useVersionsRealtime } from "./store/useVersionsRealtime";
 import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
 import {
-  STORAGE_KEYS,
-  readStorage,
-  writeStorage,
   readDraft,
   writeDraft,
   clearDraft,
@@ -60,9 +57,11 @@ const MissionSheetPage = lazy(() =>
 export default function App() {
   const hydrateDraft = useOrgStore((s) => s.hydrateDraft);
   const replaceNodes = useOrgStore((s) => s.replaceNodes);
+  const clearToBlank = useOrgStore((s) => s.clearToBlank);
   const refreshVersions = useVersionsStore((s) => s.refresh);
   const getSnapshot = useVersionsStore((s) => s.getSnapshot);
   const setView = useUiStore((s) => s.setView);
+  const setFilesDrawerOpen = useUiStore((s) => s.setFilesDrawerOpen);
   const setViewOnly = useUiStore((s) => s.setViewOnly);
   const setSharedVersionLabel = useUiStore((s) => s.setSharedVersionLabel);
   const view = useUiStore((s) => s.view);
@@ -238,6 +237,12 @@ export default function App() {
           versionId: bound ? bound.id : null,
           versionLabel: bound ? bound.name : draft.versionLabel,
         });
+        // Reflect the restored file in the address bar so a reload deep-links
+        // back to it. Unbound (new) drafts fall back to the blank #/org URL.
+        navigate(
+          bound ? { name: "editor", versionId: bound.id } : { name: "editor" },
+          { pushHistory: false },
+        );
         if (bound?.updated_at && bound.updated_at > draft.savedAt) {
           useOrgStore.getState().setToast({
             kind: "info",
@@ -263,15 +268,10 @@ export default function App() {
         return;
       }
 
-      // ── 2. No draft → open the last file the user had, else newest ──
-      if (versions.length === 0) return;
-      const lastId = readStorage(STORAGE_KEYS.lastVersionId);
-      const target =
-        (lastId && versions.find((v) => v.id === lastId)) || versions[0];
-      const nodes = await getSnapshot(target.id);
-      if (!cancelled && nodes) {
-        replaceNodes(nodes, { versionId: target.id, versionLabel: target.name });
-      }
+      // ── 2. No draft → stay blank ────────────────────────────────────
+      // The org page now lands on an empty canvas; the file to show is
+      // named by the URL (#/org/<id>) and loaded by the URL-driven effect
+      // below. A bare #/org keeps the blank state + auto-opens the picker.
     })().finally(() => {
       // Boot restore is done (or bailed): the draft has been read, so the
       // persisting effect may now safely take over.
@@ -297,16 +297,92 @@ export default function App() {
   // hooks must be called in the same order on every render.
   const systemSwitching = useUiStore((s) => s.systemSwitching);
 
+  // ── URL-driven file loading (#/org/<id>) ──────────────────────────────
+  // The org page treats the URL as the source of truth for which file is on
+  // screen: deep-links, reloads and browser back/forward all land on the
+  // right file, and a bare #/org shows the blank picker. Runs after the boot
+  // draft-restore so unsaved work is never clobbered.
+  useEffect(() => {
+    if (viewOnly) return; // anonymous ?v= share is handled separately
+    if (!session) return;
+    if (!bootRestored) return;
+    if (route.name !== "editor") return;
+    const wanted = route.versionId ?? null;
+    const st = useOrgStore.getState();
+    if (wanted === st.currentVersionId) return; // already showing it
+    // #/org (no id): unload to the blank canvas — but never discard unsaved
+    // edits silently. A dirty new draft (currentVersionId null) is kept.
+    if (wanted === null) {
+      if (st.currentVersionId && !st.dirty) clearToBlank();
+      return;
+    }
+    // #/org/<id>: load that file. Guard unsaved edits with a confirm so a
+    // back/forward doesn't wipe in-progress work.
+    if (st.dirty) {
+      const ok = window.confirm(
+        "未保存の変更があります。別のファイルを開くと現在の変更は失われます。続けますか？",
+      );
+      if (!ok) {
+        // Revert the address bar to the file that stays loaded.
+        navigate(
+          st.currentVersionId
+            ? { name: "editor", versionId: st.currentVersionId }
+            : { name: "editor" },
+          { pushHistory: false },
+        );
+        return;
+      }
+    }
+    let cancelled = false;
+    void (async () => {
+      const versions = useVersionsStore.getState().versions;
+      const meta = versions.find((v) => v.id === wanted);
+      const loaded = await getSnapshot(wanted);
+      if (cancelled) return;
+      if (!loaded) {
+        useOrgStore.getState().setToast({
+          kind: "error",
+          message:
+            "指定されたファイルが見つかりません（削除されたか、閲覧権限がない可能性があります）。",
+        });
+        clearToBlank();
+        navigate({ name: "editor" }, { pushHistory: false });
+        return;
+      }
+      replaceNodes(loaded, { versionId: wanted, versionLabel: meta?.name });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    route,
+    viewOnly,
+    session,
+    bootRestored,
+    getSnapshot,
+    replaceNodes,
+    clearToBlank,
+    navigate,
+  ]);
+
+  // Auto-open the file picker when landing on the blank org page so the user
+  // can immediately choose a file (the canvas is intentionally empty until
+  // then). Only fires when truly blank — not while a file is open.
+  useEffect(() => {
+    if (viewOnly || !session || !bootRestored) return;
+    if (route.name !== "editor" || route.versionId) return;
+    if (useOrgStore.getState().currentVersionId) return;
+    if (useOrgStore.getState().nodes.length > 0) return;
+    setFilesDrawerOpen(true);
+  }, [route, viewOnly, session, bootRestored, setFilesDrawerOpen]);
+
   useEffect(() => {
     if (viewOnly) return;
     if (!bootReady) return;
     if (!bootRestored) return;
     const st = useOrgStore.getState();
-    // Remember the open file so a no-draft reload reopens it (instead of
-    // jumping to the most-recently-created file).
-    if (st.currentVersionId) {
-      writeStorage(STORAGE_KEYS.lastVersionId, st.currentVersionId);
-    }
+    // (The open file is no longer remembered via localStorage — the URL
+    // (#/org/<id>) is now the source of truth for what reopens on reload.)
     // Only persist a draft while there are genuine unsaved edits. Once the
     // state is clean (saved, or freshly loaded from the server) we clear
     // the draft so it can never shadow the shared server file again — this
@@ -520,7 +596,13 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
   if (route.name === "grades") return <GradesPage />;
   if (route.name === "audit_log") return <AuditLogPage />;
 
-  // Default: org → editor (lazy — pulls in reactflow on demand)
+  // Default: org → editor. When no file is selected (bare #/org, blank
+  // canvas) show a picker prompt instead of the empty editor. A deep-link
+  // (#/org/<id>) keeps route.versionId set while loading, so it renders the
+  // editor (which shows its own loading state), not this blank prompt.
+  if (route.name === "editor" && !route.versionId) {
+    return <OrgEditorOrBlank />;
+  }
   return (
     <Suspense
       fallback={
@@ -532,5 +614,53 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     >
       <EditorShell />
     </Suspense>
+  );
+}
+
+/**
+ * Editor for the org section, or a blank "pick a file" prompt when nothing
+ * is loaded yet. Splitting this out keeps the hook (useOrgStore) legal —
+ * SectionContent returns early for other routes.
+ */
+function OrgEditorOrBlank() {
+  const currentVersionId = useOrgStore((s) => s.currentVersionId);
+  const nodeCount = useOrgStore((s) => s.nodes.length);
+  const setFilesDrawerOpen = useUiStore((s) => s.setFilesDrawerOpen);
+
+  // A restored unsaved draft has nodes but no versionId — still a real file
+  // in progress, so show the editor. Blank = no file AND no nodes.
+  const isBlank = !currentVersionId && nodeCount === 0;
+  if (!isBlank) {
+    return (
+      <Suspense
+        fallback={
+          <div className="orgshell">
+            <OrgSubNav />
+            <p style={{ padding: 24, color: "var(--text-muted)" }}>エディタを読み込み中…</p>
+          </div>
+        }
+      >
+        <EditorShell />
+      </Suspense>
+    );
+  }
+
+  return (
+    <div className="orgshell">
+      <OrgSubNav />
+      <div className="orgblank">
+        <div className="orgblank__card">
+          <div className="orgblank__icon" aria-hidden>🗂</div>
+          <h2 className="orgblank__title">組織図ファイルを選択してください</h2>
+          <p className="orgblank__lead">
+            表示するファイルを選ぶと、そのファイル専用のURL（#/org/&lt;ID&gt;）に切り替わります。
+            アドレスバーをコピーすれば、その組織図をそのまま他のメンバーへ共有できます。
+          </p>
+          <button className="btn btn--primary" onClick={() => setFilesDrawerOpen(true)}>
+            📁 ファイルを選択
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

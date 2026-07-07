@@ -47,6 +47,7 @@ export function VersionsPanel() {
   const currentUser = useAuthStore((s) => s.currentUser);
   const setViewOnly = useUiStore((s) => s.setViewOnly);
   const setFilesDrawerOpen = useUiStore((s) => s.setFilesDrawerOpen);
+  const navigate = useUiStore((s) => s.navigate);
 
   const [showSave, setShowSave] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
@@ -107,6 +108,11 @@ export function VersionsPanel() {
     // doesn't lock edits any more — only an explicit 確定解除 reverts to draft.
     setViewOnly(!canEdit);
     replaceNodes(nodes, { versionId: id, versionLabel: name });
+    // Reflect the opened file in the address bar as #/org/<id> so the URL is
+    // distinct per file and can be copied to share with other members.
+    // (The URL-driven loader in App.tsx no-ops because the file is already
+    // loaded here — currentVersionId now equals the routed id.)
+    navigate({ name: "editor", versionId: id });
     // After a successful load, collapse the drawer so the editor canvas
     // is fully visible — this is the whole reason the drawer exists.
     setFilesDrawerOpen(false);
@@ -153,6 +159,7 @@ export function VersionsPanel() {
     if (nodes) {
       setViewOnly(false);
       replaceNodes(nodes, { versionId: row.id, versionLabel: row.name });
+      navigate({ name: "editor", versionId: row.id });
     }
     setTab("draft");
     setToast({ kind: "info", message: `「${trimmed}」を複製しました` });

@@ -95,6 +95,9 @@ type Store = AppState & {
   /** Start a fresh file: clears nodes to seed and detaches from any loaded
    *  version. Used by the "＋新規作成" flow. */
   newFile: () => void;
+  /** Unload any open file, leaving a truly empty canvas (no seed template).
+   *  Used for the #/org "blank" landing where no file is selected yet. */
+  clearToBlank: () => void;
   /** Rewind nodes to the snapshot captured before the given log entry. */
   restoreToLog: (logId: string) => { ok: boolean; reason?: string };
   saveDraft: () => void;
@@ -816,6 +819,19 @@ export const useOrgStore = create<Store>((set, get) => ({
         kind: "info",
         message: "新規ファイルを開きました。保存するとサーバに登録されます。",
       },
+    });
+  },
+
+  clearToBlank: () => {
+    set({
+      past: [],
+      future: [],
+      nodes: [],
+      selectedId: null,
+      currentVersionId: null,
+      currentVersionLabel: null,
+      dirty: false,
+      remoteAhead: null,
     });
   },
 

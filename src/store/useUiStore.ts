@@ -40,7 +40,9 @@ export type Section =
 export type Route =
   // TalentHub
   | { name: "home" }
-  | { name: "editor" }
+  // editor: 組織図ファイル1枚を開いている状態。versionId 付き = そのファイルの
+  // ディープリンク（#/org/<id>・共有可能）。versionId 無し = #/org（ブランク）。
+  | { name: "editor"; versionId?: string }
   | { name: "announcements" }
   | { name: "announcement"; id: string }
   | { name: "employees" }
@@ -132,6 +134,9 @@ function readRouteFromHash(): Route {
   // TOP は「ホーム」。組織図は #/org に退避（旧来の TOP=組織図から分離）。
   if (h === "" || h === "#" || h === "#/") return { name: "home" };
   if (h === "#/org" || h === "#/editor") return { name: "editor" };
+  // 組織図ファイルのディープリンク: #/org/<versionId>（org_versions の uuid）
+  const org = /^#\/org\/([0-9a-f-]+)$/i.exec(h);
+  if (org) return { name: "editor", versionId: org[1] };
   if (h === "#/employees") return { name: "employees" };
   if (h === "#/users") return { name: "users" };
   if (h === "#/permissions") return { name: "permissions" };
@@ -167,7 +172,7 @@ function routeToHash(r: Route): string {
     case "home":
       return "";
     case "editor":
-      return "#/org";
+      return r.versionId ? `#/org/${r.versionId}` : "#/org";
     case "employees":
       return "#/employees";
     case "employee":
