@@ -20,7 +20,11 @@ import { useAuthStore } from "./store/useAuthStore";
 import { canAccessPayroll, canManagePermissions } from "./lib/supabase";
 import { usePresenceStore } from "./store/usePresenceStore";
 import { useVersionsRealtime } from "./store/useVersionsRealtime";
-import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
+import {
+  parseShareParams,
+  clearShareParamsFromUrl,
+  parseAnnouncementShareToken,
+} from "./lib/share";
 import {
   readDraft,
   writeDraft,
@@ -32,6 +36,12 @@ import {
 // 給与 pages don't pay for it — this is what makes those pages open fast.
 const EditorShell = lazy(() => import("./components/EditorShell"));
 const ViewerShell = lazy(() => import("./components/ViewerShell"));
+// 人事発令の匿名共有ビュー（?a=<token>）。稀な経路なので lazy。
+const SharedAnnouncementPage = lazy(() =>
+  import("./components/SharedAnnouncementPage").then((m) => ({
+    default: m.SharedAnnouncementPage,
+  })),
+);
 // P1: 従業員詳細（プロフィール）と権限管理も lazy — 通常の一覧閲覧では
 // ロードさせない。
 const EmployeeDetailPage = lazy(() =>
@@ -72,6 +82,9 @@ export default function App() {
     versionId: null,
     ready: false,
   });
+  // 人事発令の匿名共有リンク（?a=<token>）。存在すれば認証に関わらず読み取り
+  // 専用の共有ビューを描画する（RPC はトークン一致の published 1件のみ返す）。
+  const [annShareToken, setAnnShareToken] = useState<string | null>(null);
   // Gates the draft-persisting effect: until the boot restore has read the
   // stored draft, that effect must not run — otherwise its clearDraft()
   // would wipe the draft before boot ever sees it.
@@ -91,6 +104,11 @@ export default function App() {
   const bootReady = !!session;
 
   useEffect(() => {
+    const annToken = parseAnnouncementShareToken();
+    if (annToken) {
+      setAnnShareToken(annToken);
+      return; // announcement share short-circuits the org share-link flow
+    }
     const params = parseShareParams();
     // Stash the parsed params but defer the viewOnly decision until auth
     // resolves (see effect below). Otherwise a signed-in owner returning
@@ -452,6 +470,16 @@ export default function App() {
       realtimeUnsubscribe();
     };
   }, [bootReady, viewOnly, realtimeSubscribe, realtimeUnsubscribe]);
+
+  // Anonymous / portable share view for an HR announcement (?a=<token>).
+  // Works with or without a session and never touches the auth-gated app.
+  if (annShareToken) {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <SharedAnnouncementPage token={annShareToken} />
+      </Suspense>
+    );
+  }
 
   if (viewOnly) {
     return (

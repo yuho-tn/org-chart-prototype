@@ -89,6 +89,26 @@ select.field__input {
   min-height: 0;
 }
 
+/* 人事発令の匿名共有ビュー（?a=<token>）：中央寄せの読み物レイアウト。 */
+.sharedann {
+  flex: 1;
+  overflow: auto;
+  padding: 24px 16px 64px;
+  background: var(--surface-sunken, #f8fafc);
+}
+.sharedann__msg {
+  max-width: 640px;
+  margin: 48px auto;
+  text-align: center;
+  color: var(--text-muted, #64748b);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.anndetail--shared {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
 /* 組織図トップ（#/org）のブランク状態：ファイル未選択時の案内。 */
 .orgblank {
   flex: 1;

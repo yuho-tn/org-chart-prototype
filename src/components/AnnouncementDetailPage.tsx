@@ -5,6 +5,7 @@ import { useAuthStore, isOrgPowerUser } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import { useEmployeesStore } from "../store/useEmployeesStore";
 import { employeeName } from "../lib/supabase";
+import { buildAnnouncementShareUrl } from "../lib/share";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   computeHires,
@@ -106,6 +107,8 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
   const getById = useAnnouncementsStore((s) => s.getById);
   const update = useAnnouncementsStore((s) => s.update);
   const removeOne = useAnnouncementsStore((s) => s.remove);
+  const issueShareToken = useAnnouncementsStore((s) => s.issueShareToken);
+  const revokeShareToken = useAnnouncementsStore((s) => s.revokeShareToken);
   const currentUser = useAuthStore((s) => s.currentUser);
   const setToast = useOrgStore((s) => s.setToast);
   const employees = useEmployeesStore((s) => s.employees);
@@ -118,6 +121,7 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
   const [notes, setNotes] = useState("");
   const [draftTitle, setDraftTitle] = useState("");
   const [pendingDelete, setPendingDelete] = useState(false);
+  const [pendingRevoke, setPendingRevoke] = useState(false);
   const [saving, setSaving] = useState(false);
   // Live drag source (edit mode). Not in React state per-move to avoid
   // re-rendering on every dragover — only set on start/end.
@@ -224,13 +228,54 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
     navigate({ name: "announcements" });
   }
 
-  async function copyShareUrl() {
+  async function copyText(text: string, okMessage: string) {
     try {
-      await navigator.clipboard.writeText(shareUrl);
-      setToast({ kind: "info", message: "リンクをコピーしました" });
+      await navigator.clipboard.writeText(text);
+      setToast({ kind: "info", message: okMessage });
     } catch {
-      window.prompt("リンクをコピーしてください", shareUrl);
+      window.prompt("リンクをコピーしてください", text);
     }
+  }
+
+  async function copyShareUrl() {
+    await copyText(shareUrl, "社内リンクをコピーしました（閲覧にはログインが必要）");
+  }
+
+  // ── 非ログイン共有リンク（?a=<token>）: オプトイン発行＋失効 ──────────
+  async function issueOrCopyShareLink() {
+    if (!row) return;
+    // Already issued → just copy the existing link.
+    if (row.share_token) {
+      await copyText(
+        buildAnnouncementShareUrl(row.share_token),
+        "共有リンクをコピーしました（ログイン不要）",
+      );
+      return;
+    }
+    const token = await issueShareToken(row.id);
+    if (!token) {
+      const detail = useAnnouncementsStore.getState().error;
+      setToast({ kind: "error", message: detail ?? "共有リンクの発行に失敗しました" });
+      return;
+    }
+    setRow({ ...row, share_token: token });
+    await copyText(
+      buildAnnouncementShareUrl(token),
+      "共有リンクを発行してコピーしました（ログイン不要）",
+    );
+  }
+
+  async function confirmRevokeShare() {
+    if (!row) return;
+    setPendingRevoke(false);
+    const ok = await revokeShareToken(row.id);
+    if (!ok) {
+      const detail = useAnnouncementsStore.getState().error;
+      setToast({ kind: "error", message: detail ?? "共有リンクの無効化に失敗しました" });
+      return;
+    }
+    setRow({ ...row, share_token: null });
+    setToast({ kind: "info", message: "共有リンクを無効化しました（旧リンクは開けなくなります）" });
   }
 
   /* ── DnD plumbing (edit mode) ────────────────────────────────────── */
@@ -396,9 +441,38 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
         <button className="btn" onClick={() => window.print()}>
           🖨 印刷
         </button>
-        <button className="btn" onClick={copyShareUrl}>
-          🔗 リンクをコピー
+        <button
+          className="btn"
+          onClick={copyShareUrl}
+          title="ログインが必要な社内向けリンク（sho-san.co.jp アカウント）"
+        >
+          🔗 社内リンク
         </button>
+        {canEdit && !editing && (
+          <>
+            <button
+              className="btn"
+              onClick={issueOrCopyShareLink}
+              disabled={!row.is_published}
+              title={
+                row.is_published
+                  ? "ログイン不要で閲覧できる共有リンク（未発行なら発行してコピー）"
+                  : "公開（is_published）にすると共有リンクを発行できます"
+              }
+            >
+              🌐 {row.share_token ? "共有リンクをコピー" : "共有リンクを発行"}
+            </button>
+            {row.share_token && (
+              <button
+                className="btn btn--ghost"
+                onClick={() => setPendingRevoke(true)}
+                title="現在の共有リンクを無効化します（配布済みリンクは開けなくなります）"
+              >
+                🚫 リンク無効化
+              </button>
+            )}
+          </>
+        )}
       </header>
 
       {editing && (
@@ -650,7 +724,164 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
           onCancel={() => setPendingDelete(false)}
         />
       )}
+
+      {pendingRevoke && (
+        <ConfirmDialog
+          title="共有リンクの無効化"
+          message={
+            <>
+              現在の共有リンク（ログイン不要）を無効化します。すでに配布したリンクは開けなくなります。
+              必要なら後で「共有リンクを発行」で新しいリンクを作り直せます。よろしいですか？
+            </>
+          }
+          confirmLabel="無効化する"
+          variant="danger"
+          onConfirm={confirmRevokeShare}
+          onCancel={() => setPendingRevoke(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── Read-only paper (shared by the detail page's view mode and the
+ *    anonymous share view). Renders the same sections as the editor's
+ *    view path via the same sub-components + CSS classes, so the layout
+ *    stays identical. Edit affordances are omitted. ────────────────── */
+export function AnnouncementPaper({ row }: { row: AnnouncementRow }) {
+  const view = row.payload;
+  const viewFormal = (view.promotions ?? []).filter((x) => promotionKind(x) === "formal");
+  const viewChallenge = (view.promotions ?? []).filter(
+    (x) => promotionKind(x) === "challenge",
+  );
+  const noop = () => {};
+  const noDnd = () => ({});
+  return (
+    <article className="anndetail__paper">
+      <header className="anndetail__paperHead">
+        <p className="anndetail__period">{formatPeriodHeading(row.period)}</p>
+        <h1 className="anndetail__title">{row.title}</h1>
+      </header>
+
+      <section className="annsec">
+        <SectionHead
+          number="①"
+          label="入社"
+          count={(view.hires ?? []).length}
+          caption={`従業員マスターの ${formatPeriodHeading(row.period)} 入社メンバー`}
+          editing={false}
+        />
+        <PeopleRows
+          group="hires"
+          rows={view.hires ?? []}
+          editing={false}
+          dateKey="hired_at"
+          dateSuffix="入社"
+          rowDndProps={noDnd}
+          onChange={noop}
+          onRemove={noop}
+          onAdd={noop}
+        />
+      </section>
+
+      <section className="annsec">
+        <SectionHead
+          number="②"
+          label="退職"
+          count={(view.leaves ?? []).length}
+          caption={`従業員マスターの ${formatPeriodHeading(previousPeriod(row.period))}（前月）退職メンバー`}
+          editing={false}
+        />
+        <PeopleRows
+          group="leaves"
+          rows={view.leaves ?? []}
+          editing={false}
+          dateKey="left_at"
+          dateSuffix="退職"
+          rowDndProps={noDnd}
+          onChange={noop}
+          onRemove={noop}
+          onAdd={noop}
+        />
+      </section>
+
+      <section className="annsec annsec--group">
+        <h2 className="annsec__head">
+          <span className="annsec__num">③</span>
+          人事異動
+        </h2>
+        <section className="annsec annsec--sub">
+          <SectionHead number="A." label="DIV間の異動" count={(view.div_moves ?? []).length} editing={false} />
+          <MoveRows
+            group="div_moves"
+            rows={view.div_moves ?? []}
+            editing={false}
+            groupKind="div"
+            rowDndProps={noDnd}
+            onChange={noop}
+            onRemove={noop}
+            onAdd={noop}
+          />
+        </section>
+        <section className="annsec annsec--sub">
+          <SectionHead number="B." label="TM間の異動" count={(view.tm_moves ?? []).length} editing={false} />
+          <MoveRows
+            group="tm_moves"
+            rows={view.tm_moves ?? []}
+            editing={false}
+            groupKind="tm"
+            rowDndProps={noDnd}
+            onChange={noop}
+            onRemove={noop}
+            onAdd={noop}
+          />
+        </section>
+      </section>
+
+      <section className="annsec annsec--group">
+        <h2 className="annsec__head">
+          <span className="annsec__num">④</span>
+          任用
+        </h2>
+        <section className="annsec annsec--sub annsec--formal">
+          <SectionHead number="A." label="正式任用" badge="等級を伴う正式な任用" count={viewFormal.length} editing={false} />
+          <PromotionRows
+            group="formal"
+            rows={viewFormal}
+            editing={false}
+            rowDndProps={noDnd}
+            onChange={noop}
+            onRemove={noop}
+            onAdd={noop}
+            onKindChange={noop}
+            kindLabel="正式"
+            otherKindLabel=""
+          />
+        </section>
+        <section className="annsec annsec--sub annsec--challenge">
+          <SectionHead number="B." label="チャレンジ任用" badge="役割先行のチャレンジ任用（C任用）" count={viewChallenge.length} editing={false} />
+          <PromotionRows
+            group="challenge"
+            rows={viewChallenge}
+            editing={false}
+            rowDndProps={noDnd}
+            onChange={noop}
+            onRemove={noop}
+            onAdd={noop}
+            onKindChange={noop}
+            kindLabel="チャレンジ"
+            otherKindLabel=""
+          />
+        </section>
+      </section>
+
+      {view.notes && (
+        <section className="annsec">
+          <h2 className="annsec__head">備考</h2>
+          <p className="annsec__notes">{view.notes}</p>
+        </section>
+      )}
+    </article>
   );
 }
 
