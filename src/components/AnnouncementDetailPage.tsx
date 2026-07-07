@@ -910,7 +910,7 @@ function MoveRows({
       buckets.set(k, arr);
     });
     return (
-      <div className="anngrp anngrp--compact">
+      <div className="anngrp anngrp--stack">
         {[...buckets.entries()].map(([key, items]) => (
           <div key={key} className="anngrp__bucket">
             <h3 className="anngrp__head">

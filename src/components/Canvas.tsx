@@ -65,6 +65,12 @@ export function Canvas() {
     return s;
   }, [employees]);
   function isPersonUnlinked(p: OrgNode): boolean {
+    // The ⚠ badge is an editor-only affordance: it warns the user to fix a
+    // person→master link before generating an announcement. A read-only share
+    // view (viewOnly) is anonymous, so the employee master is RLS-empty and
+    // every person would falsely flag as unlinked. A viewer also has no way to
+    // act on it, so suppress the warning entirely in view-only mode.
+    if (viewOnly) return false;
     if (p.kind !== "person") return false;
     if (!p.employeeNumber) return true;
     return !validEmployeeNumbers.has(p.employeeNumber);

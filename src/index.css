@@ -2191,14 +2191,16 @@ body.is-dragging .dept-card__add-child {
   border: none;
 }
 
+/* 中見出し（A. / B.）＝控えめなスレート地のサブバナーで統一（大=青帯、
+ * 小=下線 の3段階強弱の「中」）。異動・任用のA./B.が同じ見た目になる。 */
 .annsec--sub .annsec__head {
   font-size: 14px;
   margin: 0 0 10px;
-  padding: 0 0 4px;
-  background: transparent;
+  padding: 6px 12px;
+  background: #eef2f7;
   color: var(--text-strong);
-  border-radius: 0;
-  border-bottom: 1px dashed var(--border-strong);
+  border-radius: 5px;
+  border: none;
 }
 
 .annsec__num {
@@ -2251,17 +2253,19 @@ body.is-dragging .dept-card__add-child {
   padding-left: 0;
 }
 
-/* 部署ごとの区切りを見出しとしてはっきり見せる（受け入れ先ごと）。
- * 縦棒は使わず、背景チップ＋下線で「見出し感」を出す。 */
+/* 小見出し（宛先バケット）＝下線のみの控えめスタイル。入社/退職の
+ * 社員・インターン見出し（.annstaff__head）と完全に同じ見た目に統一する
+ * （3段階強弱の「小」。背景チップは廃止）。 */
 .anngrp__head {
-  font-size: 14px;
-  font-weight: 800;
-  margin: 0 0 10px;
-  padding: 6px 12px;
-  color: #1e3a8a;
-  background: #eef2ff;
-  border-bottom: 2px solid var(--primary, #2563eb);
-  border-radius: 4px 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  padding: 0 0 4px;
+  color: var(--text-strong, #0f172a);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-strong, #cbd5e1);
+  border-radius: 0;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -5369,21 +5373,22 @@ body.is-dragging .dept-card__add-child {
 .annsec__refill { margin-left: auto; }
 .annsec__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 
-/* ── 任用: 正式(上位・強調) vs チャレンジ(差別化) ── */
+/* ── 任用: 正式(上位・強調) vs チャレンジ(差別化) ──
+ * 左縦棒・背景色は廃止。区別は中見出しのバッジ色＋任用後役職の文字色で表現。 */
 .annsec--formal {
-  border-left: 4px solid #1d4ed8;
-  background: #eff6ff;
-  border-radius: 8px;
-  padding: 10px 14px;
+  border-left: none;
+  background: none;
+  border-radius: 0;
+  padding: 0;
   margin: 10px 0;
 }
 .annsec--formal .annsec__badge { background: #1d4ed8; color: #fff; }
 .annsec--formal .annmoves__toRole { color: #1d4ed8; font-size: 1.05em; }
 .annsec--challenge {
-  border-left: 4px dashed #9333ea;
-  background: #faf5ff;
-  border-radius: 8px;
-  padding: 10px 14px;
+  border-left: none;
+  background: none;
+  border-radius: 0;
+  padding: 0;
   margin: 10px 0;
 }
 .annsec--challenge .annsec__badge { background: #f3e8ff; color: #7e22ce; }
@@ -5416,14 +5421,18 @@ body.is-dragging .dept-card__add-child {
 /* ── 入社／退職：社員・インターンのH3切り分け ─────────────────────── */
 .annstaff { display: flex; flex-direction: column; gap: 14px; }
 .annstaff__grp { }
+/* 小見出し（社員/インターン）＝宛先バケット（.anngrp__head）と同一の
+ * 下線スタイルに統一。背景チップは廃止。 */
 .annstaff__head {
-  font-size: 13.5px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text-strong, #0f172a);
-  margin: 0 0 6px;
-  padding: 4px 10px;
-  background: #f1f5f9;
-  border-radius: 4px;
+  margin: 0 0 8px;
+  padding: 0 0 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-strong, #cbd5e1);
+  border-radius: 0;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -5436,8 +5445,16 @@ body.is-dragging .dept-card__add-child {
 }
 .annrow__kenmu::before { content: "／ "; color: #cbd5e1; }
 
-/* ── 人事異動：旧所属→新所属のカラム分け ────────────────────────── */
-.annmoves--cols { width: 100%; }
+/* ── 人事異動：旧所属→新所属のカラム分け ──────────────────────────
+ * 宛先バケットを1カラム縦積みにし、列幅を固定(table-layout:fixed)する
+ * ことで、旧所属／→／新所属 の区切り線が全バケットで完全に揃う。 */
+.anngrp--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.annmoves--cols { width: 100%; table-layout: fixed; }
+.annmoves--cols .annmoves__name { width: 8em; }
 .annmoves--cols thead th {
   font-size: 10.5px;
   font-weight: 700;
