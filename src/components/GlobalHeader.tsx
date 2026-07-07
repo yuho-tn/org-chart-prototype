@@ -3,6 +3,7 @@ import {
   sectionOfRoute,
   systemOfRoute,
   defaultRouteForSection,
+  defaultRouteForSystem,
   type Section,
   type SystemKey,
 } from "../store/useUiStore";
@@ -11,6 +12,7 @@ import { canManagePermissions, type AppUserRole } from "../lib/supabase";
 
 const TABS_BY_SYSTEM: Record<SystemKey, { id: Section; label: string; icon: string }[]> = {
   talenthub: [
+    { id: "home", label: "ホーム", icon: "🏠" },
     { id: "org", label: "組織図", icon: "🗂" },
     { id: "employees", label: "従業員マスター", icon: "👥" },
     // ミッションは全ログインユーザーに表示（自分のシートがあるため）
@@ -70,11 +72,16 @@ export function GlobalHeader() {
 
   return (
     <header className={`ghdr ghdr--${currentSystem}`}>
-      <div className="ghdr__brand">
+      <button
+        type="button"
+        className="ghdr__brand"
+        onClick={() => navigate(defaultRouteForSystem(currentSystem))}
+        title="ホームへ"
+      >
         <span className="ghdr__brandMark" aria-hidden>▣</span>
         <span className="ghdr__brandName">{brand.name}</span>
         <span className="ghdr__brandSub">{brand.sub}</span>
-      </div>
+      </button>
 
       <nav className="ghdr__tabs" role="tablist">
         {tabs.map((t) => (
