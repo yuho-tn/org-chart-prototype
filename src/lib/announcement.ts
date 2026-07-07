@@ -1,4 +1,5 @@
 import type { DeptCategory, OrgNode, PersonRole } from "./types";
+import { EXECUTIVE_ROLES } from "./types";
 import { employeeName, type EmployeeRow } from "./supabase";
 
 /**
@@ -209,6 +210,55 @@ export function promotionKind(p: AnnouncementPromotion): PromotionKind {
   return isChallengeRole(p.to_role) ? "challenge" : "formal";
 }
 
+/* ── 役員登用（執行役員任用） ──────────────────────────────────────────
+ * 任用の中でも C-suite（執行役員）への就任は「役員登用」として正式任用の
+ * 先頭に別バケットで表示する。組織図は役職コード（COO 等）しか持たないため、
+ * 役職→統括領域のマップで肩書きを自動整形する。 */
+export const EXECUTIVE_GOVERNANCE: Partial<
+  Record<NonNullable<PersonRole>, string>
+> = {
+  COO: "事業統括",
+  CTO: "技術統括",
+  CFO: "財務統括",
+  CHRO: "人事統括",
+  CRO: "営業統括",
+  CMO: "マーケティング統括",
+};
+
+export const EXECUTIVE_BUCKET_LABEL = "役員登用";
+
+const EXEC_CODES = EXECUTIVE_ROLES as readonly string[];
+
+/** to_role が役員（執行役員）任用か。役職コード（"COO" 等）でも、既に整形
+ *  済みの肩書き（"執行役員COO（事業統括）" / "代表取締役…"）でも true。 */
+export function isExecutivePromotion(p: AnnouncementPromotion): boolean {
+  const t = (p.to_role ?? "").trim();
+  if (!t) return false;
+  if (/執行役員|代表取締役/.test(t)) return true;
+  return EXEC_CODES.includes(t.toUpperCase());
+}
+
+/** 表示用の役員肩書き。役職コードなら "執行役員COO（事業統括）" に整形し、
+ *  既に整形済みの文字列ならそのまま返す。CEO は代表取締役として扱う。 */
+export function executivePromotionTitle(p: AnnouncementPromotion): string {
+  const t = (p.to_role ?? "").trim();
+  const code = t.toUpperCase();
+  if (code === "CEO") return "代表取締役CEO";
+  if (EXEC_CODES.includes(code)) {
+    const gov = EXECUTIVE_GOVERNANCE[code as NonNullable<PersonRole>];
+    return gov ? `執行役員${code}（${gov}）` : `執行役員${code}`;
+  }
+  return t; // 既に肩書き文字列（手入力の "執行役員COO（事業統括）" 等）
+}
+
+/** 役員バケット内の並び順（CEO→COO→CTO→…）。EXECUTIVE_ROLES の序列を使い、
+ *  該当しない（整形済み肩書き等）は末尾に寄せる。 */
+export function executiveRank(p: AnnouncementPromotion): number {
+  const code = (p.to_role ?? "").trim().toUpperCase();
+  const i = EXEC_CODES.indexOf(code);
+  return i === -1 ? EXEC_CODES.length : i;
+}
+
 /**
  * 入社セクション＝従業員マスターで hired_at が対象月のメンバー。
  * （新規発令の生成と、詳細画面の「マスターから再取得」の両方で使う）
@@ -369,15 +419,18 @@ export function computeAnnouncement(
       !isChallengeRole(eb.role);
     if (rankOf(eb.role) > rankOf(ea.role) || formalized) {
       const toRole = eb.role ?? "メンバー";
+      // 役員登用（執行役員任用）は「◯◯に就任」表記で、部署プレフィックスを
+      // 付けず、正式任用の先頭「役員登用」バケットに寄せる（描画側で判定）。
+      const isExec = !!eb.role && EXEC_CODES.includes(eb.role);
       promotions.push({
         employee_number: num,
         full_name: fullName,
-        from_role: ea.role ?? "メンバー",
+        from_role: isExec ? "" : ea.role ?? "メンバー",
         to_role: toRole,
         kind: isChallengeRole(toRole) ? "challenge" : "formal",
-        div: eb.div,
-        tm: eb.tm,
-        unit: eb.unit,
+        div: isExec ? null : eb.div,
+        tm: isExec ? null : eb.tm,
+        unit: isExec ? null : eb.unit,
       });
     }
   }

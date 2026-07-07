@@ -15,6 +15,10 @@ import {
   moveDestinationGroup,
   previousPeriod,
   promotionKind,
+  isExecutivePromotion,
+  executivePromotionTitle,
+  executiveRank,
+  EXECUTIVE_BUCKET_LABEL,
   staffTypeOf,
   type AnnouncementHire,
   type AnnouncementLeave,
@@ -1312,17 +1316,30 @@ function PromotionRows({
 }) {
   if (!editing) {
     if (rows.length === 0) return <p className="annsec__empty">（該当なし）</p>;
-    // Bucket by DIV (fall back to TM) for readability.
+    // 役員（執行役員）任用は「役員登用」バケットに集約し、それ以外は DIV
+    // （無ければ TM）でバケットする。役員登用は先頭に表示する。
     const buckets = new Map<string, { item: AnnouncementPromotion; idx: number }[]>();
     rows.forEach((item, idx) => {
-      const k = item.div?.trim() || item.tm?.trim() || "（部署不明）";
+      const k = isExecutivePromotion(item)
+        ? EXECUTIVE_BUCKET_LABEL
+        : item.div?.trim() || item.tm?.trim() || "（部署不明）";
       const arr = buckets.get(k) ?? [];
       arr.push({ item, idx });
       buckets.set(k, arr);
     });
+    // 役員登用を常に先頭へ。役員バケット内は役職序列（CEO→COO→CTO…）で並べる。
+    const entries = [...buckets.entries()].sort((a, b) => {
+      if (a[0] === EXECUTIVE_BUCKET_LABEL) return -1;
+      if (b[0] === EXECUTIVE_BUCKET_LABEL) return 1;
+      return 0;
+    });
+    const execBucket = buckets.get(EXECUTIVE_BUCKET_LABEL);
+    if (execBucket) {
+      execBucket.sort((x, y) => executiveRank(x.item) - executiveRank(y.item));
+    }
     return (
       <div className="anngrp anngrp--compact">
-        {[...buckets.entries()].map(([key, items]) => (
+        {entries.map(([key, items]) => (
           <div key={key} className="anngrp__bucket">
             <h3 className="anngrp__head">
               <span className="anngrp__dest">{key}</span>
@@ -1331,8 +1348,17 @@ function PromotionRows({
             <table className="annmoves">
               <tbody>
                 {items.map(({ item, idx }) => {
-                  const path = formatDeptPath(item.div, item.tm, item.unit);
-                  const hasBefore = !!(item.from_role && item.from_role.trim());
+                  const isExec = isExecutivePromotion(item);
+                  // 役員登用は部署プレフィックスを付けず「◯◯ 執行役員COO（事業
+                  // 統括）に就任」の一律表記にする。
+                  const path = isExec
+                    ? null
+                    : formatDeptPath(item.div, item.tm, item.unit);
+                  const hasBefore =
+                    !isExec && !!(item.from_role && item.from_role.trim());
+                  const toDisplay = isExec
+                    ? executivePromotionTitle(item)
+                    : item.to_role || "—";
                   return (
                     <tr key={idx}>
                       <td className="annmoves__name">{item.full_name || "—"}</td>
@@ -1345,13 +1371,13 @@ function PromotionRows({
                             <span>{item.from_role}</span>
                             <span className="annrow__arrow">→</span>
                             <strong className="annmoves__toRole">
-                              {item.to_role || "—"}
+                              {toDisplay}
                             </strong>
                           </>
                         ) : (
                           <>
                             <strong className="annmoves__toRole">
-                              {item.to_role || "—"}
+                              {toDisplay}
                             </strong>
                             <span className="annmoves__appoint">に就任</span>
                           </>
