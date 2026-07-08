@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { useAuthStore, isUserManager } from "./useAuthStore";
+import { useAuthStore, isManagerRole } from "./useAuthStore";
 import { useEmployeesStore } from "./useEmployeesStore";
 import {
   levelForPositionTitle,
@@ -423,5 +423,5 @@ export function canEditProfileOf(employeeNumber: string): boolean {
   const st = useProfilesStore.getState();
   if (st.currentEmployeeNumber() === employeeNumber) return true;
   if (st.can("profiles", "edit_any")) return true;
-  return isUserManager(useAuthStore.getState().currentUser?.role);
+  return isManagerRole(useAuthStore.getState().currentUser?.role);
 }

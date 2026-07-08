@@ -224,11 +224,27 @@ export type VersionAccess = { view: true; edit: boolean };
 // centralize the matrix and stay in sync with the SQL helpers in 0011.
 
 /**
- * Can mutate other users' roles. Master and admin only — privileged_admin
- * is deliberately excluded so the "give yourself payroll access" attack
- * isn't possible.
+ * Can open the ユーザー管理 UI and mutate other users' roles — master,
+ * privileged_admin and admin (＝「管理者以上」). Mirrors the SQL helper
+ * `public.is_user_admin()` (migration 0021).
+ *
+ * Containment: privileged_admin/admin can only assign or touch rows up to
+ * `admin` — granting `privileged_admin` (which unlocks 給与・査定) or
+ * `master` stays master-only. That cap is enforced both here (assignable
+ * roles / editable targets in UsersPage) and by the RLS WITH CHECK in
+ * migration 0021, so the "hand out payroll access" escalation is blocked
+ * at the database even if the UI is bypassed.
  */
 export function isUserManager(role: AppUserRole | undefined | null): boolean {
+  return role === "master" || role === "privileged_admin" || role === "admin";
+}
+
+/**
+ * Mirror of the SQL `public.is_manager()` (master/admin only). Used where
+ * the client must match a policy that is gated on is_manager exactly —
+ * e.g. the profiles edit mirror — and must NOT widen to privileged_admin.
+ */
+export function isManagerRole(role: AppUserRole | undefined | null): boolean {
   return role === "master" || role === "admin";
 }
 

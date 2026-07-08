@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAuthStore } from "../store/useAuthStore";
+import { useAuthStore, isUserManager } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { AppUserRole } from "../lib/supabase";
@@ -8,28 +8,45 @@ const ROLE_OPTIONS: { value: AppUserRole; label: string; hint: string }[] = [
   {
     value: "master",
     label: "マスター",
-    hint: "すべてのファイル（非公開含む）を閲覧・編集 + ユーザー管理 + 給与・査定の閲覧・編集（master固定はyuho_tn@sho-san.co.jpのみ）",
+    hint: "最上位。すべての組織図ファイル（非公開含む）と給与・査定を閲覧・編集でき、全ユーザーの権限を変更できる唯一のロール。特権管理者・管理者への任命もできる（固定：yuho_tn@sho-san.co.jp）",
   },
   {
     value: "privileged_admin",
     label: "特権管理者",
-    hint: "すべての組織図ファイルを閲覧・編集 + 給与・査定の閲覧・編集（ユーザー権限の変更はできません）",
+    hint: "すべての組織図ファイルを閲覧・編集 + 給与・査定を閲覧・編集 + ユーザー管理（管理者・編集・閲覧まで任命可）。※特権管理者・マスターへの昇格はできない（給与アクセスの付与はマスター専任）",
   },
   {
     value: "admin",
     label: "管理者",
-    hint: "すべての組織図ファイルを閲覧・編集 + ユーザー権限の昇格／降格が可能（給与・査定は対象外）",
+    hint: "すべての組織図ファイルを閲覧・編集 + ユーザー管理（管理者・編集・閲覧まで任命可）。給与・査定にはアクセスできない",
   },
   {
     value: "editor",
     label: "編集",
-    hint: "非公開でない、または明示的に許可されたファイルを閲覧・編集",
+    hint: "非公開でない、または明示的に許可されたファイルのみ閲覧・編集。ユーザー管理・給与にはアクセスできない",
   },
   {
     value: "viewer",
     label: "閲覧",
     hint: "閲覧のみ。編集はできない（初回サインイン時のデフォルト）",
   },
+];
+
+/** Capability matrix rendered as a table in the 権限について card so each
+ *  role's scope is explicit at a glance. Kept in sync with ROLE_OPTIONS
+ *  hints and the RLS in migrations 0011 / 0015 / 0017 / 0021. */
+const CAPABILITY_ROWS: {
+  role: AppUserRole;
+  org: string;
+  users: string;
+  payroll: string;
+  assign: string;
+}[] = [
+  { role: "master", org: "全ファイル編集", users: "○ 全員", payroll: "閲覧・編集", assign: "特権管理者／管理者／編集／閲覧" },
+  { role: "privileged_admin", org: "全ファイル編集", users: "○（管理者以下）", payroll: "閲覧・編集", assign: "管理者／編集／閲覧" },
+  { role: "admin", org: "全ファイル編集", users: "○（管理者以下）", payroll: "×", assign: "管理者／編集／閲覧" },
+  { role: "editor", org: "許可分のみ編集", users: "×", payroll: "×", assign: "—" },
+  { role: "viewer", org: "閲覧のみ", users: "×", payroll: "×", assign: "—" },
 ];
 
 /**
@@ -57,7 +74,10 @@ export function UsersPage() {
   }, [refresh]);
 
   const isMaster = currentUser?.role === "master";
-  const canManage = currentUser?.role === "master" || currentUser?.role === "admin";
+  // 「管理者以上」= master / privileged_admin / admin。DB 側は migration
+  // 0021 の RLS（is_user_admin + WITH CHECK の上限キャップ）が同じ制約を
+  // 二重で担保する。
+  const canManage = isUserManager(currentUser?.role);
 
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) => {
@@ -74,25 +94,32 @@ export function UsersPage() {
     });
   }, [users]);
 
-  /** Admins can manage editors and viewers, but not the master and not
-   *  privileged_admin (special role that only the master can assign).
-   *  Master can manage everyone except themselves (the trigger ensures
-   *  the master row stays as 'master' on every login anyway). */
+  /** Who each operator may edit/remove (containment model, migration 0021):
+   *   • master: everyone except the master row itself (self is also blocked
+   *     below; there is only ever one master).
+   *   • privileged_admin / admin: only rows at 管理者以下 (admin/editor/
+   *     viewer) — they must not touch a master or another privileged_admin,
+   *     which keeps 給与アクセス out of their reach. */
   function canEditUser(target: { email: string; role: AppUserRole }): boolean {
     if (!canManage) return false;
     if (currentUser?.email === target.email) return false;
     if (isMaster) return target.role !== "master";
-    // admin: can't touch master or privileged_admin
-    return target.role === "editor" || target.role === "viewer";
+    // privileged_admin / admin: capped at 管理者以下
+    return (
+      target.role === "admin" ||
+      target.role === "editor" ||
+      target.role === "viewer"
+    );
   }
 
-  /** Roles an admin/master can assign. Master can assign any role except
-   *  re-promote to master (master is fixed to yuho_tn@sho-san.co.jp).
-   *  特権管理者 is master-only because they unlock 給与系 access.
-   *  Admins can only set editor/viewer. */
+  /** Roles an operator may assign. Master can grant anything below master
+   *  (master itself is DB-fixed to yuho_tn@sho-san.co.jp). privileged_admin
+   *  and admin are capped at 管理者以下 — granting 特権管理者/マスター
+   *  (＝給与アクセス) stays master-only. Mirrored by the RLS WITH CHECK. */
   function assignableRoles(): AppUserRole[] {
     if (isMaster) return ["privileged_admin", "admin", "editor", "viewer"];
-    if (currentUser?.role === "admin") return ["editor", "viewer"];
+    if (currentUser?.role === "privileged_admin" || currentUser?.role === "admin")
+      return ["admin", "editor", "viewer"];
     return [];
   }
 
@@ -242,8 +269,39 @@ export function UsersPage() {
           <p className="page__hint" style={{ marginTop: 0, marginBottom: 12 }}>
             ユーザーは <strong>sho-san.co.jp ドメインのGoogleアカウント</strong>
             でサインインすると自動的に「閲覧」権限で登録されます。
-            管理者・マスターは、このページから権限を昇格／降格させてください。
+            <strong>管理者以上（管理者・特権管理者・マスター）</strong>
+            は、このページから権限を昇格／降格させてください。
           </p>
+
+          <div className="card__body--flush" style={{ overflowX: "auto", marginBottom: 16 }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ロール</th>
+                  <th>組織図ファイル</th>
+                  <th>ユーザー管理</th>
+                  <th>給与・査定</th>
+                  <th>任命できる権限</th>
+                </tr>
+              </thead>
+              <tbody>
+                {CAPABILITY_ROWS.map((r) => (
+                  <tr key={r.role}>
+                    <td>
+                      <span className={`usermgr__role usermgr__role--${r.role}`}>
+                        {ROLE_OPTIONS.find((o) => o.value === r.role)?.label ?? r.role}
+                      </span>
+                    </td>
+                    <td>{r.org}</td>
+                    <td>{r.users}</td>
+                    <td>{r.payroll}</td>
+                    <td>{r.assign}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
           <ul className="usermgr__roleHints">
             {ROLE_OPTIONS.map((opt) => (
               <li key={opt.value}>
@@ -251,9 +309,15 @@ export function UsersPage() {
               </li>
             ))}
           </ul>
+          <p className="page__hint" style={{ marginTop: 12 }}>
+            ※ <strong>特権管理者</strong>（給与・査定にアクセスできるロール）
+            と <strong>マスター</strong> への昇格は、給与情報アクセスの拡散を
+            防ぐためマスターのみが行えます。管理者・特権管理者が任命できるのは
+            「管理者」までです。
+          </p>
           {!canManage && (
             <p className="page__hint" style={{ marginTop: 12 }}>
-              権限の変更はマスターまたは管理者のみが行えます。
+              権限の変更はマスター・特権管理者・管理者のみが行えます。
             </p>
           )}
         </div>
