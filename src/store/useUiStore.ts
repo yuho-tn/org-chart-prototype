@@ -25,6 +25,7 @@ export type Section =
   | "org"
   | "employees"
   | "missions"
+  | "survey"
   | "users"
   | "permissions"
   | "salary"
@@ -54,6 +55,8 @@ export type Route =
   | { name: "mission_templates" }
   | { name: "mission_template"; id: string }
   | { name: "mission_sheet"; id: string }
+  // パルスサーベイ 回答画面（chrome 無し・ログイン必須のディープリンク）
+  | { name: "survey" }
   // Payroll
   | { name: "salary" }
   | { name: "grades" }
@@ -75,6 +78,8 @@ export function sectionOfRoute(r: Route): Section {
     case "mission_template":
     case "mission_sheet":
       return "missions";
+    case "survey":
+      return "survey";
     case "users":
       return "users";
     case "permissions":
@@ -110,6 +115,8 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "employees" };
     case "missions":
       return { name: "missions" };
+    case "survey":
+      return { name: "survey" };
     case "users":
       return { name: "users" };
     case "permissions":
@@ -160,6 +167,8 @@ function readRouteFromHash(): Route {
   if (mt) return { name: "mission_template", id: mt[1] };
   const msh = /^#\/missions\/sheet\/([0-9a-f-]+)$/i.exec(h);
   if (msh) return { name: "mission_sheet", id: msh[1] };
+  // パルスサーベイ 回答画面
+  if (h === "#/survey") return { name: "survey" };
   // Payroll routes
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
   if (h === "#/payroll/grades") return { name: "grades" };
@@ -193,6 +202,8 @@ function routeToHash(r: Route): string {
       return `#/missions/templates/${r.id}`;
     case "mission_sheet":
       return `#/missions/sheet/${r.id}`;
+    case "survey":
+      return "#/survey";
     case "salary":
       return "#/payroll";
     case "grades":
