@@ -6707,3 +6707,279 @@ body.is-dragging .dept-card__add-child {
 
 /* ブランドをホームリンク（button）化した際の既定装飾リセット */
 .ghdr__brand { background: none; border: none; cursor: pointer; font: inherit; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * SP（スマートフォン）最適化 ─ 閲覧共有ページ
+ * 全社広報で共有する閲覧用ページ（?v= 組織図ツリー/リスト/配属一覧、
+ * ?a= 人事発令）を狭幅端末で読みやすくする。編集モードの2ペインUIには
+ * 触れない（対象は topbar--viewer / view-tabs / 各閲覧ビュー）。
+ * ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* ── 共有ヘッダー（閲覧モードのトップバー）─────────────────────────
+   * ブランド＋バッジ＋ファイル名＋ボタンが1行に詰まり潰れていた。
+   * 1段目＝ブランド/バッジ/ボタン、2段目＝ファイル名（省略記号）に折る。 */
+  .topbar--viewer {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .topbar--viewer .topbar__brand {
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .topbar--viewer .topbar__badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .topbar--viewer .topbar__spacer { display: none; }
+  .topbar--viewer .btn {
+    margin-left: auto;
+    padding: 5px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  /* ファイル名は2段目に全幅で置き、はみ出しは省略記号で1行に収める。 */
+  .topbar__viewer-version {
+    order: 9;
+    flex: 1 1 100%;
+    min-width: 0;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── ビュータブ：折返さず横スクロール（2段崩れ・重なりを解消）──── */
+  .app--viewer .view-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 12px;
+    gap: 6px;
+  }
+  .app--viewer .view-tabs::-webkit-scrollbar { display: none; }
+  .app--viewer .view-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 6px 12px;
+    height: 30px;
+    font-size: 12.5px;
+  }
+  .app--viewer .view-tabs__spacer { display: none; }
+  .app--viewer .view-tabs .btn { flex-shrink: 0; white-space: nowrap; }
+
+  /* ── 組織図ツリー：ミニマップは画面を食うので隠し、操作系を大きく ── */
+  .app--viewer .react-flow__minimap { display: none; }
+  .app--viewer .react-flow__controls {
+    transform: scale(1.25);
+    transform-origin: bottom left;
+    margin: 12px;
+  }
+
+  /* ── 配属一覧：4列テーブル → カード積み上げ ─────────────────────── */
+  .assignlist__head { padding: 12px 14px 6px; }
+  .assignlist__title { font-size: 15px; }
+  .assignlist__filters { padding: 8px 14px 10px; gap: 8px; }
+  .assignlist__nameInput { width: 100%; }
+  .assignlist .filterpop,
+  .assignlist .filterpop__trigger { width: 100%; }
+  .assignlist .filterpop__trigger { justify-content: space-between; }
+  .assignlist .filterpop__panel { width: min(280px, calc(100vw - 28px)); }
+
+  .assignlist__tableWrap { padding: 12px 14px 20px; }
+  .assignlist__table {
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  .assignlist__table thead { display: none; }
+  .assignlist__table,
+  .assignlist__table tbody,
+  .assignlist__table tr,
+  .assignlist__table td {
+    display: block;
+    width: 100%;
+  }
+  .assignlist__table tr {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-1);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .assignlist__table tbody tr:hover td { background: transparent; }
+  .assignlist__table td {
+    padding: 5px 0 0;
+    border-bottom: none;
+    font-size: 13px;
+  }
+  /* 氏名セル＝カード見出し（下線で本文と区切る） */
+  .assignlist__table td.assignlist__name {
+    padding: 0 0 6px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .assignlist__nameBtn,
+  .assignlist__name > span { font-size: 15px; }
+  /* data-label を各行の小見出しとして頭に出す */
+  .assignlist__table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ── 組織図リスト：部署名を省略せず折返す＋インデントを圧縮 ─────── */
+  .list-view { padding: 10px; }
+  .list-view__paper { padding: 16px 14px; }
+  .list-view__head { flex-direction: column; gap: 4px; }
+  .list-view__title { font-size: 18px; }
+  .lv-card__name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
+  }
+  .lv-card__children { margin-left: 4px; padding-left: 6px; }
+  .lv-card--root > .lv-card__header { font-size: 14px; }
+
+  /* ── 人事発令ペーパー（?a= 共有 / 詳細）────────────────────────── */
+  .sharedann { padding: 12px 8px 48px; }
+  .anndetail--shared { max-width: none; }
+  .anndetail__paper {
+    width: 100%;
+    margin: 0 auto;
+    padding: 22px 16px;
+  }
+  .anndetail__title { font-size: 19px; }
+  .anndetail__period { font-size: 12px; }
+  .annsec { margin: 20px 0; }
+  .annsec__head { font-size: 14px; padding: 8px 12px; }
+  .annsec--sub .annsec__head { font-size: 13px; padding: 6px 10px; }
+  .annrow { font-size: 12.5px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   パルスサーベイ 回答画面（#/survey・chrome 無しルート）
+   ═══════════════════════════════════════════════════════════════════ */
+.pulse {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #eef2ff 0%, var(--bg) 42%);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px 16px 80px;
+}
+.pulse__card {
+  width: 100%;
+  max-width: 560px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.06);
+  padding: 28px 24px 24px;
+}
+.pulse__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+}
+.pulse__brand { font-size: 18px; font-weight: 700; color: var(--text-strong); }
+.pulse__period {
+  font-size: 13px; font-weight: 600; color: var(--primary);
+  background: var(--primary-soft); border-radius: 999px; padding: 2px 10px;
+}
+.pulse__who { margin-left: auto; font-size: 12px; color: var(--text-subtle); }
+
+.pulse__lead { font-size: 14px; color: var(--text-muted); line-height: 1.7; margin: 0 0 20px; }
+.pulse__badge {
+  display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 600;
+  color: var(--ok); background: var(--ok-soft); border-radius: 999px; padding: 2px 8px;
+}
+.pulse__muted { color: var(--text-muted); font-size: 13px; }
+.pulse__error {
+  color: var(--danger); background: var(--danger-soft);
+  border-radius: var(--radius); padding: 12px 14px; font-size: 13px;
+}
+
+.pulse__empty { text-align: center; padding: 28px 8px; }
+.pulse__empty-emoji { font-size: 44px; margin-bottom: 12px; }
+.pulse__empty p { margin: 6px 0; font-size: 14px; color: var(--text); }
+
+.pulse__questions { display: flex; flex-direction: column; gap: 22px; }
+.pulse__q { display: flex; flex-direction: column; gap: 10px; }
+.pulse__q-label { font-size: 15px; font-weight: 600; color: var(--text-strong); line-height: 1.5; }
+.pulse__q-cat {
+  display: inline-block; margin-right: 8px; font-size: 11px; font-weight: 600;
+  color: var(--secondary); background: #f3e8ff; border-radius: 4px; padding: 1px 7px;
+  vertical-align: middle;
+}
+
+.pulse__weather { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.pulse__weather-opt {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 2px; border: 1.5px solid var(--border);
+  border-radius: var(--radius); background: var(--bg-soft);
+  cursor: pointer; transition: all 0.12s ease; -webkit-tap-highlight-color: transparent;
+}
+.pulse__weather-opt:hover { border-color: var(--border-strong); background: var(--panel); }
+.pulse__weather-opt.is-active {
+  border-color: var(--primary); background: var(--primary-soft);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.pulse__weather-emoji { font-size: 26px; line-height: 1; }
+.pulse__weather-txt { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.pulse__weather-opt.is-active .pulse__weather-txt { color: var(--primary-hover); }
+
+.pulse__textarea {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  border: 1.5px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px; font: inherit; font-size: 14px; color: var(--text);
+  background: var(--bg-soft);
+}
+.pulse__textarea:focus { outline: none; border-color: var(--primary); background: var(--panel); }
+
+.pulse__actions {
+  margin-top: 26px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.pulse__btn {
+  font: inherit; font-weight: 600; font-size: 15px; border-radius: var(--radius);
+  padding: 13px 28px; cursor: pointer; border: 1px solid transparent; transition: all 0.12s ease;
+}
+.pulse__btn--primary { background: var(--primary); color: #fff; width: 100%; }
+.pulse__btn--primary:hover:not(:disabled) { background: var(--primary-hover); }
+.pulse__btn--primary:disabled { background: var(--border-strong); cursor: not-allowed; opacity: 0.7; }
+.pulse__btn--ghost {
+  background: var(--panel); color: var(--primary); border-color: var(--border-strong);
+  margin-top: 14px;
+}
+.pulse__hint { font-size: 12px; color: var(--warn); }
+
+.pulse__toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+  background: var(--text-strong); color: #fff; font-size: 13px;
+  padding: 12px 18px; border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  cursor: pointer; max-width: 90vw;
+}
+
+@media (max-width: 480px) {
+  .pulse { padding: 20px 10px 60px; }
+  .pulse__card { padding: 20px 16px; }
+  .pulse__weather-emoji { font-size: 22px; }
+  .pulse__weather-txt { font-size: 10px; }
+}

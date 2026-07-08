@@ -42,6 +42,11 @@ const SharedAnnouncementPage = lazy(() =>
     default: m.SharedAnnouncementPage,
   })),
 );
+// パルスサーベイ 回答画面（#/survey）。ログイン必須だが app シェルを持たない
+// chrome 無しルート — 認証ゲート後に単独描画する。
+const SurveyPage = lazy(() =>
+  import("./components/pulse/SurveyPage").then((m) => ({ default: m.SurveyPage })),
+);
 // P1: 従業員詳細（プロフィール）と権限管理も lazy — 通常の一覧閲覧では
 // ロードさせない。
 const EmployeeDetailPage = lazy(() =>
@@ -500,6 +505,16 @@ export default function App() {
   // splash; after that, route to SignInPage when there's no session.
   if (!authInitialized) return <BootSplash />;
   if (!session) return <SignInPage />;
+
+  // パルスサーベイ 回答画面: ログイン後だが app シェルを持たない専用ルート。
+  // 社員がリマインドリンク（Slack/メール）から直接開く軽量画面。
+  if (route.name === "survey") {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <SurveyPage />
+      </Suspense>
+    );
+  }
 
   // Render the editor shell or a dedicated section page based on the route.
   // SystemSwitcher (Talenthub vs Payroll) sits at the very top; GlobalHeader
