@@ -7,6 +7,7 @@ import ReactFlow, {
   type Node,
   type NodeMouseHandler,
   type ReactFlowInstance,
+  useNodesInitialized,
   useReactFlow,
 } from "reactflow";
 import "reactflow/dist/style.css";
@@ -53,6 +54,7 @@ export function Canvas() {
   const viewOnly = useUiStore((s) => s.viewOnly);
   const employees = useEmployeesStore((s) => s.employees);
   const reactFlow = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
 
   // Person nodes that aren't linked to a row in the employee master are
   // flagged so the editor can warn the user up-front: announcements rely on
@@ -366,10 +368,40 @@ export function Canvas() {
   );
 
   const fitOnceRef = useRef<ReactFlowInstance | null>(null);
+
+  // Fit the whole tree into view once React Flow has measured its nodes.
+  // In viewer mode `nodes` load async and the custom dept nodes are measured
+  // a frame or two after mount, so fitting too early frames a stale, tiny
+  // bounding box and parks the chart off-screen. useNodesInitialized flips
+  // true only after measurement; keying the fit on it (plus the node count,
+  // which changes when the shared version finally loads) fits at the right
+  // moment. minZoom on <ReactFlow> is lowered so the fit can zoom out far
+  // enough to frame a large org on a phone.
+  const nodeCount = laidOutDepts.length + laidOutExecs.length;
   useEffect(() => {
-    fitOnceRef.current?.fitView({ padding: 0.2, duration: 200 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [laidOutDepts.length, laidOutExecs.length]);
+    if (!nodesInitialized || nodeCount === 0) return;
+    reactFlow.fitView({ padding: 0.2, duration: 200 });
+  }, [nodesInitialized, nodeCount, reactFlow]);
+
+  // Re-fit when the viewport changes size (phone rotation, mobile browser
+  // chrome collapsing, or a desktop resize). Without this the one-shot
+  // onInit fit can leave the chart parked off-screen on small screens.
+  useEffect(() => {
+    let raf = 0;
+    function refit() {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() =>
+        fitOnceRef.current?.fitView({ padding: 0.2, duration: 200 }),
+      );
+    }
+    window.addEventListener("resize", refit);
+    window.addEventListener("orientationchange", refit);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", refit);
+      window.removeEventListener("orientationchange", refit);
+    };
+  }, []);
 
   // Tray-originated dept drops anywhere on the canvas pane → place at root.
   const onPaneDragOver = useCallback((e: ReactDragEvent) => {
@@ -438,9 +470,15 @@ export function Canvas() {
       nodes={rfNodes}
       edges={rfEdges}
       nodeTypes={nodeTypes}
+      // Let React Flow perform the initial fit through its own internal path
+      // (it waits for node measurement), which is the most reliable way to
+      // frame the tree on load; the useNodesInitialized effect re-fits after
+      // the async shared version finishes loading in viewer mode.
+      fitView
+      fitViewOptions={{ padding: 0.2, minZoom: 0.1 }}
       onInit={(inst) => {
+        // Keep the instance for the resize/orientation refit handler.
         fitOnceRef.current = inst;
-        inst.fitView({ padding: 0.2 });
       }}
       onNodeClick={onNodeClick}
       onPaneClick={onPaneClick}
@@ -460,6 +498,11 @@ export function Canvas() {
       selectionOnDrag={false}
       zoomOnScroll={false}
       zoomOnPinch
+      // Default minZoom (0.5) can't zoom out far enough to fit a large org
+      // on a narrow (phone) viewport, so fitView clamps and parks the chart
+      // off-screen showing only a fragment. Allow a much smaller zoom so the
+      // whole tree fits; users pinch-zoom back in on the part they want.
+      minZoom={0.1}
       zoomActivationKeyCode={["Meta", "Control"]}
       proOptions={{ hideAttribution: true }}
       defaultEdgeOptions={{ type: "smoothstep", style: { strokeWidth: 1.5 } }}

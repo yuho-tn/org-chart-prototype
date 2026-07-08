@@ -9,10 +9,18 @@ export function parseShareParams(): ShareParams {
   const params = new URLSearchParams(window.location.search);
   const versionId = params.get("v");
   const viewParam = params.get("view") as OrgView | null;
-  const view: OrgView =
-    viewParam === "list" || viewParam === "assignments" || viewParam === "tree"
-      ? viewParam
-      : "tree";
+  // When the sharer picked a view explicitly (?view=), always honor it.
+  // Otherwise default to the tree on desktop, but to the list on phones —
+  // a pan/zoom canvas is unreadable on a narrow screen, whereas the
+  // indented list reads top-to-bottom without gestures. The tree tab is
+  // still one tap away.
+  const explicit =
+    viewParam === "list" || viewParam === "assignments" || viewParam === "tree";
+  const isNarrow =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 640px)").matches;
+  const view: OrgView = explicit ? viewParam! : isNarrow ? "list" : "tree";
   return { versionId, view };
 }
 

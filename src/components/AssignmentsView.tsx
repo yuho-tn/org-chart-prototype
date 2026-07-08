@@ -488,14 +488,14 @@ export function AssignmentsView() {
                       </div>
                     )}
                   </td>
-                  <td>
+                  <td data-label="社員番号">
                     {a.employeeNumber ? (
                       <code>{a.employeeNumber}</code>
                     ) : (
                       <span className="assignlist__muted">未紐付</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="主務">
                     {a.primary ? (
                       <div className="assignlist__cell">
                         <span className="assignlist__path">{a.primary.path}</span>
@@ -510,7 +510,7 @@ export function AssignmentsView() {
                       <span className="assignlist__warn">主務ノード未設定</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="兼務">
                     {a.concurrent.length === 0 ? (
                       <span className="assignlist__muted">—</span>
                     ) : (
