@@ -7110,3 +7110,58 @@ body.is-dragging .dept-card__add-child {
 .pcmt__dept { font-size: 12px; color: var(--text-muted); }
 .pcmt__when { font-size: 11px; color: var(--text-muted); margin-left: auto; }
 .pcmt__body { font-size: 14px; color: var(--text); line-height: 1.7; white-space: pre-wrap; margin: 0; }
+
+/* ── パルス 設定（質問セット/設問/サイクル） ── */
+.padm__section { margin-bottom: 32px; }
+.padm__note { margin: -4px 0 14px; }
+.padm__newrow { display: flex; gap: 10px; margin-bottom: 16px; }
+.padm__input { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text-strong); }
+.padm__newrow .padm__input { flex: 1; }
+.padm__setlist { display: flex; flex-direction: column; gap: 14px; }
+.padm__setcard { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; }
+.padm__setcard--draft { border-left: 4px solid var(--primary); }
+.padm__setcard--archived { opacity: 0.7; }
+.padm__sethead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.padm__setname { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.padm__renamerow { display: flex; gap: 6px; align-items: center; }
+.padm__settitle { font-size: 15px; font-weight: 700; color: var(--text-strong); }
+.padm__ver { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.padm__count { font-size: 12px; color: var(--text-muted); }
+.padm__badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.padm__badge--draft { background: var(--primary-soft); color: var(--primary); }
+.padm__badge--active { background: #e6f6ec; color: #1e8e4e; }
+.padm__badge--archived { background: var(--bg-soft); color: var(--text-muted); }
+.padm__badge--cy-scheduled { background: var(--primary-soft); color: var(--primary); }
+.padm__badge--cy-sent { background: #e6f6ec; color: #1e8e4e; }
+.padm__badge--cy-closed { background: var(--bg-soft); color: var(--text-muted); }
+.padm__setactions { display: flex; gap: 6px; flex-wrap: wrap; }
+.padm__btn--danger { color: #c0392b; border-color: #eecccc; }
+.padm__btn--danger:hover:not(:disabled) { background: #fdecec; }
+.padm__qview { margin: 12px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.padm__qviewitem { display: grid; grid-template-columns: 90px 1fr 90px; gap: 8px; font-size: 13px; padding: 4px 0; border-top: 1px solid var(--border); align-items: center; }
+.padm__qcat { color: var(--text-muted); font-size: 12px; }
+.padm__qlabel { color: var(--text-strong); }
+.padm__qtype { color: var(--text-muted); font-size: 12px; text-align: right; }
+.padm__qeditor { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+.padm__qlist { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 6px; }
+.padm__qrow, .padm__qadd { display: grid; grid-template-columns: 44px 110px 1fr 120px auto; gap: 8px; align-items: center; }
+.padm__qadd { grid-template-columns: 110px 1fr 120px auto; margin-top: 8px; }
+.padm__qrow .padm__input, .padm__qadd .padm__input { width: 100%; }
+.padm__qmove { display: flex; flex-direction: column; gap: 2px; }
+.padm__iconbtn { appearance: none; border: 1px solid var(--border); background: var(--bg); border-radius: 6px; font-size: 10px; line-height: 1; padding: 3px 6px; cursor: pointer; color: var(--text-muted); }
+.padm__iconbtn:hover:not(:disabled) { background: var(--bg-soft); color: var(--text-strong); }
+.padm__iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.padm__cyclenew { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+.padm__cyclenew .palert__field { flex: 1; min-width: 130px; }
+.padm__cyclenew .palert__field span { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.padm__cyclelist { display: flex; flex-direction: column; gap: 8px; }
+.padm__cyclerow { display: grid; grid-template-columns: 120px 72px 1fr auto auto; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; }
+.padm__cyclep { font-weight: 700; color: var(--text-strong); font-size: 14px; }
+.padm__cycleset { font-size: 13px; color: var(--text); }
+.padm__cycledates { font-size: 12px; color: var(--text-muted); }
+
+@media (max-width: 720px) {
+  .padm__qrow, .padm__qadd { grid-template-columns: 1fr; }
+  .padm__qmove { flex-direction: row; }
+  .padm__cyclerow { grid-template-columns: 1fr 1fr; }
+}

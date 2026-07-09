@@ -3,6 +3,24 @@
 
 export type PulseQuestionType = "weather5" | "scale" | "free_text";
 
+export const QUESTION_TYPE_LABEL: Record<PulseQuestionType, string> = {
+  weather5: "天気5段階",
+  scale: "数値スケール",
+  free_text: "自由記述",
+};
+
+export const SET_STATUS_LABEL: Record<string, string> = {
+  draft: "下書き",
+  active: "有効",
+  archived: "アーカイブ",
+};
+
+export const CYCLE_STATUS_LABEL: Record<string, string> = {
+  scheduled: "予定",
+  sent: "受付中",
+  closed: "終了",
+};
+
 /** public.pulse_question_sets */
 export type PulseQuestionSetRow = {
   id: string;

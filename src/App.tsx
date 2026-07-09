@@ -59,6 +59,10 @@ const PulseAlertsPage = lazy(() =>
 const PulseCommentsPage = lazy(() =>
   import("./components/pulse/PulseCommentsPage").then((m) => ({ default: m.PulseCommentsPage })),
 );
+// パルスサーベイ 設定（#/pulse/admin・質問セット/設問/サイクル・admin）。
+const PulseAdminPage = lazy(() =>
+  import("./components/pulse/PulseAdminPage").then((m) => ({ default: m.PulseAdminPage })),
+);
 // P1: 従業員詳細（プロフィール）と権限管理も lazy — 通常の一覧閲覧では
 // ロードさせない。
 const EmployeeDetailPage = lazy(() =>
@@ -619,6 +623,14 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     return (
       <Suspense fallback={<PageLoading />}>
         <PulseCommentsPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse_admin") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseAdminPage />
       </Suspense>
     );
   }
