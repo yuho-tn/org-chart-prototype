@@ -17,11 +17,19 @@ function missingError(message: string | undefined): boolean {
 const MISSING_MSG =
   "パルス集計が見つかりません。supabase/migrations/0021+0023 を適用してください。";
 
+export type PulseSummary = {
+  summary: string;
+  model: string | null;
+  created_at: string;
+  meta: { comment_count?: number; response_count?: number };
+};
+
 type PulseDashState = {
   loaded: boolean;
   loading: boolean;
   error: string | null;
   recomputing: boolean;
+  summarizing: boolean;
 
   cycles: PulseCycleRow[];
   selectedPeriod: string | null;
@@ -30,11 +38,25 @@ type PulseDashState = {
   aggregates: PulseAggregateRow[];
   /** 全 period の total.avg_overall 推移（古い→新しい）。 */
   trend: { period: string; avg: number | null }[];
+  /** 選択中 period の AI 要約（未生成なら null）。 */
+  summary: PulseSummary | null;
 
   loadDashboard: () => Promise<void>;
   selectPeriod: (period: string) => Promise<void>;
   recompute: () => Promise<Result>;
+  generateSummary: () => Promise<Result>;
 };
+
+async function fetchSummary(period: string): Promise<PulseSummary | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("pulse_summaries")
+    .select("summary, model, created_at, meta")
+    .eq("period", period)
+    .maybeSingle();
+  if (error) return null; // 未生成・テーブル未適用は静かに null
+  return (data as PulseSummary) ?? null;
+}
 
 async function fetchAggregates(period: string): Promise<PulseAggregateRow[]> {
   if (!supabase) return [];
@@ -51,10 +73,12 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
   loading: false,
   error: null,
   recomputing: false,
+  summarizing: false,
   cycles: [],
   selectedPeriod: null,
   aggregates: [],
   trend: [],
+  summary: null,
 
   loadDashboard: async () => {
     if (!isSupabaseConfigured || !supabase) {
@@ -87,6 +111,7 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
 
     const period = get().selectedPeriod ?? cycles[0]?.period ?? null;
     let aggregates: PulseAggregateRow[] = [];
+    let summary: PulseSummary | null = null;
     if (period) {
       try {
         aggregates = await fetchAggregates(period);
@@ -94,6 +119,7 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
         set({ loading: false, loaded: true, error: (e as Error).message });
         return;
       }
+      summary = await fetchSummary(period);
     }
 
     set({
@@ -104,6 +130,7 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
       selectedPeriod: period,
       aggregates,
       trend,
+      summary,
     });
   },
 
@@ -112,7 +139,8 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
     set({ selectedPeriod: period, loading: true });
     try {
       const aggregates = await fetchAggregates(period);
-      set({ aggregates, loading: false });
+      const summary = await fetchSummary(period);
+      set({ aggregates, summary, loading: false });
     } catch (e) {
       set({ loading: false, error: (e as Error).message });
     }
@@ -129,6 +157,24 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
       return { ok: false, reason: missingError(error.message) ? MISSING_MSG : error.message };
     }
     await get().loadDashboard();
+    return { ok: true };
+  },
+
+  generateSummary: async () => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    const period = get().selectedPeriod;
+    const cycleId = get().cycles.find((c) => c.period === period)?.id ?? null;
+    if (!cycleId) return { ok: false, reason: "対象サイクルがありません" };
+    set({ summarizing: true });
+    const { data, error } = await supabase.functions.invoke("pulse-summary", {
+      body: { cycle_id: cycleId },
+    });
+    set({ summarizing: false });
+    if (error) {
+      return { ok: false, reason: "要約の生成に失敗しました（Edge Function 未デプロイ、または鍵未設定の可能性）" };
+    }
+    if (data?.error) return { ok: false, reason: String(data.error) };
+    if (period) set({ summary: await fetchSummary(period) });
     return { ok: true };
   },
 }));

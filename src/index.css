@@ -7111,6 +7111,12 @@ body.is-dragging .dept-card__add-child {
 .pcmt__when { font-size: 11px; color: var(--text-muted); margin-left: auto; }
 .pcmt__body { font-size: 14px; color: var(--text); line-height: 1.7; white-space: pre-wrap; margin: 0; }
 
+/* ── パルス AI要約パネル ── */
+.pdash__summary-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.pdash__summary-head .pdash__h2 { margin: 0; }
+.pdash__summary-body { font-size: 14px; color: var(--text); line-height: 1.8; white-space: pre-wrap; }
+.pdash__summary-meta { font-size: 11px; color: var(--text-muted); margin-top: 12px; }
+
 /* ── パルス 設定（質問セット/設問/サイクル） ── */
 .padm__section { margin-bottom: 32px; }
 .padm__note { margin: -4px 0 14px; }

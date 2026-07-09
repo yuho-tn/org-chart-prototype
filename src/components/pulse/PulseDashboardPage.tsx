@@ -20,13 +20,16 @@ export function PulseDashboardPage() {
     loading,
     error,
     recomputing,
+    summarizing,
     cycles,
     selectedPeriod,
     aggregates,
     trend,
+    summary,
     loadDashboard,
     selectPeriod,
     recompute,
+    generateSummary,
   } = usePulseDashStore();
   const [toast, setToast] = useState<string | null>(null);
 
@@ -43,6 +46,12 @@ export function PulseDashboardPage() {
   const onRecompute = async () => {
     const res = await recompute();
     setToast(res.ok ? "集計を更新しました" : res.reason ?? "更新に失敗しました");
+  };
+
+  const onSummarize = async () => {
+    setToast("AI要約を生成中…（10〜20秒）");
+    const res = await generateSummary();
+    setToast(res.ok ? "AI要約を生成しました" : res.reason ?? "要約に失敗しました");
   };
 
   return (
@@ -108,6 +117,31 @@ export function PulseDashboardPage() {
               accent
             />
             <Stat label="回答数" value={`${total.metrics.n}`} sub="件" />
+          </section>
+
+          {/* ── AI要約（Claude・Edge Function） ── */}
+          <section className="pdash__panel pdash__summary">
+            <div className="pdash__summary-head">
+              <h2 className="pdash__h2">AI要約</h2>
+              <button className="pdash__btn" onClick={onSummarize} disabled={summarizing}>
+                {summarizing ? "生成中…" : summary ? "再生成" : "AI要約を生成"}
+              </button>
+            </div>
+            {summary ? (
+              <>
+                <div className="pdash__summary-body">{summary.summary}</div>
+                <p className="pdash__summary-meta">
+                  {summary.model ?? "Claude"}
+                  {summary.meta?.comment_count != null && `・コメント ${summary.meta.comment_count} 件`}
+                  {summary.created_at &&
+                    `・${new Date(summary.created_at).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" })} 生成`}
+                </p>
+              </>
+            ) : (
+              <p className="pdash__muted">
+                未生成です。「AI要約を生成」で集計とコメントから傾向・懸念・推奨アクションを要約します。
+              </p>
+            )}
           </section>
 
           {/* ── 天気分布 ＋ 推移 ── */}
