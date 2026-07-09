@@ -113,3 +113,60 @@ export function periodLabel(period: string): string {
   if (!m) return period;
   return `${m[1]}年${Number(m[2])}月`;
 }
+
+// ── スライス4: アラート一覧＋対応管理 ─────────────────────────────
+
+export type PulseAlertType = "absolute" | "delta" | "custom";
+export type PulseAlertStatus = "open" | "closed";
+export type PulseActionState = "todo" | "doing" | "done";
+
+/** pulse_alert_actions（1アラート=1件・対応管理ループ）。 */
+export type PulseAlertAction = {
+  id: string;
+  assignee_employee_number: string | null;
+  assignee_name: string | null;
+  state: PulseActionState;
+  due_date: string | null;
+  note: string | null;
+  updated_at: string;
+};
+
+/** rpc('pulse_list_alerts') の1行。subject_name は実名非公開なら null。 */
+export type PulseAlertRow = {
+  alert_id: string;
+  employee_number: string;
+  subject_name: string | null;
+  subject_department: string | null;
+  type: PulseAlertType;
+  reason: Record<string, unknown>;
+  status: PulseAlertStatus;
+  created_at: string;
+  action: PulseAlertAction | null;
+};
+
+export const ALERT_TYPE_LABEL: Record<PulseAlertType, string> = {
+  absolute: "低スコア",
+  delta: "急降下",
+  custom: "個別",
+};
+
+export const ACTION_STATE_LABEL: Record<PulseActionState, string> = {
+  todo: "未着手",
+  doing: "対応中",
+  done: "完了",
+};
+
+function fmtNum(v: unknown): string {
+  return typeof v === "number" ? v.toFixed(2) : v == null ? "—" : String(v);
+}
+
+/** アラートの reason jsonb を人間可読な1行に整形。 */
+export function alertReasonSummary(type: PulseAlertType, reason: Record<string, unknown>): string {
+  if (type === "absolute") {
+    return `平均総合 ${fmtNum(reason.overall)}（閾値 ${fmtNum(reason.threshold)} 以下）`;
+  }
+  if (type === "delta") {
+    return `前回比 ${fmtNum(reason.delta)}（${fmtNum(reason.prev_overall)} → ${fmtNum(reason.overall)}）`;
+  }
+  return typeof reason.rule === "string" ? reason.rule : "個別アラート";
+}

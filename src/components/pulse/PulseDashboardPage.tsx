@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { usePulseDashStore } from "../../store/usePulseDashStore";
+import { PulseSubnav } from "./PulseSubnav";
 import {
   WEATHER_SCALE,
   periodLabel,
@@ -68,6 +69,8 @@ export function PulseDashboardPage() {
           </button>
         </div>
       </header>
+
+      <PulseSubnav active="dashboard" />
 
       {!loaded && loading && <p className="pdash__muted">読み込み中…</p>}
       {loaded && error && <p className="pdash__error">{error}</p>}
