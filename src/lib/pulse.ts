@@ -78,6 +78,35 @@ export const WEATHER_SCALE: { score: number; emoji: string; label: string }[] = 
   { score: 1, emoji: "⛈️", label: "荒天" },
 ];
 
+/** public.pulse_monthly_aggregates の metrics jsonb（dimension で内容が変わる）。 */
+export type PulseMetrics = {
+  n: number;
+  masked: boolean;
+  avg_overall?: number;
+  // total 行のみ（0023 で付与）
+  target?: number;
+  response_rate?: number | null;
+  weather_dist?: Record<string, number>; // {"1".."5": 件数}
+  by_category?: Record<string, { avg: number; n: number }>;
+};
+
+/** public.pulse_monthly_aggregates の1行。 */
+export type PulseAggregateRow = {
+  id: string;
+  period: string;
+  dimension: "total" | "department" | "employment_type" | "position_title";
+  dimension_key: string;
+  metrics: PulseMetrics;
+  created_at: string;
+};
+
+export const DIMENSION_LABEL: Record<string, string> = {
+  total: "全社",
+  department: "部署別",
+  employment_type: "雇用形態別",
+  position_title: "役職別",
+};
+
 /** YYYY-MM → "2026年7月"。 */
 export function periodLabel(period: string): string {
   const m = /^(\d{4})-(\d{2})$/.exec(period);

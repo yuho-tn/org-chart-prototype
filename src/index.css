@@ -6983,3 +6983,84 @@ body.is-dragging .dept-card__add-child {
   .pulse__weather-emoji { font-size: 22px; }
   .pulse__weather-txt { font-size: 10px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   パルスサーベイ 管理ダッシュボード（#/pulse）
+   ═══════════════════════════════════════════════════════════════════ */
+.pdash { max-width: 1080px; margin: 0 auto; padding: 24px 20px 80px; }
+.pdash__head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 22px;
+}
+.pdash__title { font-size: 22px; font-weight: 700; color: var(--text-strong); margin: 0; }
+.pdash__sub { font-size: 13px; color: var(--text-muted); margin: 4px 0 0; }
+.pdash__controls { display: flex; gap: 10px; align-items: center; }
+.pdash__select {
+  font: inherit; font-size: 14px; padding: 8px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border-strong); background: var(--panel); color: var(--text);
+}
+.pdash__btn {
+  font: inherit; font-size: 14px; font-weight: 600; padding: 8px 16px;
+  border-radius: var(--radius); border: 1px solid var(--border-strong);
+  background: var(--panel); color: var(--text); cursor: pointer;
+}
+.pdash__btn:hover:not(:disabled) { background: var(--bg-soft); }
+.pdash__btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.pdash__btn--primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.pdash__btn--primary:hover:not(:disabled) { background: var(--primary-hover); }
+
+.pdash__muted { color: var(--text-muted); font-size: 14px; }
+.pdash__error { color: var(--danger); background: var(--danger-soft); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; }
+.pdash__empty { text-align: center; padding: 40px 12px; background: var(--panel); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
+.pdash__empty p { color: var(--text-muted); margin: 0 0 14px; }
+
+.pdash__cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+.pdash__stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; }
+.pdash__stat.is-accent { border-color: var(--primary); background: linear-gradient(180deg, var(--primary-soft) 0%, var(--panel) 60%); }
+.pdash__stat-label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.pdash__stat-value { font-size: 32px; font-weight: 700; color: var(--text-strong); line-height: 1.2; margin-top: 4px; }
+.pdash__stat-sub { font-size: 12px; color: var(--text-subtle); margin-top: 2px; }
+
+.pdash__row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.pdash__panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 14px; }
+.pdash__h2 { font-size: 15px; font-weight: 700; color: var(--text-strong); margin: 0 0 14px; }
+
+/* 天気分布 */
+.pdash__wdist { display: flex; flex-direction: column; gap: 8px; }
+.pdash__wrow { display: grid; grid-template-columns: 84px 1fr 36px; align-items: center; gap: 10px; }
+.pdash__wlabel { font-size: 13px; color: var(--text); }
+.pdash__wbar-track { background: var(--bg-soft); border-radius: 999px; height: 16px; overflow: hidden; }
+.pdash__wbar { height: 100%; border-radius: 999px; min-width: 2px; transition: width 0.3s ease; }
+.pdash__wbar--5 { background: #f59e0b; }
+.pdash__wbar--4 { background: #fbbf24; }
+.pdash__wbar--3 { background: #9ca3af; }
+.pdash__wbar--2 { background: #60a5fa; }
+.pdash__wbar--1 { background: #6366f1; }
+.pdash__wcount { font-size: 13px; color: var(--text-muted); text-align: right; }
+
+/* 汎用バー（カテゴリ / dimension） */
+.pdash__bars { display: flex; flex-direction: column; gap: 9px; }
+.pdash__bar-row { display: grid; grid-template-columns: 140px 1fr 48px; align-items: center; gap: 10px; }
+.pdash__bar-label { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pdash__bar-track { background: var(--bg-soft); border-radius: var(--radius-sm); height: 22px; overflow: hidden; position: relative; }
+.pdash__bar-track--masked { display: flex; align-items: center; padding-left: 10px; }
+.pdash__bar { height: 100%; background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: flex-end; min-width: 30px; transition: width 0.3s ease; }
+.pdash__bar-val { font-size: 11px; font-weight: 700; color: #fff; padding-right: 8px; }
+.pdash__bar-n { font-size: 11px; color: var(--text-subtle); text-align: right; }
+.pdash__masked { font-size: 11px; color: var(--text-subtle); font-style: italic; }
+
+/* 推移スパークライン */
+.pdash__spark { width: 100%; height: auto; }
+.pdash__grid { stroke: var(--border); stroke-width: 1; }
+.pdash__spark-line { stroke: var(--primary); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.pdash__spark-dot { fill: var(--primary); }
+.pdash__spark-x { font-size: 10px; fill: var(--text-subtle); }
+
+.pdash__toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--text-strong); color: #fff; font-size: 13px; padding: 12px 18px; border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,0.2); cursor: pointer; }
+
+@media (max-width: 720px) {
+  .pdash__cards { grid-template-columns: 1fr; }
+  .pdash__row { grid-template-columns: 1fr; }
+  .pdash__bar-row { grid-template-columns: 100px 1fr 40px; }
+  .pdash__wrow { grid-template-columns: 72px 1fr 30px; }
+}

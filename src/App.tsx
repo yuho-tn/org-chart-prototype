@@ -47,6 +47,10 @@ const SharedAnnouncementPage = lazy(() =>
 const SurveyPage = lazy(() =>
   import("./components/pulse/SurveyPage").then((m) => ({ default: m.SurveyPage })),
 );
+// パルスサーベイ 管理ダッシュボード（#/pulse・app シェル内・権限者）。
+const PulseDashboardPage = lazy(() =>
+  import("./components/pulse/PulseDashboardPage").then((m) => ({ default: m.PulseDashboardPage })),
+);
 // P1: 従業員詳細（プロフィール）と権限管理も lazy — 通常の一覧閲覧では
 // ロードさせない。
 const EmployeeDetailPage = lazy(() =>
@@ -583,6 +587,14 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     return (
       <Suspense fallback={<PageLoading />}>
         <MissionsPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseDashboardPage />
       </Suspense>
     );
   }
