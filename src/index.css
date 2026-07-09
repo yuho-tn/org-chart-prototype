@@ -7100,3 +7100,13 @@ body.is-dragging .dept-card__add-child {
 @media (max-width: 720px) {
   .palert__action { grid-template-columns: 1fr; }
 }
+
+/* ── パルス コメント一覧 ── */
+.pcmt__list { display: flex; flex-direction: column; gap: 12px; }
+.pcmt__card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; }
+.pcmt__meta { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.pcmt__author { font-size: 13px; font-weight: 700; color: var(--text-strong); }
+.pcmt__author.is-anon { color: var(--text-muted); font-weight: 600; }
+.pcmt__dept { font-size: 12px; color: var(--text-muted); }
+.pcmt__when { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+.pcmt__body { font-size: 14px; color: var(--text); line-height: 1.7; white-space: pre-wrap; margin: 0; }

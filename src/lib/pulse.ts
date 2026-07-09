@@ -170,3 +170,14 @@ export function alertReasonSummary(type: PulseAlertType, reason: Record<string, 
   }
   return typeof reason.rule === "string" ? reason.rule : "個別アラート";
 }
+
+// ── スライス5: コメント一覧 ───────────────────────────────────────
+
+/** rpc('pulse_list_comments') の1行。author_name は匿名なら null。 */
+export type PulseCommentRow = {
+  response_id: string;
+  author_name: string | null;
+  department: string | null;
+  comment: string;
+  answered_at: string | null;
+};

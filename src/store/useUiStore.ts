@@ -62,6 +62,8 @@ export type Route =
   | { name: "pulse" }
   // パルスサーベイ アラート一覧＋対応管理（section は "pulse" と共通・サブナビ切替）
   | { name: "pulse_alerts" }
+  // パルスサーベイ コメント一覧（section は "pulse" と共通・サブナビ切替）
+  | { name: "pulse_comments" }
   // Payroll
   | { name: "salary" }
   | { name: "grades" }
@@ -87,6 +89,7 @@ export function sectionOfRoute(r: Route): Section {
       return "survey";
     case "pulse":
     case "pulse_alerts":
+    case "pulse_comments":
       return "pulse";
     case "users":
       return "users";
@@ -179,8 +182,9 @@ function readRouteFromHash(): Route {
   if (msh) return { name: "mission_sheet", id: msh[1] };
   // パルスサーベイ 回答画面
   if (h === "#/survey") return { name: "survey" };
-  // パルスサーベイ 管理ダッシュボード / アラート
+  // パルスサーベイ 管理ダッシュボード / アラート / コメント
   if (h === "#/pulse/alerts") return { name: "pulse_alerts" };
+  if (h === "#/pulse/comments") return { name: "pulse_comments" };
   if (h === "#/pulse") return { name: "pulse" };
   // Payroll routes
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
@@ -221,6 +225,8 @@ function routeToHash(r: Route): string {
       return "#/pulse";
     case "pulse_alerts":
       return "#/pulse/alerts";
+    case "pulse_comments":
+      return "#/pulse/comments";
     case "salary":
       return "#/payroll";
     case "grades":

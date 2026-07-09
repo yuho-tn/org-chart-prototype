@@ -5,7 +5,7 @@ import { useUiStore } from "../../store/useUiStore";
  * 「パルス」ヘッダータブ配下で複数ページを切り替える（section は共通 "pulse"）。
  * スライス5でコメントを追加予定。
  */
-export function PulseSubnav({ active }: { active: "dashboard" | "alerts" }) {
+export function PulseSubnav({ active }: { active: "dashboard" | "alerts" | "comments" }) {
   const navigate = useUiStore((s) => s.navigate);
   return (
     <nav className="psub" role="tablist">
@@ -26,6 +26,15 @@ export function PulseSubnav({ active }: { active: "dashboard" | "alerts" }) {
         onClick={() => navigate({ name: "pulse_alerts" })}
       >
         アラート
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={active === "comments"}
+        className={"psub__tab" + (active === "comments" ? " is-active" : "")}
+        onClick={() => navigate({ name: "pulse_comments" })}
+      >
+        コメント
       </button>
     </nav>
   );
