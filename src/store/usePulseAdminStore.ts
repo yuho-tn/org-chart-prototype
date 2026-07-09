@@ -61,6 +61,7 @@ type PulseAdminState = {
   }) => Promise<Result>;
   sendCycle: (id: string) => Promise<Result>;
   closeCycle: (id: string) => Promise<Result>;
+  notifyCycle: (id: string, mode: "broadcast" | "reminder") => Promise<Result>;
 };
 
 export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
@@ -285,5 +286,24 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
     if (error) return { ok: false, reason: guardMessage(error.message) };
     await get().load();
     return { ok: true };
+  },
+
+  notifyCycle: async (id, mode) => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    set({ busy: true });
+    const { data, error } = await supabase.functions.invoke("pulse-notify", {
+      body: { cycle_id: id, mode },
+    });
+    set({ busy: false });
+    if (error) {
+      return {
+        ok: false,
+        reason: "配信に失敗しました（Edge Function 未デプロイ、または Slack/メールの secret 未設定の可能性）",
+      };
+    }
+    if (data?.error) return { ok: false, reason: String(data.error) };
+    const c = data?.counts;
+    const detail = c ? `対象${c.targets}名・Slack ${c.slack_ok}／メール ${c.email_ok}` : "";
+    return { ok: true, reason: detail };
   },
 }));

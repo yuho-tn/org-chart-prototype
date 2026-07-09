@@ -332,7 +332,7 @@ function QRow({
 }
 
 function Cycles({ onToast }: { onToast: (m: string) => void }) {
-  const { sets, cycles, createCycle, sendCycle, closeCycle, busy } = usePulseAdminStore();
+  const { sets, cycles, createCycle, sendCycle, closeCycle, notifyCycle, busy } = usePulseAdminStore();
   const activeSets = sets.filter((s) => s.status === "active");
   const setName = (id: string) => {
     const s = sets.find((x) => x.id === id);
@@ -426,16 +426,40 @@ function Cycles({ onToast }: { onToast: (m: string) => void }) {
                 </button>
               )}
               {c.status === "sent" && (
-                <button
-                  className="pdash__btn"
-                  disabled={busy}
-                  onClick={() => {
-                    if (confirm(`${periodLabel(c.period)} を終了します（以降は回答不可）。よろしいですか？`))
-                      run("終了しました")(closeCycle(c.id));
-                  }}
-                >
-                  終了
-                </button>
+                <>
+                  <button
+                    className="pdash__btn pdash__btn--primary"
+                    disabled={busy}
+                    onClick={() => {
+                      if (confirm(`${periodLabel(c.period)} の一斉送信（Slack DM＋メール）を全在籍者へ実行します。よろしいですか？`))
+                        run("一斉送信を実行しました")(notifyCycle(c.id, "broadcast"));
+                    }}
+                    title="全在籍者へ Slack DM＋メールで案内を送信"
+                  >
+                    一斉送信
+                  </button>
+                  <button
+                    className="pdash__btn"
+                    disabled={busy}
+                    onClick={() => {
+                      if (confirm(`${periodLabel(c.period)} の未回答者へリマインドを送信します。よろしいですか？`))
+                        run("リマインドを送信しました")(notifyCycle(c.id, "reminder"));
+                    }}
+                    title="未回答者のみへリマインド送信"
+                  >
+                    リマインド
+                  </button>
+                  <button
+                    className="pdash__btn"
+                    disabled={busy}
+                    onClick={() => {
+                      if (confirm(`${periodLabel(c.period)} を終了します（以降は回答不可）。よろしいですか？`))
+                        run("終了しました")(closeCycle(c.id));
+                    }}
+                  >
+                    終了
+                  </button>
+                </>
               )}
             </span>
           </div>
