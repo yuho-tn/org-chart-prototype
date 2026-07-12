@@ -6819,6 +6819,27 @@ body.is-dragging .dept-card__add-child {
   margin-left: auto;
 }
 
+/* ── 上長ビュー：過去期チップ（P5③） ── */
+.mission__pastChip {
+  display: inline-block;
+  margin: 1px 4px 1px 0;
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--navy-100);
+  border-radius: 999px;
+  background: var(--navy-50);
+  color: var(--navy-700);
+  cursor: pointer;
+}
+.mission__pastChip:hover {
+  border-color: var(--navy-300);
+  background: var(--navy-100);
+}
+.mission__pastNone {
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+
 /* ── ホーム（TalentHub トップ：機能ハブ＋軽ダッシュボード） ──────────── */
 .home { max-width: 1040px; }
 .home__hero { margin: 4px 0 20px; }
