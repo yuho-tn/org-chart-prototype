@@ -8,9 +8,16 @@ import {
   weatherForScore,
   memberTrend,
   isConsecutiveDecline,
+  alertReasonSummary,
+  ALERT_TYPE_LABEL,
+  ACTION_STATE_LABEL,
+  CARE_KIND_LABEL,
   type PulseMemberSummary,
   type PulseTrend,
   type PulsePersonHistoryRow,
+  type PulseCareKind,
+  type PulseCareLogRow,
+  type PulsePersonAlertRow,
 } from "../../lib/pulse";
 
 /**
@@ -182,10 +189,17 @@ export function PulseMemberDetailPage({ employeeNumber }: { employeeNumber: stri
     personError,
     personEmp,
     personHistory,
+    canCare,
+    careLogs,
+    personAlerts,
+    careSaving,
     loadPerson,
+    addCareLog,
+    deleteCareLog,
   } = usePulseMembersStore();
   const navigate = useUiStore((s) => s.navigate);
   const [name, setName] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     loadPerson(employeeNumber);
@@ -270,10 +284,164 @@ export function PulseMemberDetailPage({ employeeNumber }: { employeeNumber: stri
               </ul>
             )}
           </section>
+
+          {canCare && (
+            <CareTimeline
+              employeeNumber={employeeNumber}
+              careLogs={careLogs}
+              personAlerts={personAlerts}
+              saving={careSaving}
+              onAdd={async (kind, note) => {
+                const res = await addCareLog(employeeNumber, kind, note);
+                setToast(res.ok ? "対応ログを記録しました" : res.reason ?? "記録に失敗しました");
+                return res.ok;
+              }}
+              onDelete={async (id) => {
+                if (!window.confirm("この対応ログを削除しますか？")) return;
+                const res = await deleteCareLog(employeeNumber, id);
+                if (!res.ok) setToast(res.reason ?? "削除に失敗しました");
+              }}
+            />
+          )}
         </>
+      )}
+
+      {toast && (
+        <div className="pdash__toast" onClick={() => setToast(null)}>
+          {toast}
+        </div>
       )}
     </main>
   );
+}
+
+// ── P4-③: 対応・面談ログ（アラート対応と時系列マージ） ──────────────
+
+type TimelineItem =
+  | { kind: "care"; at: string; care: PulseCareLogRow }
+  | { kind: "alert"; at: string; alert: PulsePersonAlertRow };
+
+function CareTimeline({
+  employeeNumber,
+  careLogs,
+  personAlerts,
+  saving,
+  onAdd,
+  onDelete,
+}: {
+  employeeNumber: string;
+  careLogs: PulseCareLogRow[];
+  personAlerts: PulsePersonAlertRow[];
+  saving: boolean;
+  onAdd: (kind: PulseCareKind, note: string) => Promise<boolean>;
+  onDelete: (id: string) => void;
+}) {
+  const [kind, setKind] = useState<PulseCareKind>("interview");
+  const [note, setNote] = useState("");
+
+  const items: TimelineItem[] = [
+    ...careLogs.map((c) => ({ kind: "care" as const, at: c.created_at, care: c })),
+    ...personAlerts.map((a) => ({ kind: "alert" as const, at: a.created_at, alert: a })),
+  ].sort((x, y) => (x.at < y.at ? 1 : -1));
+
+  const submit = async () => {
+    if (note.trim() === "") return;
+    const ok = await onAdd(kind, note.trim());
+    if (ok) setNote("");
+  };
+
+  return (
+    <section className="pdash__panel" data-emp={employeeNumber}>
+      <h2 className="pdash__h2">対応・面談ログ</h2>
+
+      <div className="pcare__form">
+        <select
+          className="pcare__kind"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as PulseCareKind)}
+        >
+          {(Object.keys(CARE_KIND_LABEL) as PulseCareKind[]).map((k) => (
+            <option key={k} value={k}>
+              {CARE_KIND_LABEL[k]}
+            </option>
+          ))}
+        </select>
+        <textarea
+          className="pcare__note"
+          rows={2}
+          placeholder="面談・声かけの内容を記録（アラート管理権限者のみ閲覧）"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        <button
+          className="pdash__btn pdash__btn--primary"
+          disabled={saving || note.trim() === ""}
+          onClick={submit}
+        >
+          {saving ? "記録中…" : "記録する"}
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="pdash__muted">対応履歴はまだありません</p>
+      ) : (
+        <ul className="pcare__list">
+          {items.map((it) =>
+            it.kind === "care" ? (
+              <li key={`c-${it.care.id}`} className="pcare__item pcare__item--care">
+                <div className="pcare__meta">
+                  <span className="pcare__badge">{CARE_KIND_LABEL[it.care.kind]}</span>
+                  <span className="pcare__who">
+                    {it.care.author_name ?? it.care.author_email}
+                  </span>
+                  <span className="pcare__at">{fmtDateTime(it.care.created_at)}</span>
+                  <button
+                    className="pcare__del"
+                    title="削除"
+                    onClick={() => onDelete(it.care.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="pcare__body">{it.care.note}</p>
+              </li>
+            ) : (
+              <li key={`a-${it.alert.alert_id}`} className="pcare__item pcare__item--alert">
+                <div className="pcare__meta">
+                  <span className="pcare__badge pcare__badge--alert">
+                    アラート（{ALERT_TYPE_LABEL[it.alert.type]}）
+                  </span>
+                  <span className="pcare__who">{periodLabel(it.alert.period)}</span>
+                  <span className="pcare__at">{fmtDateTime(it.alert.created_at)}</span>
+                  <span
+                    className={
+                      "pcare__status" + (it.alert.status === "open" ? " is-open" : "")
+                    }
+                  >
+                    {it.alert.status === "open" ? "対応中" : "クローズ"}
+                  </span>
+                </div>
+                <p className="pcare__body">
+                  {alertReasonSummary(it.alert.type, it.alert.reason)}
+                  {it.alert.action && (
+                    <span className="pcare__action">
+                      ／対応: {ACTION_STATE_LABEL[it.alert.action.state]}
+                      {it.alert.action.assignee_name && `（${it.alert.action.assignee_name}）`}
+                      {it.alert.action.note && ` — ${it.alert.action.note}`}
+                    </span>
+                  )}
+                </p>
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" });
 }
 
 /** 個人の総合スコア推移チャート（ダッシュボード Trend と同型・依存なし）。 */

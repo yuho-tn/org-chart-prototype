@@ -17,7 +17,7 @@ const TABS: { id: ReviewsTab; label: string; route: Parameters<ReturnType<typeof
 export function ReviewsSubnav({ active }: { active: ReviewsTab }) {
   const navigate = useUiStore((s) => s.navigate);
   return (
-    <nav className="psub" role="tablist">
+    <nav className="psub psub--scroll" role="tablist">
       {TABS.map((t) => (
         <button
           key={t.id}

@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import type { PulseMemberSummary, PulsePersonHistoryRow } from "../lib/pulse";
+import type {
+  PulseMemberSummary,
+  PulsePersonHistoryRow,
+  PulseCareLogRow,
+  PulsePersonAlertRow,
+  PulseCareKind,
+} from "../lib/pulse";
 
 /**
  * P4-①: パルス メンバー（個人別回答推移）用ストア（#/pulse/members）。
@@ -34,10 +40,45 @@ type PulseMembersState = {
   personEmp: string | null;
   personHistory: PulsePersonHistoryRow[];
 
+  /** P4-③: 対応・面談ログ（can_manage_alert が無いユーザーは canCare=false）。 */
+  canCare: boolean;
+  careLogs: PulseCareLogRow[];
+  personAlerts: PulsePersonAlertRow[];
+  careSaving: boolean;
+
   checkRealname: () => Promise<void>;
   loadMembers: () => Promise<void>;
   loadPerson: (employeeNumber: string) => Promise<void>;
+  addCareLog: (
+    employeeNumber: string,
+    kind: PulseCareKind,
+    note: string,
+  ) => Promise<{ ok: boolean; reason?: string }>;
+  deleteCareLog: (
+    employeeNumber: string,
+    id: string,
+  ) => Promise<{ ok: boolean; reason?: string }>;
 };
+
+/** 対応ログ＋個人アラートを取得（権限なしは canCare=false で静かに空）。 */
+async function fetchCareData(
+  employeeNumber: string,
+): Promise<{ canCare: boolean; careLogs: PulseCareLogRow[]; personAlerts: PulsePersonAlertRow[] }> {
+  if (!supabase) return { canCare: false, careLogs: [], personAlerts: [] };
+  const [logsRes, alertsRes] = await Promise.all([
+    supabase.rpc("pulse_list_care_logs", { p_employee_number: employeeNumber }),
+    supabase.rpc("pulse_person_alerts", { p_employee_number: employeeNumber }),
+  ]);
+  if (logsRes.error) {
+    // permission denied / migration 未適用 → 対応ログ UI 自体を出さない
+    return { canCare: false, careLogs: [], personAlerts: [] };
+  }
+  return {
+    canCare: true,
+    careLogs: (logsRes.data ?? []) as PulseCareLogRow[],
+    personAlerts: alertsRes.error ? [] : ((alertsRes.data ?? []) as PulsePersonAlertRow[]),
+  };
+}
 
 export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
   canViewRealname: null,
@@ -49,6 +90,10 @@ export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
   personError: null,
   personEmp: null,
   personHistory: [],
+  canCare: false,
+  careLogs: [],
+  personAlerts: [],
+  careSaving: false,
 
   checkRealname: async () => {
     if (get().canViewRealname !== null) return;
@@ -97,24 +142,56 @@ export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
       personError: null,
       personEmp: employeeNumber,
       personHistory: [],
+      careLogs: [],
+      personAlerts: [],
     });
-    const { data, error } = await supabase.rpc("pulse_person_history", {
-      p_employee_number: employeeNumber,
-    });
-    if (error) {
+    const [historyRes, care] = await Promise.all([
+      supabase.rpc("pulse_person_history", { p_employee_number: employeeNumber }),
+      fetchCareData(employeeNumber),
+    ]);
+    if (historyRes.error) {
       set({
         personLoading: false,
-        personError: isDenied(error.message)
+        personError: isDenied(historyRes.error.message)
           ? DENIED_MSG
-          : missingError(error.message)
+          : missingError(historyRes.error.message)
             ? MISSING_MSG
-            : error.message,
+            : historyRes.error.message,
       });
       return;
     }
     set({
       personLoading: false,
-      personHistory: (data ?? []) as PulsePersonHistoryRow[],
+      personHistory: (historyRes.data ?? []) as PulsePersonHistoryRow[],
+      canCare: care.canCare,
+      careLogs: care.careLogs,
+      personAlerts: care.personAlerts,
     });
+  },
+
+  addCareLog: async (employeeNumber, kind, note) => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    set({ careSaving: true });
+    const { error } = await supabase.rpc("pulse_add_care_log", {
+      p_employee_number: employeeNumber,
+      p_kind: kind,
+      p_note: note,
+    });
+    if (error) {
+      set({ careSaving: false });
+      return { ok: false, reason: error.message };
+    }
+    const care = await fetchCareData(employeeNumber);
+    set({ careSaving: false, careLogs: care.careLogs, personAlerts: care.personAlerts });
+    return { ok: true };
+  },
+
+  deleteCareLog: async (employeeNumber, id) => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    const { error } = await supabase.rpc("pulse_delete_care_log", { p_id: id });
+    if (error) return { ok: false, reason: error.message };
+    const care = await fetchCareData(employeeNumber);
+    set({ careLogs: care.careLogs, personAlerts: care.personAlerts });
+    return { ok: true };
   },
 }));

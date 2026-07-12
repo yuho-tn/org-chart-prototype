@@ -235,6 +235,37 @@ export type PulsePersonHistoryRow = {
   answered_at: string | null;
 };
 
+// ── P4-③: 人起点の対応・面談ログ ─────────────────────────────────
+
+export type PulseCareKind = "interview" | "outreach" | "other";
+
+export const CARE_KIND_LABEL: Record<PulseCareKind, string> = {
+  interview: "面談",
+  outreach: "声かけ",
+  other: "その他",
+};
+
+/** rpc('pulse_list_care_logs') の1行（新→旧）。 */
+export type PulseCareLogRow = {
+  id: string;
+  kind: PulseCareKind;
+  note: string;
+  author_email: string;
+  author_name: string | null;
+  created_at: string;
+};
+
+/** rpc('pulse_person_alerts') の1行（新→旧）。 */
+export type PulsePersonAlertRow = {
+  alert_id: string;
+  period: string;
+  type: PulseAlertType;
+  reason: Record<string, unknown>;
+  status: PulseAlertStatus;
+  created_at: string;
+  action: PulseAlertAction | null;
+};
+
 /** スコア(1..5)に最も近い天気段階を返す。null は undefined。 */
 export function weatherForScore(score: number | null | undefined) {
   if (score == null) return undefined;
