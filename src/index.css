@@ -6072,12 +6072,12 @@ body.is-dragging .dept-card__add-child {
   border: 1px solid var(--border);
 }
 .mission__stagebadge--goal_submitted {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 .mission__stagebadge--goal_confirmed {
-  background: #DCE6F5;
-  color: #122A52;
+  background: var(--navy-100);
+  color: var(--navy-800);
 }
 .mission__stagebadge--mid_done {
   background: #e0e7ff;
@@ -6088,8 +6088,8 @@ body.is-dragging .dept-card__add-child {
   color: #9d174d;
 }
 .mission__stagebadge--assessed {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--ok-soft);
+  color: var(--ok);
 }
 
 /* テンプレのステータスバッジ */
@@ -6106,12 +6106,12 @@ body.is-dragging .dept-card__add-child {
   border: 1px solid var(--border);
 }
 .mission__statusbadge--published {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--ok-soft);
+  color: var(--ok);
 }
 .mission__statusbadge--archived {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--bg-soft);
+  color: var(--text-muted);
 }
 
 /* ── 締切バナー ── */
@@ -6838,6 +6838,67 @@ body.is-dragging .dept-card__add-child {
 .mission__pastNone {
   color: var(--text-subtle);
   font-size: 11px;
+}
+
+/* ── 記入進捗インジケータ（P5④） ── */
+.mission__progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  max-width: 720px;
+}
+.mission__progressBar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--navy-50);
+  overflow: hidden;
+}
+.mission__progressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 0.25s ease;
+}
+.mission__progressLabel {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── ミッションのスマホ最適化（P5④） ── */
+@media (max-width: 640px) {
+  .mission__answerInput,
+  .mission__kpi,
+  .mission__progress {
+    max-width: 100%;
+  }
+  .mission__answerRow {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .mission__savestate {
+    align-self: flex-end;
+  }
+  .mission__scaleBtn {
+    min-width: 52px;
+    min-height: 40px; /* タッチターゲット */
+  }
+  .mission__credoRow {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .mission__card--current,
+  .mission__myTimeline {
+    max-width: 100%;
+  }
+  .mission__timelineItem .btn {
+    margin-left: 0;
+  }
 }
 
 /* ── ホーム（TalentHub トップ：機能ハブ＋軽ダッシュボード） ──────────── */

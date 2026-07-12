@@ -118,6 +118,49 @@ export function MissionSheetPage({ id }: { id: string }) {
     can("mission", "evaluate_any");
   const isSelf = !!me && !!sheet && sheet.employee_number === me;
 
+  // 現在のステージで自分が記入できる設問の記入進捗（P5④ インジケータ）。
+  // mid_done の kpi_goal / credo_eval（phase=goal）は入力窓が期末系フィールド
+  // なので、記入済み判定もそちら（実績・期末評価）を基準にする。
+  const progress = useMemo(() => {
+    if (!template || !sheet || sheet.stage === "assessed") return null;
+    const filledNow = (
+      q: MissionQuestion,
+      role: MissionRespondent,
+      value: AnswerValue | undefined,
+    ): boolean => {
+      if (!value) return false;
+      if (sheet.stage === "mid_done" && questionPhase(q) === "goal") {
+        if (q.type === "kpi_goal") {
+          return role === "evaluator"
+            ? value.achievement_rate != null
+            : value.actual_value != null;
+        }
+        if (q.type === "credo_eval") return Boolean(value.final_eval?.trim());
+      }
+      return isAnswerFilled(q, value);
+    };
+    let total = 0;
+    let filled = 0;
+    for (const sec of template.definition.sections) {
+      for (const q of sec.questions) {
+        if (q.type === "heading") continue;
+        const resp = questionRespondent(q);
+        const roles: MissionRespondent[] =
+          resp === "both" ? ["self", "evaluator"] : [resp];
+        for (const role of roles) {
+          if (!canWriteAnswerClient(q, role, sheet, me, isEvaluator, canManage)) {
+            continue;
+          }
+          total += 1;
+          if (filledNow(q, role, findAnswer(answers, q.id, role)?.value)) {
+            filled += 1;
+          }
+        }
+      }
+    }
+    return total > 0 ? { total, filled } : null;
+  }, [template, sheet, answers, me, isEvaluator, canManage]);
+
   // 設問ごとの保存状態（answerKey → saving/saved/error）
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   // required 未記入で提出しようとした時の警告リスト
@@ -312,6 +355,21 @@ export function MissionSheetPage({ id }: { id: string }) {
 
       <StageProgress stage={stage} />
       <DeadlineBanner template={template} stage={stage} />
+
+      {progress && (
+        <div className="mission__progress" role="status">
+          <div className="mission__progressBar" aria-hidden="true">
+            <div
+              className="mission__progressFill"
+              style={{ width: `${Math.round((progress.filled / progress.total) * 100)}%` }}
+            />
+          </div>
+          <span className="mission__progressLabel">
+            あなたの記入進捗 {progress.filled}/{progress.total}
+            {progress.filled >= progress.total && " ✓"}
+          </span>
+        </div>
+      )}
 
       {missingLabels.length > 0 && (
         <div className="mission__warnbox">
@@ -805,6 +863,14 @@ function TextField({
     setSyncedSaved(saved);
     if (!focused) setText(saved);
   }
+  // debounce 自動保存（P5④）: 入力が1.2秒止まったら blur を待たず保存する。
+  // blur 時は focused=false でクリーンアップが走り、二重保存しない。
+  useEffect(() => {
+    if (!focused || text === saved) return;
+    const timer = setTimeout(() => onSave({ text }), 1200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, focused, saved]);
   function handleBlur() {
     setFocused(false);
     if (text === saved) return; // 変更なしなら保存しない
