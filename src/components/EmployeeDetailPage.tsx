@@ -145,7 +145,7 @@ export function EmployeeDetailPage({ num }: { num: string }) {
   // ── データロード: 表示時 fetch ＋ フォーカス時再検証（ポーリングなし） ──
   const reload = useCallback(() => {
     if (employees.length === 0) refreshEmployees();
-    refreshProfiles();
+    refreshProfiles({ silent: true });
     // 権限がある時のみ機密層を fetch（RLS 拒否/0行は store 側で静かに無視）
     fetchConfidential(num);
   }, [employees.length, refreshEmployees, refreshProfiles, fetchConfidential, num]);

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase, type EmployeeRow } from "../lib/supabase";
 import { parseCsv, pick, normalizeDate } from "../lib/csv";
 import { STORAGE_KEYS } from "../lib/storageKeys";
+import { fetchWithRetry } from "../lib/query";
 
 const SHEET_URL_KEY = STORAGE_KEYS.sheetCsvUrl;
 
@@ -75,7 +76,9 @@ type EmployeesState = {
   /** Optional published-CSV URL (Google Sheets "Publish to web" output). */
   sheetCsvUrl: string;
 
-  refresh: () => Promise<void>;
+  /** silent: 手元に既にデータがある時はスピナーを出さず裏で再検証する
+   *  （フォーカス時再検証用。初回ロードは常に loading を立てる）。 */
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   /** Insert or upsert one employee record. */
   upsert: (row: Partial<EmployeeRow> & { employee_number: string }) => Promise<{ ok: boolean; reason?: string }>;
   remove: (employeeNumber: string) => Promise<boolean>;
@@ -140,25 +143,35 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
   error: null,
   sheetCsvUrl: readStoredUrl(),
 
-  refresh: async () => {
+  refresh: async (opts) => {
     if (!supabase) return;
-    set({ loading: true, error: null });
-    const { data, error } = await supabase
-      .from("employees")
-      .select("*")
-      .order("hired_at", { ascending: false, nullsFirst: false });
-    if (error) {
-      const isMissing = /relation .*employees.* does not exist/i.test(error.message);
-      set({
-        loading: false,
-        error: isMissing
-          ? "従業員テーブルが見つかりません。supabase/migrations/0002_employees.sql をSQLエディタで実行してください。"
-          : error.message,
-        employees: [],
-      });
-      return;
+    const sb = supabase;
+    const silent = Boolean(opts?.silent) && get().employees.length > 0;
+    if (!silent) set({ loading: true, error: null });
+    try {
+      const { data, error } = await fetchWithRetry(() =>
+        sb
+          .from("employees")
+          .select("*")
+          .order("hired_at", { ascending: false, nullsFirst: false }),
+      );
+      if (error) {
+        const isMissing = /relation .*employees.* does not exist/i.test(error.message);
+        set({
+          loading: false,
+          error: isMissing
+            ? "従業員テーブルが見つかりません。supabase/migrations/0002_employees.sql をSQLエディタで実行してください。"
+            : error.message,
+          // silent 再検証の失敗では手元のデータを消さない
+          ...(silent ? {} : { employees: [] }),
+        });
+        return;
+      }
+      set({ loading: false, employees: (data ?? []) as EmployeeRow[], error: null });
+    } catch (e) {
+      // タイムアウト／ネットワーク断（リトライ尽き）。silent 時はデータ温存。
+      set({ loading: false, error: (e as Error).message });
     }
-    set({ loading: false, employees: (data ?? []) as EmployeeRow[], error: null });
   },
 
   upsert: async (row) => {

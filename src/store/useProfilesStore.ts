@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { fetchWithRetry } from "../lib/query";
 import { useAuthStore, isUserManager } from "./useAuthStore";
 import { useEmployeesStore } from "./useEmployeesStore";
 import {
@@ -50,8 +51,9 @@ type ProfilesState = {
   /** path → 発行時刻(ms)。photoUrls の鮮度判定用。 */
   photoUrlIssuedAt: Record<string, number>;
 
-  /** プロフィール一覧＋権限マスター（levels / permissions / grants）をロード。 */
-  refresh: () => Promise<void>;
+  /** プロフィール一覧＋権限マスター（levels / permissions / grants）をロード。
+   *  silent: ロード済みならスピナーを出さず裏で再検証（フォーカス時再検証用）。 */
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   /** 機密層を1件 fetch。権限が無い場合（RLS 403 / 0行）は静かに無視。 */
   fetchConfidential: (employeeNumber: string) => Promise<void>;
   /** 未取得の signed URL をまとめて発行してキャッシュに足す。 */
@@ -115,18 +117,27 @@ export const useProfilesStore = create<ProfilesState>((set, get) => ({
   photoUrls: {},
   photoUrlIssuedAt: {},
 
-  refresh: async () => {
+  refresh: async (opts) => {
     if (!isSupabaseConfigured || !supabase) {
       set({ loaded: true });
       return;
     }
-    set({ loading: true, error: null });
-    const [pRes, lRes, mRes, gRes] = await Promise.all([
-      supabase.from("employee_profiles").select("*"),
-      supabase.from("position_levels").select("*"),
-      supabase.from("module_permissions").select("*"),
-      supabase.from("permission_grants").select("*"),
-    ]);
+    const sb = supabase;
+    const silent = Boolean(opts?.silent) && get().loaded;
+    if (!silent) set({ loading: true, error: null });
+    let pRes, lRes, mRes, gRes;
+    try {
+      [pRes, lRes, mRes, gRes] = await Promise.all([
+        fetchWithRetry(() => sb.from("employee_profiles").select("*")),
+        fetchWithRetry(() => sb.from("position_levels").select("*")),
+        fetchWithRetry(() => sb.from("module_permissions").select("*")),
+        fetchWithRetry(() => sb.from("permission_grants").select("*")),
+      ]);
+    } catch (e) {
+      // タイムアウト／ネットワーク断（リトライ尽き）。silent 時はデータ温存。
+      set({ loading: false, loaded: true, error: (e as Error).message });
+      return;
+    }
     if (pRes.error || lRes.error || mRes.error || gRes.error) {
       const err = pRes.error ?? lRes.error ?? mRes.error ?? gRes.error;
       const isMissing = err && /does not exist|could not find the table/i.test(err.message);

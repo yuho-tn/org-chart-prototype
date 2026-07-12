@@ -7171,3 +7171,35 @@ body.is-dragging .dept-card__add-child {
   .padm__qmove { flex-direction: row; }
   .padm__cyclerow { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── P0-1: ローディングスケルトン＋読込エラーバナー ─────────────────── */
+.skl {
+  display: inline-block;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg-soft) 25%, var(--border) 50%, var(--bg-soft) 75%);
+  background-size: 200% 100%;
+  animation: skl-shimmer 1.2s ease-in-out infinite;
+}
+.skl--text {
+  height: 12px;
+  width: 100%;
+}
+@keyframes skl-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.loaderr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.loaderr__msg {
+  flex: 1;
+  min-width: 0;
+}

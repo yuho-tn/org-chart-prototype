@@ -6,6 +6,7 @@ import { useProfilesStore } from "../store/useProfilesStore";
 import { useUiStore } from "../store/useUiStore";
 import { employeeName, type EmployeeRow } from "../lib/supabase";
 import { avatarPathOf } from "../lib/profile";
+import { useRevalidateOnFocus } from "../lib/useRevalidateOnFocus";
 import type { ImportSummary } from "../store/useEmployeesStore";
 
 const PAGE_SIZE = 50;
@@ -83,6 +84,13 @@ export function EmployeesPage() {
     refresh();
     refreshProfiles();
   }, [refresh, refreshProfiles]);
+
+  // P0-1: タブ復帰・フォーカス時に裏で再検証（初回ロードのスタックや
+  // 長時間放置後の古いデータを自動回復。silent なのでスピナーは出ない）
+  useRevalidateOnFocus(() => {
+    refresh({ silent: true });
+    refreshProfiles({ silent: true });
+  });
 
   useEffect(() => {
     setUrlDraft(sheetCsvUrl);
@@ -310,7 +318,20 @@ export function EmployeesPage() {
         </div>
       </div>
 
-      {error && <p className="versions__error">{error}</p>}
+      {error && (
+        <div className="loaderr" role="alert">
+          <span className="loaderr__msg">⚠ {error}</span>
+          <button
+            className="btn btn--xs"
+            onClick={() => {
+              refresh();
+              refreshProfiles();
+            }}
+          >
+            再読み込み
+          </button>
+        </div>
+      )}
 
       {showImporter && isMaster && (
         <fieldset className="empmgr__import">
@@ -482,7 +503,20 @@ export function EmployeesPage() {
 
       {viewMode === "gallery" && (
         <div className="emppage__galleryWrap">
-          {loading && <p className="usermgr__empty">読み込み中…</p>}
+          {loading && (
+            <div className="emppage__gallery" aria-hidden>
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={i} className="empcard">
+                  <span className="empcard__photo skl" />
+                  <span className="empcard__body">
+                    <span className="skl skl--text" style={{ width: "60%" }} />
+                    <span className="skl skl--text" style={{ width: "85%" }} />
+                    <span className="skl skl--text" style={{ width: "45%" }} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           {!loading && filtered.length === 0 && (
             <p className="usermgr__empty">
               {employees.length === 0
@@ -555,11 +589,16 @@ export function EmployeesPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={10} className="usermgr__empty">読み込み中…</td>
-              </tr>
-            )}
+            {loading &&
+              Array.from({ length: 8 }, (_, i) => (
+                <tr key={`skl-${i}`} aria-hidden>
+                  {Array.from({ length: 10 }, (_, j) => (
+                    <td key={j}>
+                      <span className="skl skl--text" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
             {!loading && editing === "__new__" && (
               <EditableRow
                 draft={draft}
