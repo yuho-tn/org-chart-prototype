@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { usePulseCommentsStore } from "../../store/usePulseCommentsStore";
 import { PulseSubnav } from "./PulseSubnav";
 import { periodLabel, type PulseCommentRow } from "../../lib/pulse";
+import { buildCsv, downloadCsv } from "../../lib/pulseCsv";
 
 /**
  * パルスサーベイ コメント一覧（#/pulse/comments）。
@@ -35,6 +36,25 @@ export function PulseCommentsPage() {
               </option>
             ))}
           </select>
+          <button
+            className="pdash__btn"
+            disabled={comments.length === 0}
+            onClick={() => {
+              // 表示中と同じマスク通過データのみ（匿名は「匿名」のまま出力）
+              const csv = buildCsv(
+                ["投稿者", "部署", "コメント", "回答日時"],
+                comments.map((c) => [
+                  c.author_name ?? "匿名",
+                  c.department ?? "",
+                  c.comment,
+                  c.answered_at ?? "",
+                ]),
+              );
+              downloadCsv(`pulse_comments_${selectedPeriod ?? "all"}.csv`, csv);
+            }}
+          >
+            CSVダウンロード
+          </button>
         </div>
       </header>
 

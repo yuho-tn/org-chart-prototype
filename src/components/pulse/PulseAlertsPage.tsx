@@ -9,6 +9,7 @@ import {
   type PulseAlertRow,
   type PulseActionState,
 } from "../../lib/pulse";
+import { buildCsv, downloadCsv } from "../../lib/pulseCsv";
 
 /**
  * パルスサーベイ アラート一覧＋対応管理（#/pulse/alerts）。
@@ -63,6 +64,31 @@ export function PulseAlertsPage() {
           </select>
           <button className="pdash__btn" onClick={onReevaluate} disabled={evaluating || !selectedPeriod}>
             {evaluating ? "判定中…" : "アラート再判定"}
+          </button>
+          <button
+            className="pdash__btn"
+            disabled={alerts.length === 0}
+            onClick={() => {
+              // 表示中と同じマスク通過データのみ（実名非公開は空欄のまま出力）
+              const csv = buildCsv(
+                ["氏名", "部署", "種別", "内容", "状態", "検知日時", "対応状態", "対応担当", "対応期日", "対応メモ"],
+                alerts.map((a) => [
+                  a.subject_name ?? "",
+                  a.subject_department ?? "",
+                  ALERT_TYPE_LABEL[a.type],
+                  alertReasonSummary(a.type, a.reason),
+                  a.status === "open" ? "オープン" : "クローズ",
+                  a.created_at,
+                  a.action ? ACTION_STATE_LABEL[a.action.state] : "",
+                  a.action?.assignee_name ?? "",
+                  a.action?.due_date ?? "",
+                  a.action?.note ?? "",
+                ]),
+              );
+              downloadCsv(`pulse_alerts_${selectedPeriod ?? "all"}.csv`, csv);
+            }}
+          >
+            CSVダウンロード
           </button>
         </div>
       </header>

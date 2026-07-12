@@ -7,6 +7,7 @@ import {
   DIMENSION_LABEL,
   type PulseAggregateRow,
 } from "../../lib/pulse";
+import { buildCsv, downloadCsv } from "../../lib/pulseCsv";
 
 /**
  * パルスサーベイ 管理ダッシュボード（#/pulse・app シェル内タブ）。
@@ -75,6 +76,36 @@ export function PulseDashboardPage() {
           </select>
           <button className="pdash__btn" onClick={onRecompute} disabled={recomputing || !selectedPeriod}>
             {recomputing ? "集計中…" : "集計を更新"}
+          </button>
+          <button
+            className="pdash__btn"
+            disabled={aggregates.length === 0}
+            onClick={() => {
+              // 表示中と同じマスク通過データのみ（n<5 は値なしのまま出力）
+              const csv = buildCsv(
+                ["区分", "キー", "回答数", "マスク", "平均総合", "eNPS回答数", "eNPS", "推奨者%", "批判者%"],
+                [...aggregates]
+                  .sort((a, b) =>
+                    a.dimension === b.dimension
+                      ? a.dimension_key.localeCompare(b.dimension_key, "ja")
+                      : a.dimension.localeCompare(b.dimension),
+                  )
+                  .map((r) => [
+                    DIMENSION_LABEL[r.dimension] ?? r.dimension,
+                    r.dimension_key || "全体",
+                    r.metrics.n,
+                    r.metrics.masked ? "n<5" : "",
+                    r.metrics.masked ? "" : (r.metrics.avg_overall ?? ""),
+                    r.metrics.enps_n ?? "",
+                    r.metrics.enps_masked ? "" : (r.metrics.enps ?? ""),
+                    r.metrics.enps_masked ? "" : (r.metrics.promoter_rate ?? ""),
+                    r.metrics.enps_masked ? "" : (r.metrics.detractor_rate ?? ""),
+                  ]),
+              );
+              downloadCsv(`pulse_dashboard_${selectedPeriod ?? "all"}.csv`, csv);
+            }}
+          >
+            CSVダウンロード
           </button>
         </div>
       </header>
