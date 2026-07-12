@@ -10,6 +10,7 @@ import {
   answerKey,
   canWriteAnswerClient,
   collectFinalMissing,
+  CREDO_EVAL_SCALE,
   isAnswerFilled,
   isEvaluatorOfClient,
   questionPhase,
@@ -347,6 +348,17 @@ export function MissionSheetPage({ id }: { id: string }) {
                   {q.required && <span className="mission__required">＊必須</span>}
                 </div>
                 {q.help && <p className="mission__qhelp">{q.help}</p>}
+                {q.type === "credo_eval" && q.credo && (
+                  <div className="mission__credoMeta">
+                    {q.credo.no && <span className="mission__credoNo">CREDO {q.credo.no}</span>}
+                    {q.credo.phrase && (
+                      <span className="mission__credoPhrase">「{q.credo.phrase}」</span>
+                    )}
+                    {q.credo.detail && (
+                      <p className="mission__credoDetail">{q.credo.detail}</p>
+                    )}
+                  </div>
+                )}
                 {roles.map((role) => {
                   const ans = findAnswer(answers, q.id, role);
                   const editable = canWriteAnswerClient(
@@ -372,6 +384,7 @@ export function MissionSheetPage({ id }: { id: string }) {
                       )}
                       <AnswerField
                         question={q}
+                        role={role}
                         value={ans?.value ?? null}
                         editable={editable}
                         showActual={stageIndex(stage) >= stageIndex("mid_done")}
@@ -702,6 +715,7 @@ function RankResultView({ result }: { result: RankComputedResult }) {
 
 function AnswerField({
   question,
+  role,
   value,
   editable,
   showActual,
@@ -709,11 +723,12 @@ function AnswerField({
   onSave,
 }: {
   question: MissionQuestion;
+  role: MissionRespondent;
   value: AnswerValue | null;
   editable: boolean;
-  /** kpi_goal の実績欄を表示するか（mid_done 以降）。 */
+  /** kpi_goal の実績欄／credo_eval の期末評価欄を表示するか（mid_done 以降）。 */
   showActual: boolean;
-  /** 期初確定済みか（kpi_goal の目標系4フィールドをロック。サーバトリガのミラー）。 */
+  /** 期初確定済みか（kpi_goal の目標系・credo_eval の期初系をロック。サーバトリガのミラー）。 */
   goalLocked: boolean;
   onSave: (v: AnswerValue) => void;
 }) {
@@ -727,6 +742,22 @@ function AnswerField({
         onSave={onSave}
       />
     );
+  }
+  if (question.type === "credo_eval") {
+    return (
+      <CredoEvalField
+        scale={question.scale?.length ? question.scale : CREDO_EVAL_SCALE}
+        role={role}
+        value={value}
+        editable={editable}
+        showFinal={showActual}
+        goalLocked={goalLocked}
+        onSave={onSave}
+      />
+    );
+  }
+  if (question.type === "date") {
+    return <DateField value={value} editable={editable} onSave={onSave} />;
   }
   if (question.type === "number") {
     return (
@@ -869,6 +900,125 @@ function SelectField({
         </option>
       ))}
     </select>
+  );
+}
+
+function DateField({
+  value,
+  editable,
+  onSave,
+}: {
+  value: AnswerValue | null;
+  editable: boolean;
+  onSave: (v: AnswerValue) => void;
+}) {
+  const saved = value?.date ?? "";
+  const [date, setDate] = useState(saved);
+  const [focused, setFocused] = useState(false);
+  // 非フォーカス時のみ props から再同期（TextField と同型）
+  const [syncedSaved, setSyncedSaved] = useState(saved);
+  if (saved !== syncedSaved) {
+    setSyncedSaved(saved);
+    if (!focused) setDate(saved);
+  }
+  function handleBlur() {
+    setFocused(false);
+    if (date === saved) return;
+    onSave({ date });
+  }
+  return (
+    <input
+      className="field__input mission__answerInput mission__answerInput--date"
+      type="date"
+      value={date}
+      disabled={!editable}
+      onChange={(e) => setDate(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={handleBlur}
+    />
+  );
+}
+
+/**
+ * credo_eval の入力欄（1 行 = 1 ロール）。
+ * - self 行: 注力テーマチェック＋期初評価。期末評価は mid_done 以降に表示。
+ * - evaluator 行: 期初評価＋期末評価（同上）。
+ * 期初系（focus / goal_eval）は goalLocked（期初確定以降）で不活性 —
+ * サーバ側 mission_answers_credo_guard トリガのミラー。
+ * 保存は選択即保存（SelectField と同じ理由）で、既存 value にマージする。
+ */
+function CredoEvalField({
+  scale,
+  role,
+  value,
+  editable,
+  showFinal,
+  goalLocked,
+  onSave,
+}: {
+  scale: string[];
+  role: MissionRespondent;
+  value: AnswerValue | null;
+  editable: boolean;
+  showFinal: boolean;
+  goalLocked: boolean;
+  onSave: (v: AnswerValue) => void;
+}) {
+  const cur: AnswerValue = value ?? {};
+  const goalEditable = editable && !goalLocked;
+  const finalEditable = editable && showFinal;
+
+  function ScaleRow({
+    label,
+    field,
+    enabled,
+  }: {
+    label: string;
+    field: "goal_eval" | "final_eval";
+    enabled: boolean;
+  }) {
+    const selected = cur[field] ?? "";
+    return (
+      <div className="mission__credoRow">
+        <span className="mission__credoRowLabel">{label}</span>
+        <div className="mission__scale" role="radiogroup" aria-label={label}>
+          {scale.map((mark) => (
+            <button
+              key={mark}
+              type="button"
+              className={`mission__scaleBtn ${selected === mark ? "is-selected" : ""}`}
+              disabled={!enabled}
+              aria-pressed={selected === mark}
+              onClick={() => {
+                if (mark !== selected) onSave({ ...cur, [field]: mark });
+              }}
+            >
+              {mark}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mission__credoEval">
+      {role === "self" && (
+        <label className="mission__credoFocus">
+          <input
+            type="checkbox"
+            checked={!!cur.focus}
+            disabled={!goalEditable}
+            onChange={(e) => onSave({ ...cur, focus: e.target.checked })}
+          />
+          今期の注力テーマにする
+        </label>
+      )}
+      <ScaleRow label="期初評価" field="goal_eval" enabled={goalEditable} />
+      {showFinal && (
+        <ScaleRow label="期末評価" field="final_eval" enabled={finalEditable} />
+      )}
+    </div>
   );
 }
 

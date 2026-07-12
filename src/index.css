@@ -6660,6 +6660,105 @@ body.is-dragging .dept-card__add-child {
   font-size: 13px;
 }
 
+/* ── credo_eval / date 設問型（P5①） ── */
+.mission__credoMeta {
+  margin: 2px 0 8px;
+  padding: 8px 12px;
+  background: var(--navy-50);
+  border: 1px solid var(--navy-100);
+  border-radius: var(--radius-sm);
+}
+.mission__credoNo {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--navy-500);
+  margin-right: 8px;
+}
+.mission__credoPhrase {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+.mission__credoDetail {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+.mission__credoEval {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.mission__credoFocus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.mission__credoFocus input:disabled {
+  cursor: default;
+}
+.mission__credoRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mission__credoRowLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 56px;
+}
+.mission__scale {
+  display: inline-flex;
+  gap: 4px;
+}
+.mission__scaleBtn {
+  min-width: 40px;
+  padding: 5px 10px;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.mission__scaleBtn:hover:not(:disabled) {
+  border-color: var(--navy-300);
+  background: var(--navy-50);
+}
+.mission__scaleBtn.is-selected {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+.mission__scaleBtn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.mission__scaleBtn.is-selected:disabled {
+  opacity: 0.8;
+}
+.mission__answerInput--date {
+  max-width: 180px;
+}
+.mission__editorCredo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
 /* ── ホーム（TalentHub トップ：機能ハブ＋軽ダッシュボード） ──────────── */
 .home { max-width: 1040px; }
 .home__hero { margin: 4px 0 20px; }

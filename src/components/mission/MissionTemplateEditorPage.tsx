@@ -24,6 +24,8 @@ const TYPE_LABEL: Record<QuestionType, string> = {
   select: "選択式",
   number: "数値",
   kpi_goal: "KPI目標",
+  date: "日付",
+  credo_eval: "CREDO評価（期初/期末×本人/上長）",
 };
 
 const PHASE_LABEL: Record<MissionPhase, string> = {
@@ -429,10 +431,14 @@ export function MissionTemplateEditorPage({ id }: { id: string }) {
                         disabled={!editable}
                         onChange={(e) => {
                           const type = e.target.value as QuestionType;
-                          // heading は回答を持たない（required 不可）
+                          // heading は回答を持たない（required 不可）。
+                          // credo_eval は本人×上長の4枠評価が前提のため記入者を both へ寄せる
                           updateQuestion(secIdx, qIdx, {
                             type,
                             ...(type === "heading" ? { required: undefined } : {}),
+                            ...(type === "credo_eval"
+                              ? { respondent: "both" as const, phase: "goal" as const }
+                              : {}),
                           });
                         }}
                       >
@@ -544,6 +550,69 @@ export function MissionTemplateEditorPage({ id }: { id: string }) {
                       }
                     />
                   )}
+                  {q.type === "credo_eval" && (
+                    <div className="mission__editorCredo">
+                      <div className="mission__editorQGrid">
+                        <label>
+                          CREDO番号
+                          <input
+                            className="field__input field__input--xs"
+                            value={q.credo?.no ?? ""}
+                            disabled={!editable}
+                            placeholder="01"
+                            onChange={(e) =>
+                              updateQuestion(secIdx, qIdx, {
+                                credo: { ...q.credo, no: e.target.value || undefined },
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          フレーズ
+                          <input
+                            className="field__input field__input--xs"
+                            value={q.credo?.phrase ?? ""}
+                            disabled={!editable}
+                            placeholder="まず、&quot;賞賛&quot;される人であれ。"
+                            onChange={(e) =>
+                              updateQuestion(secIdx, qIdx, {
+                                credo: { ...q.credo, phrase: e.target.value || undefined },
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          評価スケール
+                          <input
+                            className="field__input field__input--xs"
+                            value={(q.scale ?? []).join(" ")}
+                            disabled={!editable}
+                            placeholder="○ △ ✕（空欄=既定）"
+                            onChange={(e) =>
+                              updateQuestion(secIdx, qIdx, {
+                                scale: e.target.value
+                                  ? e.target.value.split(/\s+/).filter(Boolean)
+                                  : undefined,
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <textarea
+                        className="field__input field__input--xs"
+                        style={{ width: "100%" }}
+                        rows={2}
+                        value={q.credo?.detail ?? ""}
+                        disabled={!editable}
+                        placeholder="詳細説明（シートに固定表示）"
+                        onChange={(e) =>
+                          updateQuestion(secIdx, qIdx, {
+                            credo: { ...q.credo, detail: e.target.value || undefined },
+                          })
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
 
@@ -618,6 +687,31 @@ function TemplatePreview({ definition }: { definition: MissionDefinition }) {
                     <input className="field__input field__input--xs" disabled placeholder="目標値" />
                     <input className="field__input field__input--xs" disabled placeholder="単位" />
                   </div>
+                ) : q.type === "credo_eval" ? (
+                  <div className="mission__credoEval">
+                    <div className="mission__credoRow">
+                      <span className="mission__credoRowLabel">期初評価</span>
+                      <div className="mission__scale">
+                        {(q.scale?.length ? q.scale : ["○", "△", "✕"]).map((m) => (
+                          <button key={m} type="button" className="mission__scaleBtn" disabled>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mission__credoRow">
+                      <span className="mission__credoRowLabel">期末評価</span>
+                      <div className="mission__scale">
+                        {(q.scale?.length ? q.scale : ["○", "△", "✕"]).map((m) => (
+                          <button key={m} type="button" className="mission__scaleBtn" disabled>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : q.type === "date" ? (
+                  <input className="field__input" type="date" disabled />
                 ) : q.type === "number" ? (
                   <input className="field__input" type="number" disabled placeholder="数値" />
                 ) : q.type === "text" ? (
