@@ -7,6 +7,7 @@ import {
   Wallet,
   ShieldCheck,
   CloudSun,
+  Award,
   type LucideIcon,
 } from "lucide-react";
 import { useUiStore, type Route } from "../store/useUiStore";
@@ -69,6 +70,13 @@ const CARDS: FeatureCard[] = [
     desc: "目標設定・中間/期末の記入と査定",
     Icon: Target,
     route: { name: "missions" },
+  },
+  {
+    key: "reviews",
+    label: "人事評価制度",
+    desc: "ランク・グレード基準と評価の流れ（全社員向け）",
+    Icon: Award,
+    route: { name: "reviews" },
   },
   {
     key: "salary",

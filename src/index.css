@@ -7102,6 +7102,42 @@ body.is-dragging .dept-card__add-child {
 .psub__tab:hover { color: var(--text-strong); }
 .psub__tab.is-active { color: var(--primary); border-bottom-color: var(--primary); }
 
+/* ── パルス メンバー別回答推移（P4-①） ── */
+.pmem__search { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; font-size: 13px; min-width: 200px; background: var(--panel); }
+.pmem__careonly { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
+.pmem__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pmem__table th { text-align: left; font-size: 12px; color: var(--text-muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.pmem__table td { padding: 10px; border-bottom: 1px solid var(--border-soft, var(--border)); vertical-align: middle; }
+.pmem__row { cursor: pointer; }
+.pmem__row:hover { background: var(--bg-soft); }
+.pmem__name { font-weight: 700; color: var(--text-strong); margin-right: 8px; }
+.pmem__emp { font-size: 11px; color: var(--text-subtle); }
+.pmem__dept { color: var(--text-muted); }
+.pmem__latest { display: inline-flex; align-items: baseline; gap: 6px; font-weight: 600; color: var(--text-strong); }
+.pmem__period { font-size: 11px; color: var(--text-subtle); font-weight: 400; }
+.pmem__trend { display: inline-block; width: 22px; font-size: 15px; font-weight: 700; vertical-align: middle; }
+.pmem__trend--up { color: #1d8a4b; }
+.pmem__trend--down { color: #c0392b; }
+.pmem__trend--flat, .pmem__trend--none { color: var(--text-subtle); }
+.pmem__spark { width: 96px; height: 24px; vertical-align: middle; }
+.pmem__spark-line { stroke: var(--primary); stroke-width: 2; }
+.pmem__flag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #fdecec; color: #c0392b; white-space: nowrap; }
+.pmem__back { appearance: none; background: none; border: none; padding: 0; font-size: 13px; font-weight: 600; color: var(--primary); cursor: pointer; margin-bottom: 6px; }
+.pmem__back:hover { text-decoration: underline; }
+.pmem__headweather { font-size: 15px; font-weight: 600; color: var(--text-muted); margin-left: 12px; }
+.pmem__comments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.pmem__comment { border-left: 3px solid var(--navy-100, var(--border)); padding: 2px 0 2px 12px; }
+.pmem__comment-period { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.pmem__comment-body { margin: 4px 0 0; font-size: 13px; line-height: 1.7; color: var(--text-strong); white-space: pre-wrap; }
+.pmem__cattable-wrap { overflow-x: auto; }
+.pmem__cattable { border-collapse: collapse; font-size: 13px; min-width: 320px; }
+.pmem__cattable th { text-align: left; font-size: 12px; color: var(--text-muted); font-weight: 600; padding: 6px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.pmem__cattable td { padding: 8px 12px; border-bottom: 1px solid var(--border-soft, var(--border)); white-space: nowrap; }
+@media (max-width: 768px) {
+  .pmem__table th:nth-child(2), .pmem__table td:nth-child(2) { display: none; }
+  .pmem__spark { display: none; }
+}
+
 /* ── パルス アラート一覧＋対応管理 ── */
 .palert__summary { font-size: 13px; color: var(--text-muted); font-weight: 600; margin: 0 0 12px; }
 .palert__list { display: flex; flex-direction: column; gap: 14px; }
@@ -7754,4 +7790,240 @@ body.is-dragging .dept-card__add-child {
     grid-template-columns: 1fr;
     gap: 2px;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   人事評価制度（#/reviews）— 静的コンテンツ5ページ
+   ══════════════════════════════════════════════════════════════ */
+
+.reviews__page { max-width: 1080px; margin: 0 auto; width: 100%; }
+.reviews__header { flex-direction: column; gap: 4px; margin-bottom: 24px; }
+.reviews__header .page__subtitle { max-width: 720px; line-height: 1.7; }
+
+.reviews__section { margin-bottom: 40px; }
+.reviews__h2 { font-size: 17px; font-weight: 700; color: var(--text-strong); margin: 0 0 12px; padding-left: 10px; border-left: 3px solid var(--primary); }
+.reviews__lead { font-size: 13px; color: var(--text); line-height: 1.8; margin: 0 0 14px; max-width: 760px; }
+.reviews__note { font-size: 12px; color: var(--text-muted); line-height: 1.8; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin: 14px 0 0; max-width: 860px; }
+.reviews__principle { font-size: 13px; font-weight: 700; color: var(--text-strong); background: var(--primary-soft, #E3EAF6); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin: 0 0 16px; line-height: 1.8; }
+
+/* ── 全体像：2層構造 ── */
+.reviews__twolayer { display: flex; align-items: stretch; gap: 12px; }
+.reviews__layerCard { flex: 1; display: flex; flex-direction: column; gap: 6px; text-align: left; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; cursor: pointer; transition: box-shadow 0.15s, transform 0.15s; }
+.reviews__layerCard:hover { box-shadow: var(--shadow-2); transform: translateY(-1px); }
+.reviews__layerCard--rank { border-top: 3px solid var(--navy-700, #24468F); }
+.reviews__layerCard--grade { border-top: 3px solid var(--secondary, #7c3aed); }
+.reviews__layerAxis { font-size: 11px; font-weight: 800; color: #fff; background: var(--navy-700, #24468F); border-radius: 999px; padding: 2px 12px; align-self: flex-start; }
+.reviews__layerCard--grade .reviews__layerAxis { background: var(--secondary, #7c3aed); }
+.reviews__layerName { font-size: 19px; font-weight: 800; color: var(--text-strong); }
+.reviews__layerDesc { font-size: 13px; color: var(--text); line-height: 1.7; }
+.reviews__layerDetail { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+.reviews__layerLink { font-size: 12px; font-weight: 700; color: var(--primary); margin-top: auto; padding-top: 8px; }
+.reviews__layerTimes { align-self: center; font-size: 22px; font-weight: 800; color: var(--text-subtle); }
+
+/* ── 全体像：VBCF ── */
+.reviews__vbcf { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.reviews__vbcfItem { display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.reviews__vbcfItem--credo { border-color: #C7161D33; background: #fef7f7; }
+.reviews__vbcfLabel { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; color: var(--navy-800, #16305F); }
+.reviews__vbcfItem--credo .reviews__vbcfLabel { color: #C7161D; }
+.reviews__vbcfSub { font-size: 10px; color: var(--text-muted); }
+.reviews__vbcfPhrase { font-size: 12px; color: var(--text); line-height: 1.6; font-weight: 600; }
+
+.reviews__pyramid { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 8px 0 4px; }
+.reviews__pyrTop { width: min(220px, 40%); text-align: center; font-size: 12px; font-weight: 800; letter-spacing: 0.1em; color: var(--navy-800, #16305F); background: linear-gradient(180deg, #f6f9ff, #e8effc); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 0; }
+.reviews__pyrMid, .reviews__pyrBase { display: flex; flex-direction: column; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; background: var(--panel); }
+.reviews__pyrMid { width: min(640px, 80%); }
+.reviews__pyrBase { width: min(860px, 100%); background: var(--bg-soft); }
+.reviews__pyrMidLabel, .reviews__pyrBaseLabel { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; color: var(--text-muted); }
+.reviews__pyrChips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.reviews__senseChip { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px; color: var(--chip, var(--primary)); background: var(--chipSoft, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--chip, #24468F) 30%, transparent); }
+.reviews__credoChip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px; color: var(--text-strong); background: #fff; border: 1px solid var(--border-strong); }
+.reviews__credoNo { font-size: 10px; font-weight: 800; color: #fff; background: #C7161D; border-radius: 3px; padding: 1px 5px; }
+
+/* ── 全体像：4ランクカード ── */
+.reviews__rankGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.reviews__rankCard { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.reviews__rankCard--M { border-top: 3px solid var(--navy-900, #0B1D3A); }
+.reviews__rankCard--E { border-top: 3px solid var(--navy-700, #24468F); }
+.reviews__rankCard--S { border-top: 3px solid var(--navy-500, #4A74C9); }
+.reviews__rankCard--P { border-top: 3px solid var(--navy-300, #93B2E8); }
+.reviews__rankHead { display: flex; align-items: center; justify-content: space-between; }
+.reviews__rankBadge { font-size: 11px; font-weight: 800; color: var(--navy-800, #16305F); background: var(--navy-100, #E3EAF6); border-radius: 4px; padding: 2px 8px; }
+.reviews__rankEn { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-subtle); }
+.reviews__rankName { margin: 0; font-size: 16px; font-weight: 800; color: var(--text-strong); }
+.reviews__rankTagline { margin: 0; font-size: 12px; font-weight: 700; color: var(--primary); }
+.reviews__rankOverview { margin: 0; font-size: 12px; color: var(--text); line-height: 1.7; flex: 1; }
+.reviews__rankMeta { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.reviews__rankMeta div { display: flex; flex-direction: column; gap: 1px; }
+.reviews__rankMeta dt { font-size: 10px; color: var(--text-subtle); }
+.reviews__rankMeta dd { margin: 0; font-size: 11px; font-weight: 700; color: var(--text-strong); }
+
+.reviews__gaps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.reviews__gap { display: flex; flex-direction: column; gap: 3px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.reviews__gapLabel { font-size: 11px; font-weight: 800; color: var(--text-muted); }
+.reviews__gapPhrase { font-size: 13px; font-weight: 800; color: var(--text-strong); }
+.reviews__gapDesc { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+
+/* ── 全体像：16グレードはしご ── */
+.reviews__ladder { display: flex; flex-direction: column; gap: 4px; max-width: 760px; }
+.reviews__rung { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 12px; text-align: left; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 14px; cursor: pointer; transition: box-shadow 0.12s; }
+.reviews__rung:hover { box-shadow: var(--shadow-1); }
+.reviews__rung--M { border-left: 4px solid var(--navy-900, #0B1D3A); }
+.reviews__rung--E { border-left: 4px solid var(--navy-700, #24468F); }
+.reviews__rung--S { border-left: 4px solid var(--navy-500, #4A74C9); }
+.reviews__rung--P { border-left: 4px solid var(--navy-300, #93B2E8); }
+.reviews__rungCode { font-size: 13px; font-weight: 800; color: var(--text-strong); }
+.reviews__rungTitle { font-size: 12px; color: var(--text); }
+.reviews__rungSalary { font-size: 12px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── 全体像：品質保証 ── */
+.reviews__quality { display: flex; flex-direction: column; gap: 8px; max-width: 860px; }
+.reviews__qualityItem { display: flex; flex-direction: column; gap: 3px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+.reviews__qualityStep { font-size: 12px; font-weight: 800; color: var(--navy-800, #16305F); }
+.reviews__qualityBody { font-size: 12px; color: var(--text); line-height: 1.7; }
+
+/* ── 共通：callout / rule ── */
+.reviews__callout { border: 1px solid var(--warn, #d97706); border-radius: var(--radius-lg); background: var(--warn-soft, #FEF6EA); margin-bottom: 24px; overflow: hidden; }
+.reviews__calloutHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; background: none; border: none; padding: 14px 18px; cursor: pointer; text-align: left; }
+.reviews__calloutTitle { font-size: 13px; font-weight: 800; color: #92400e; }
+.reviews__calloutChev { font-size: 16px; font-weight: 800; color: var(--text-muted); flex-shrink: 0; }
+.reviews__calloutBody { padding: 0 18px 16px; display: flex; flex-direction: column; gap: 10px; }
+.reviews__ruleList { display: flex; flex-direction: column; gap: 10px; max-width: 900px; }
+.reviews__rule { display: flex; flex-direction: column; gap: 3px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+.reviews__callout .reviews__rule { background: #fff; }
+.reviews__ruleTitle { font-size: 13px; font-weight: 700; color: var(--text-strong); }
+.reviews__ruleBody { font-size: 12px; color: var(--text); line-height: 1.8; }
+
+/* ── ランク基準：CREDO/6SENSE 切替 ── */
+.reviews__axisTabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.reviews__axisTab { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 22px; font-size: 15px; font-weight: 800; color: var(--text-muted); cursor: pointer; }
+.reviews__axisTab.is-active { color: #fff; background: var(--primary); border-color: var(--primary); }
+.reviews__axisTabSub { font-size: 10px; font-weight: 600; opacity: 0.85; }
+
+.reviews__axes { display: flex; flex-direction: column; gap: 10px; margin-bottom: 40px; }
+.reviews__axis { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel); overflow: hidden; border-left: 4px solid var(--axis, var(--navy-700, #24468F)); }
+.reviews__axisHead { display: flex; align-items: center; gap: 14px; width: 100%; background: none; border: none; padding: 14px 18px; cursor: pointer; text-align: left; }
+.reviews__axisHead:hover { background: var(--bg-soft); }
+.reviews__axisBadgeWrap { flex-shrink: 0; }
+.reviews__credoBadge { font-size: 11px; font-weight: 800; color: #fff; background: #C7161D; border-radius: 4px; padding: 3px 8px; letter-spacing: 0.04em; }
+.reviews__senseBadge { font-size: 11px; font-weight: 800; color: var(--chip, var(--primary)); background: var(--chipSoft, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--chip, #24468F) 35%, transparent); border-radius: 4px; padding: 3px 8px; letter-spacing: 0.04em; }
+.reviews__axisTitle { display: flex; flex-direction: column; gap: 1px; min-width: 150px; }
+.reviews__axisName { font-size: 15px; font-weight: 800; color: var(--text-strong); }
+.reviews__axisSub { font-size: 11px; color: var(--text-muted); }
+.reviews__axisTags { display: flex; gap: 4px; flex-shrink: 0; }
+.reviews__axisTag { font-size: 10px; font-weight: 700; color: var(--axis, var(--text-muted)); border: 1px solid color-mix(in srgb, var(--axis, #6b7280) 40%, transparent); border-radius: 3px; padding: 1px 6px; }
+.reviews__axisStoryInline { flex: 1; text-align: right; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.reviews__axisStoryStep { white-space: nowrap; }
+.reviews__axisArrow { color: var(--text-subtle); }
+.reviews__axisCells { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--border); }
+.reviews__cell { display: flex; flex-direction: column; padding: 14px 16px; border-right: 1px solid var(--border); }
+.reviews__cell:last-child { border-right: none; }
+.reviews__cell--M { background: color-mix(in srgb, var(--navy-100, #E3EAF6) 45%, #fff); }
+.reviews__cellRank { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.reviews__cellRankName { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.reviews__cellBody { display: flex; flex-direction: column; gap: 6px; }
+.reviews__cellTitle { font-size: 13px; font-weight: 800; color: var(--text-strong); line-height: 1.5; }
+.reviews__cellText { margin: 0; font-size: 12px; color: var(--text); line-height: 1.7; }
+.reviews__cellExample { margin: 0; font-size: 11px; color: var(--text-muted); line-height: 1.7; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 8px 10px; }
+.reviews__cellExampleLabel { display: inline-block; font-size: 10px; font-weight: 800; color: var(--navy-700, #24468F); background: var(--navy-100, #E3EAF6); border-radius: 3px; padding: 0 5px; margin-right: 6px; }
+
+/* ── ランク昇格 ── */
+.reviews__promoGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.reviews__promoCard { display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+.reviews__promoLabel { font-size: 15px; font-weight: 800; color: var(--primary); }
+.reviews__promoConds { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.reviews__promoConds div { display: flex; flex-direction: column; gap: 2px; }
+.reviews__promoConds dt { font-size: 10px; font-weight: 800; color: var(--text-subtle); }
+.reviews__promoConds dd { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-strong); line-height: 1.6; }
+.reviews__promoMeaning { margin: 0; font-size: 11px; color: var(--text-muted); line-height: 1.7; border-top: 1px dashed var(--border); padding-top: 10px; }
+
+/* ── グレード基準 ── */
+.reviews__engine { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.reviews__engineStep { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 18px; margin-right: 28px; min-width: 120px; }
+.reviews__engineStep:last-child { margin-right: 0; }
+.reviews__engineNo { font-size: 18px; font-weight: 800; color: var(--primary); }
+.reviews__engineLabel { font-size: 13px; font-weight: 800; color: var(--text-strong); }
+.reviews__engineDesc { font-size: 10px; color: var(--text-muted); text-align: center; }
+.reviews__engineArrow { position: absolute; right: -22px; top: 50%; transform: translateY(-50%); font-size: 14px; font-weight: 800; color: var(--text-subtle); }
+
+.reviews__gradeTable { display: flex; flex-direction: column; gap: 4px; }
+.reviews__gradeRow { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+.reviews__gradeRow--M { border-left: 4px solid var(--navy-900, #0B1D3A); }
+.reviews__gradeRow--E { border-left: 4px solid var(--navy-700, #24468F); }
+.reviews__gradeRow--S { border-left: 4px solid var(--navy-500, #4A74C9); }
+.reviews__gradeRow--P { border-left: 4px solid var(--navy-300, #93B2E8); }
+.reviews__gradeRowHead { display: grid; grid-template-columns: 52px 110px 1fr auto 20px; align-items: center; gap: 12px; width: 100%; background: none; border: none; padding: 10px 16px; cursor: pointer; text-align: left; }
+.reviews__gradeRowHead:hover { background: var(--bg-soft); }
+.reviews__gradeCode { font-size: 14px; font-weight: 800; color: var(--text-strong); }
+.reviews__gradeRankName { font-size: 11px; color: var(--text-muted); }
+.reviews__gradeTitle { font-size: 13px; font-weight: 700; color: var(--text); }
+.reviews__gradeSalary { font-size: 12px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.reviews__gradeBody { padding: 2px 16px 14px 80px; display: flex; flex-direction: column; gap: 8px; }
+.reviews__gradeText { margin: 0; font-size: 12px; color: var(--text); line-height: 1.8; }
+.reviews__gradePromo { margin: 0; font-size: 12px; color: var(--text); line-height: 1.8; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 10px 12px; }
+.reviews__gradePromoLabel { display: inline-block; font-size: 10px; font-weight: 800; color: #fff; background: var(--navy-700, #24468F); border-radius: 3px; padding: 1px 6px; margin-right: 8px; }
+
+/* ── 評価の流れ ── */
+.reviews__legend { display: flex; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.reviews__legendItem { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px; }
+.reviews__legendItem--self { color: var(--navy-800, #16305F); background: var(--navy-100, #E3EAF6); }
+.reviews__legendItem--mgr { color: #14532d; background: #dcfce7; }
+.reviews__flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.reviews__phase { display: flex; gap: 16px; position: relative; padding-bottom: 22px; }
+.reviews__phase::before { content: ""; position: absolute; left: 21px; top: 44px; bottom: 0; width: 2px; background: var(--border); }
+.reviews__phase:last-child::before { display: none; }
+.reviews__phaseNum { flex-shrink: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 800; color: #fff; background: var(--navy-700, #24468F); border-radius: 50%; }
+.reviews__phase--both .reviews__phaseNum { background: var(--navy-500, #4A74C9); }
+.reviews__phaseBody { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 18px; }
+.reviews__phaseHead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.reviews__phaseTitle { margin: 0; font-size: 15px; font-weight: 800; color: var(--text-strong); }
+.reviews__phaseActor { font-size: 10px; font-weight: 800; color: var(--navy-800, #16305F); background: var(--navy-100, #E3EAF6); border-radius: 999px; padding: 2px 10px; }
+.reviews__phaseFormat { font-size: 11px; color: var(--text-muted); }
+.reviews__phaseSummary { margin: 0 0 8px; font-size: 13px; color: var(--text); line-height: 1.8; }
+.reviews__phaseList { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.reviews__phaseList li { font-size: 12px; color: var(--text); line-height: 1.7; }
+.reviews__phaseNotes { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.reviews__phaseNote { margin: 0; font-size: 11px; color: var(--text-muted); line-height: 1.7; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 7px 10px; }
+
+.reviews__schedule { display: flex; flex-direction: column; gap: 4px; max-width: 860px; }
+.reviews__schedRow { display: grid; grid-template-columns: 240px 1fr 90px; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 14px; }
+.reviews__schedPhase { font-size: 12px; font-weight: 700; color: var(--text-strong); }
+.reviews__schedTiming { font-size: 12px; color: var(--text); }
+.reviews__schedSpan { font-size: 11px; color: var(--text-muted); text-align: right; }
+
+.reviews__evalGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.reviews__evalCard { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.reviews__evalName { margin: 0; font-size: 13px; font-weight: 800; color: var(--text-strong); }
+.reviews__evalTarget, .reviews__evalHow { margin: 0; font-size: 12px; color: var(--text); line-height: 1.7; }
+.reviews__evalLabel { display: inline-block; font-size: 10px; font-weight: 800; color: var(--navy-700, #24468F); background: var(--navy-100, #E3EAF6); border-radius: 3px; padding: 0 5px; margin-right: 6px; }
+
+/* ── ルール集 ── */
+.reviews__ruleCat { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel); margin-bottom: 8px; overflow: hidden; }
+.reviews__ruleCatHead { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: none; padding: 14px 18px; cursor: pointer; text-align: left; }
+.reviews__ruleCatHead:hover { background: var(--bg-soft); }
+.reviews__ruleCatTitle { flex: 1; font-size: 14px; font-weight: 800; color: var(--text-strong); }
+.reviews__ruleCatCount { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.reviews__ruleList--cat { padding: 0 18px 16px; }
+
+/* ── レスポンシブ ── */
+@media (max-width: 920px) {
+  .reviews__rankGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reviews__vbcf { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reviews__axisCells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reviews__cell { border-bottom: 1px solid var(--border); }
+  .reviews__evalGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reviews__promoGrid { grid-template-columns: 1fr; }
+  .reviews__axisStoryInline { display: none; }
+}
+@media (max-width: 640px) {
+  .reviews__twolayer { flex-direction: column; }
+  .reviews__layerTimes { transform: rotate(90deg); }
+  .reviews__rankGrid, .reviews__vbcf, .reviews__axisCells, .reviews__evalGrid, .reviews__gaps { grid-template-columns: 1fr; }
+  .reviews__cell { border-right: none; }
+  .reviews__gradeRowHead { grid-template-columns: 44px 1fr auto 20px; }
+  .reviews__gradeRankName { display: none; }
+  .reviews__gradeBody { padding-left: 16px; }
+  .reviews__schedRow { grid-template-columns: 1fr; gap: 2px; }
+  .reviews__schedSpan { text-align: left; }
+  .reviews__axisTags { display: none; }
 }

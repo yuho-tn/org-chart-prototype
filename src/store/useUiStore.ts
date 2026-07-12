@@ -27,6 +27,7 @@ export type Section =
   | "missions"
   | "survey"
   | "pulse"
+  | "reviews"
   | "users"
   | "permissions"
   | "salary"
@@ -60,12 +61,21 @@ export type Route =
   | { name: "survey" }
   // パルスサーベイ 管理ダッシュボード（chrome 内・権限者）
   | { name: "pulse" }
+  // パルスサーベイ メンバー別回答推移（P4-①・実名閲覧権限者のみ・section は "pulse" と共通）
+  | { name: "pulse_members" }
+  | { name: "pulse_member"; num: string }
   // パルスサーベイ アラート一覧＋対応管理（section は "pulse" と共通・サブナビ切替）
   | { name: "pulse_alerts" }
   // パルスサーベイ コメント一覧（section は "pulse" と共通・サブナビ切替）
   | { name: "pulse_comments" }
   // パルスサーベイ 設定（質問セット/設問/サイクル・section は "pulse" と共通）
   | { name: "pulse_admin" }
+  // 人事評価制度（静的コンテンツ・全ログインユーザー閲覧可。section は共通 "reviews"）
+  | { name: "reviews" }
+  | { name: "reviews_rank" }
+  | { name: "reviews_grade" }
+  | { name: "reviews_flow" }
+  | { name: "reviews_rules" }
   // Payroll
   | { name: "salary" }
   | { name: "grades" }
@@ -90,10 +100,18 @@ export function sectionOfRoute(r: Route): Section {
     case "survey":
       return "survey";
     case "pulse":
+    case "pulse_members":
+    case "pulse_member":
     case "pulse_alerts":
     case "pulse_comments":
     case "pulse_admin":
       return "pulse";
+    case "reviews":
+    case "reviews_rank":
+    case "reviews_grade":
+    case "reviews_flow":
+    case "reviews_rules":
+      return "reviews";
     case "users":
       return "users";
     case "permissions":
@@ -133,6 +151,8 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "survey" };
     case "pulse":
       return { name: "pulse" };
+    case "reviews":
+      return { name: "reviews" };
     case "users":
       return { name: "users" };
     case "permissions":
@@ -185,11 +205,26 @@ function readRouteFromHash(): Route {
   if (msh) return { name: "mission_sheet", id: msh[1] };
   // パルスサーベイ 回答画面
   if (h === "#/survey") return { name: "survey" };
-  // パルスサーベイ 管理ダッシュボード / アラート / コメント
+  // パルスサーベイ 管理ダッシュボード / メンバー / アラート / コメント
+  const pmem = /^#\/pulse\/members\/([^/]+)$/.exec(h);
+  if (pmem) {
+    try {
+      return { name: "pulse_member", num: decodeURIComponent(pmem[1]) };
+    } catch {
+      return { name: "pulse_members" };
+    }
+  }
+  if (h === "#/pulse/members") return { name: "pulse_members" };
   if (h === "#/pulse/alerts") return { name: "pulse_alerts" };
   if (h === "#/pulse/comments") return { name: "pulse_comments" };
   if (h === "#/pulse/admin") return { name: "pulse_admin" };
   if (h === "#/pulse") return { name: "pulse" };
+  // 人事評価制度
+  if (h === "#/reviews") return { name: "reviews" };
+  if (h === "#/reviews/rank") return { name: "reviews_rank" };
+  if (h === "#/reviews/grade") return { name: "reviews_grade" };
+  if (h === "#/reviews/flow") return { name: "reviews_flow" };
+  if (h === "#/reviews/rules") return { name: "reviews_rules" };
   // Payroll routes
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
   if (h === "#/payroll/grades") return { name: "grades" };
@@ -227,12 +262,26 @@ function routeToHash(r: Route): string {
       return "#/survey";
     case "pulse":
       return "#/pulse";
+    case "pulse_members":
+      return "#/pulse/members";
+    case "pulse_member":
+      return `#/pulse/members/${encodeURIComponent(r.num)}`;
     case "pulse_alerts":
       return "#/pulse/alerts";
     case "pulse_comments":
       return "#/pulse/comments";
     case "pulse_admin":
       return "#/pulse/admin";
+    case "reviews":
+      return "#/reviews";
+    case "reviews_rank":
+      return "#/reviews/rank";
+    case "reviews_grade":
+      return "#/reviews/grade";
+    case "reviews_flow":
+      return "#/reviews/flow";
+    case "reviews_rules":
+      return "#/reviews/rules";
     case "salary":
       return "#/payroll";
     case "grades":

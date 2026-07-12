@@ -51,6 +51,15 @@ const SurveyPage = lazy(() =>
 const PulseDashboardPage = lazy(() =>
   import("./components/pulse/PulseDashboardPage").then((m) => ({ default: m.PulseDashboardPage })),
 );
+// パルスサーベイ メンバー別回答推移（#/pulse/members・実名閲覧権限者のみ）。
+const PulseMembersPage = lazy(() =>
+  import("./components/pulse/PulseMembersPage").then((m) => ({ default: m.PulseMembersPage })),
+);
+const PulseMemberDetailPage = lazy(() =>
+  import("./components/pulse/PulseMembersPage").then((m) => ({
+    default: m.PulseMemberDetailPage,
+  })),
+);
 // パルスサーベイ アラート一覧＋対応管理（#/pulse/alerts・app シェル内・権限者）。
 const PulseAlertsPage = lazy(() =>
   import("./components/pulse/PulseAlertsPage").then((m) => ({ default: m.PulseAlertsPage })),
@@ -83,6 +92,22 @@ const MissionTemplateEditorPage = lazy(() =>
 );
 const MissionSheetPage = lazy(() =>
   import("./components/mission/MissionSheetPage").then((m) => ({ default: m.MissionSheetPage })),
+);
+// 人事評価制度（#/reviews 配下・静的コンテンツ5ページ）。通常閲覧では読み込ませない。
+const ReviewsOverviewPage = lazy(() =>
+  import("./components/reviews/ReviewsOverviewPage").then((m) => ({ default: m.ReviewsOverviewPage })),
+);
+const ReviewsRankPage = lazy(() =>
+  import("./components/reviews/ReviewsRankPage").then((m) => ({ default: m.ReviewsRankPage })),
+);
+const ReviewsGradePage = lazy(() =>
+  import("./components/reviews/ReviewsGradePage").then((m) => ({ default: m.ReviewsGradePage })),
+);
+const ReviewsFlowPage = lazy(() =>
+  import("./components/reviews/ReviewsFlowPage").then((m) => ({ default: m.ReviewsFlowPage })),
+);
+const ReviewsRulesPage = lazy(() =>
+  import("./components/reviews/ReviewsRulesPage").then((m) => ({ default: m.ReviewsRulesPage })),
 );
 
 export default function App() {
@@ -678,6 +703,22 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     );
   }
 
+  if (route.name === "pulse_members") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseMembersPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse_member") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseMemberDetailPage employeeNumber={route.num} />
+      </Suspense>
+    );
+  }
+
   if (route.name === "pulse_alerts") {
     return (
       <Suspense fallback={<PageLoading />}>
@@ -698,6 +739,46 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     return (
       <Suspense fallback={<PageLoading />}>
         <PulseAdminPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsOverviewPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews_rank") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsRankPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews_grade") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsGradePage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews_flow") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsFlowPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews_rules") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsRulesPage />
       </Suspense>
     );
   }

@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Tags,
   ScrollText,
+  Award,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -45,6 +46,8 @@ const TABS_BY_SYSTEM: Record<
     { id: "employees", label: "メンバー", Icon: Users },
     // ミッションは全ログインユーザーに表示（自分のシートがあるため）
     { id: "missions", label: "ミッション", Icon: Target },
+    // 評価制度は全ログインユーザーに表示（静的コンテンツ）
+    { id: "reviews", label: "評価制度", Icon: Award },
     // パルス ダッシュボードは master/privileged_admin のみ表示（下のフィルタ参照）
     { id: "pulse", label: "パルス", Icon: CloudSun },
   ],

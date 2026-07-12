@@ -199,3 +199,62 @@ export type PulseCommentRow = {
   comment: string;
   answered_at: string | null;
 };
+
+// ── P4-①: 個人別回答推移（実名閲覧権者のみ） ─────────────────────
+
+/** history の1点（migration 0029）。overall は 5点満点・nps除外。 */
+export type PulseHistoryPoint = {
+  period: string;
+  overall: number | null;
+  answered_at: string | null;
+};
+
+/** rpc('pulse_list_member_summaries') の1行。 */
+export type PulseMemberSummary = {
+  employee_number: string;
+  name: string;
+  department: string | null;
+  position_title: string | null;
+  history: PulseHistoryPoint[]; // 直近6サイクル・古→新
+};
+
+/** rpc('pulse_person_history') の1行（古→新）。 */
+export type PulsePersonHistoryRow = {
+  period: string;
+  cycle_id: string;
+  overall: number | null;
+  by_category: Record<string, number>;
+  comment: string | null;
+  answered_at: string | null;
+};
+
+/** スコア(1..5)に最も近い天気段階を返す。null は undefined。 */
+export function weatherForScore(score: number | null | undefined) {
+  if (score == null) return undefined;
+  const rounded = Math.min(5, Math.max(1, Math.round(score)));
+  return WEATHER_SCALE.find((w) => w.score === rounded);
+}
+
+export type PulseTrend = "up" | "down" | "flat" | "none";
+
+/** 直近2点の比較でトレンド矢印を出す（0.05未満の差はflat扱い）。 */
+export function memberTrend(history: PulseHistoryPoint[]): PulseTrend {
+  const pts = history.filter((h) => h.overall != null);
+  if (pts.length < 2) return "none";
+  const prev = pts[pts.length - 2].overall as number;
+  const last = pts[pts.length - 1].overall as number;
+  if (last - prev > 0.05) return "up";
+  if (prev - last > 0.05) return "down";
+  return "flat";
+}
+
+/**
+ * 「3ヶ月連続下降」フラグ: 直近3サイクルの回答が単調に下降している
+ * （p[-3] > p[-2] > p[-1]）。回答が3点未満なら false。
+ */
+export function isConsecutiveDecline(history: PulseHistoryPoint[]): boolean {
+  const pts = history.filter((h) => h.overall != null).map((h) => h.overall as number);
+  if (pts.length < 3) return false;
+  const [a, b, c] = pts.slice(-3);
+  return a > b && b > c;
+}
