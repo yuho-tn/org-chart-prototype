@@ -1,12 +1,13 @@
 // パルスサーベイのクライアント型とヘルパー。DB スキーマは
 // supabase/migrations/0021_pulse_survey.sql / 0022_pulse_my_response.sql。
 
-export type PulseQuestionType = "weather5" | "scale" | "free_text";
+export type PulseQuestionType = "weather5" | "scale" | "free_text" | "nps";
 
 export const QUESTION_TYPE_LABEL: Record<PulseQuestionType, string> = {
   weather5: "天気5段階",
   scale: "数値スケール",
   free_text: "自由記述",
+  nps: "eNPS（0〜10）",
 };
 
 export const SET_STATUS_LABEL: Record<string, string> = {
@@ -101,6 +102,12 @@ export type PulseMetrics = {
   n: number;
   masked: boolean;
   avg_overall?: number;
+  // eNPS（0030 で付与・nps 回答が1件以上ある dimension のみ）
+  enps_n?: number;
+  enps_masked?: boolean;
+  enps?: number; // 推奨者% − 批判者%（-100..100）
+  promoter_rate?: number;
+  detractor_rate?: number;
   // total 行のみ（0023 で付与）
   target?: number;
   response_rate?: number | null;

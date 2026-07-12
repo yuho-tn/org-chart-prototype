@@ -36,8 +36,8 @@ type PulseDashState = {
 
   /** 選択中 period の集計行（total + 各 dimension）。 */
   aggregates: PulseAggregateRow[];
-  /** 全 period の total.avg_overall 推移（古い→新しい）。 */
-  trend: { period: string; avg: number | null }[];
+  /** 全 period の total.avg_overall / eNPS 推移（古い→新しい）。 */
+  trend: { period: string; avg: number | null; enps: number | null }[];
   /** 選択中 period の AI 要約（未生成なら null）。 */
   summary: PulseSummary | null;
 
@@ -106,8 +106,14 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
     }
 
     const cycles = (cyclesRes.data ?? []) as PulseCycleRow[];
-    const trend = ((trendRes.data ?? []) as { period: string; metrics: { avg_overall?: number } }[])
-      .map((r) => ({ period: r.period, avg: r.metrics?.avg_overall ?? null }));
+    const trend = ((trendRes.data ?? []) as {
+      period: string;
+      metrics: { avg_overall?: number; enps?: number };
+    }[]).map((r) => ({
+      period: r.period,
+      avg: r.metrics?.avg_overall ?? null,
+      enps: r.metrics?.enps ?? null,
+    }));
 
     const period = get().selectedPeriod ?? cycles[0]?.period ?? null;
     let aggregates: PulseAggregateRow[] = [];

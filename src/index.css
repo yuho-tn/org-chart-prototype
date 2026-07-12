@@ -6977,6 +6977,14 @@ body.is-dragging .dept-card__add-child {
 .pulse__weather-txt { font-size: 11px; color: var(--text-muted); font-weight: 600; }
 .pulse__weather-opt.is-active .pulse__weather-txt { color: var(--primary-hover); }
 
+/* eNPS（0〜10 の11段階セレクタ・P4-②） */
+.pulse__nps { display: flex; flex-direction: column; gap: 6px; }
+.pulse__nps-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.pulse__nps-opt { appearance: none; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); min-width: 34px; height: 36px; font-size: 13px; font-weight: 700; color: var(--text-muted); cursor: pointer; }
+.pulse__nps-opt:hover { border-color: var(--primary); color: var(--primary); }
+.pulse__nps-opt.is-active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.pulse__nps-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-subtle); }
+
 .pulse__textarea {
   width: 100%; box-sizing: border-box; resize: vertical;
   border: 1.5px solid var(--border); border-radius: var(--radius);
@@ -7083,6 +7091,8 @@ body.is-dragging .dept-card__add-child {
 /* 推移スパークライン */
 .pdash__spark { width: 100%; height: auto; }
 .pdash__grid { stroke: var(--border); stroke-width: 1; }
+.pdash__grid--zero { stroke: var(--text-subtle); stroke-dasharray: 4 3; }
+.pdash__enps-chip { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 700; color: var(--primary); white-space: nowrap; }
 .pdash__spark-line { stroke: var(--primary); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
 .pdash__spark-dot { fill: var(--primary); }
 .pdash__spark-x { font-size: 10px; fill: var(--text-subtle); }

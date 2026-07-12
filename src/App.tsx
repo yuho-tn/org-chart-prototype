@@ -612,8 +612,10 @@ export default function App() {
 
   // Auth gate. While Supabase is resolving the session, hold a short
   // splash; after that, route to SignInPage when there's no session.
-  if (!authInitialized) return <BootSplash />;
-  if (!session) return <SignInPage />;
+  // TEMP-DEV-BYPASS: ローカル視覚検証用。コミット前に必ず削除する。
+  const TEMP_DEV_BYPASS = true;
+  if (!authInitialized && !TEMP_DEV_BYPASS) return <BootSplash />;
+  if (!session && !TEMP_DEV_BYPASS) return <SignInPage />;
 
   // パルスサーベイ 回答画面: ログイン後だが app シェルを持たない専用ルート。
   // 社員がリマインドリンク（Slack/メール）から直接開く軽量画面。

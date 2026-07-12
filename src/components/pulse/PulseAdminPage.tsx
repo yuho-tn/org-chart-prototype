@@ -251,7 +251,7 @@ function QuestionEditor({
           onChange={(e) => setLabel(e.target.value)}
         />
         <select className="padm__input padm__input--type" value={type} onChange={(e) => setType(e.target.value as PulseQuestionType)}>
-          {(["weather5", "scale", "free_text"] as PulseQuestionType[]).map((t) => (
+          {(["weather5", "scale", "nps", "free_text"] as PulseQuestionType[]).map((t) => (
             <option key={t} value={t}>{QUESTION_TYPE_LABEL[t]}</option>
           ))}
         </select>
@@ -315,7 +315,7 @@ function QRow({
         value={q.type}
         onChange={(e) => onSave({ type: e.target.value as PulseQuestionType })}
       >
-        {(["weather5", "scale", "free_text"] as PulseQuestionType[]).map((t) => (
+        {(["weather5", "scale", "nps", "free_text"] as PulseQuestionType[]).map((t) => (
           <option key={t} value={t}>{QUESTION_TYPE_LABEL[t]}</option>
         ))}
       </select>

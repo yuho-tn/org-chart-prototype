@@ -40,9 +40,11 @@ export function SurveyPage() {
     if (!res.ok) setToast(res.reason ?? "送信に失敗しました");
   };
 
-  // 天気5設問のうち未回答があるか（必須扱い：全 weather5 に score が要る）。
-  const weatherQs = questions.filter((q) => q.type === "weather5" || q.type === "scale");
-  const missingRequired = weatherQs.some((q) => answers[q.id]?.score == null);
+  // スコア設問（天気・スケール・eNPS）は必須扱い：全てに score が要る。
+  const scoredQs = questions.filter(
+    (q) => q.type === "weather5" || q.type === "scale" || q.type === "nps",
+  );
+  const missingRequired = scoredQs.some((q) => answers[q.id]?.score == null);
 
   return (
     <div className="pulse">
@@ -114,6 +116,30 @@ export function SurveyPage() {
                       value={answers[q.id]?.value_text ?? ""}
                       onChange={(e) => setValueText(q.id, e.target.value)}
                     />
+                  ) : q.type === "nps" ? (
+                    <div className="pulse__nps" role="radiogroup" aria-label={q.label}>
+                      <div className="pulse__nps-row">
+                        {Array.from({ length: 11 }, (_, i) => i).map((n) => {
+                          const active = answers[q.id]?.score === n;
+                          return (
+                            <button
+                              key={n}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              className={"pulse__nps-opt" + (active ? " is-active" : "")}
+                              onClick={() => setScore(q.id, n)}
+                            >
+                              {n}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="pulse__nps-legend">
+                        <span>0 = まったく勧めない</span>
+                        <span>10 = 強く勧める</span>
+                      </div>
+                    </div>
                   ) : (
                     <div className="pulse__weather" role="radiogroup" aria-label={q.label}>
                       {WEATHER_SCALE.map((w) => {
@@ -160,7 +186,7 @@ export function SurveyPage() {
                 {submitting ? "送信中…" : alreadyAnswered ? "回答を更新する" : "回答を送信する"}
               </button>
               {missingRequired && (
-                <span className="pulse__hint">天気の設問にすべて答えてください</span>
+                <span className="pulse__hint">スコアの設問にすべて答えてください</span>
               )}
             </div>
           </>

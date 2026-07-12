@@ -117,6 +117,23 @@ export function PulseDashboardPage() {
               accent
             />
             <Stat label="回答数" value={`${total.metrics.n}`} sub="件" />
+            {total.metrics.enps_n != null && total.metrics.enps_n > 0 && (
+              <Stat
+                label="eNPS"
+                value={
+                  total.metrics.enps_masked
+                    ? "n<5"
+                    : total.metrics.enps != null
+                      ? `${total.metrics.enps > 0 ? "+" : ""}${total.metrics.enps}`
+                      : "—"
+                }
+                sub={
+                  total.metrics.enps_masked
+                    ? "マスク中"
+                    : `推奨${total.metrics.promoter_rate ?? "—"}% − 批判${total.metrics.detractor_rate ?? "—"}%（n=${total.metrics.enps_n}）`
+                }
+              />
+            )}
           </section>
 
           {/* ── AI要約（Claude・Edge Function） ── */}
@@ -155,6 +172,14 @@ export function PulseDashboardPage() {
               <Trend data={trend} />
             </section>
           </div>
+
+          {/* ── eNPS推移（nps 回答がある期のみ） ── */}
+          {trend.some((t) => t.enps != null) && (
+            <section className="pdash__panel">
+              <h2 className="pdash__h2">eNPSの推移</h2>
+              <EnpsTrend data={trend} />
+            </section>
+          )}
 
           {/* ── カテゴリ別平均 ── */}
           <section className="pdash__panel">
@@ -243,6 +268,7 @@ function CategoryBars({ byCategory }: { byCategory: Record<string, { avg: number
 /** dimension（部署/雇用形態/役職）別の平均バー。n<5 はマスク表示。 */
 function DimensionBars({ rows }: { rows: PulseAggregateRow[] }) {
   if (rows.length === 0) return <p className="pdash__muted">データなし</p>;
+  const hasEnps = rows.some((r) => r.metrics.enps_n != null && r.metrics.enps_n > 0);
   return (
     <div className="pdash__bars">
       {rows.map((r) => (
@@ -264,10 +290,67 @@ function DimensionBars({ rows }: { rows: PulseAggregateRow[] }) {
               </div>
             </div>
           )}
-          <span className="pdash__bar-n">n={r.metrics.n}</span>
+          <span className="pdash__bar-n">
+            n={r.metrics.n}
+            {hasEnps && (
+              <span className="pdash__enps-chip">
+                eNPS{" "}
+                {r.metrics.enps_n == null || r.metrics.enps_n === 0
+                  ? "—"
+                  : r.metrics.enps_masked
+                    ? "n<5"
+                    : `${(r.metrics.enps ?? 0) > 0 ? "+" : ""}${r.metrics.enps}`}
+              </span>
+            )}
+          </span>
         </div>
       ))}
     </div>
+  );
+}
+
+/** eNPS推移スパークライン（-100..100・0基準線つき）。 */
+function EnpsTrend({ data }: { data: { period: string; enps: number | null }[] }) {
+  const pts = data.filter((d) => d.enps != null) as { period: string; enps: number }[];
+  if (pts.length === 0) return <p className="pdash__muted">データなし</p>;
+  if (pts.length === 1) {
+    return (
+      <p className="pdash__muted">
+        {periodLabel(pts[0].period)}：
+        <strong>
+          {pts[0].enps > 0 ? "+" : ""}
+          {pts[0].enps}
+        </strong>
+        （推移は2期以上で表示）
+      </p>
+    );
+  }
+  const W = 480, H = 120, pad = 24;
+  const xs = (i: number) => pad + (i * (W - pad * 2)) / (pts.length - 1);
+  const ys = (v: number) => H - pad - ((v + 100) / 200) * (H - pad * 2); // -100..100
+  const line = pts.map((p, i) => `${xs(i)},${ys(p.enps)}`).join(" ");
+  return (
+    <svg className="pdash__spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+      {[-100, -50, 0, 50, 100].map((g) => (
+        <line
+          key={g}
+          x1={pad}
+          x2={W - pad}
+          y1={ys(g)}
+          y2={ys(g)}
+          className={g === 0 ? "pdash__grid pdash__grid--zero" : "pdash__grid"}
+        />
+      ))}
+      <polyline points={line} className="pdash__spark-line" fill="none" />
+      {pts.map((p, i) => (
+        <g key={p.period}>
+          <circle cx={xs(i)} cy={ys(p.enps)} r={4} className="pdash__spark-dot" />
+          <text x={xs(i)} y={H - 6} className="pdash__spark-x" textAnchor="middle">
+            {p.period.slice(2)}
+          </text>
+        </g>
+      ))}
+    </svg>
   );
 }
 
