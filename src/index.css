@@ -7247,3 +7247,86 @@ body.is-dragging .dept-card__add-child {
 .home__cardIcon {
   color: var(--primary);
 }
+
+/* ── P2: 編集ロック/デフォルト表示バナー ────────────────────────────── */
+.lockbanner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.lockbanner__msg {
+  flex: 1;
+  min-width: 0;
+}
+.lockbanner--view {
+  background: var(--navy-50);
+  color: var(--navy-700);
+}
+.lockbanner--held {
+  background: var(--warn-soft);
+  color: #92400e;
+}
+
+/* ── P2: 未配置パネルのフィルタ（雇用形態3択＋部署チップ） ─────────── */
+.unplaced__seg {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 6px 0;
+}
+.unplaced__segBtn {
+  flex: 1;
+  padding: 5px 4px;
+  font-size: 11.5px;
+  border: none;
+  background: var(--panel);
+  color: var(--text-muted);
+  border-right: 1px solid var(--border);
+}
+.unplaced__segBtn:last-child {
+  border-right: none;
+}
+.unplaced__segBtn.is-active {
+  background: var(--navy-50);
+  color: var(--primary);
+  font-weight: 600;
+}
+.unplaced__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+  align-items: center;
+}
+.unplaced__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--navy-200);
+  background: var(--navy-50);
+  color: var(--navy-700);
+  font-size: 11px;
+  cursor: pointer;
+}
+.unplaced__chip:hover {
+  background: var(--navy-100);
+}
+
+/* ── P2: デフォルト組織図バッジ ─────────────────────────────────────── */
+.version-card__default {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--navy-600);
+  vertical-align: 1px;
+}

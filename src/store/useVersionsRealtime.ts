@@ -35,7 +35,14 @@ import { useVersionsStore } from "./useVersionsStore";
 
 const POLL_MS = 20_000;
 
-type ChangeKind = "saved" | "created" | "deleted" | "renamed" | "confirmed";
+type ChangeKind =
+  | "saved"
+  | "created"
+  | "deleted"
+  | "renamed"
+  | "confirmed"
+  // 0027: 編集ロックの取得/解放/引継ぎ（受信側は即座にロック状態を再取得）
+  | "lock";
 
 type ChangePayload = {
   kind: ChangeKind;
@@ -182,6 +189,16 @@ async function handleRemoteChange(payload: ChangePayload) {
   const versionsState = useVersionsStore.getState();
   const orgState = useOrgStore.getState();
 
+  // 0027: ロックの変化は速報で反映（fallback は useOrgLock 側の15秒ポーリング）。
+  // 動的 import で循環参照（useOrgLock → useVersionsRealtime）を回避する。
+  if (payload?.kind === "lock") {
+    const { useOrgLock } = await import("./useOrgLock");
+    if (useOrgLock.getState().versionId === payload.versionId) {
+      void useOrgLock.getState().refreshState();
+    }
+    return;
+  }
+
   // Keep the FilesDrawer / pickers current for every kind of change.
   void versionsState.refresh();
 
@@ -254,14 +271,15 @@ async function applyServerSnapshot(
     return false;
   }
 
-  const nodes = await useVersionsStore.getState().getSnapshot(versionId);
-  if (!nodes) return false;
+  const loaded = await useVersionsStore.getState().getSnapshot(versionId);
+  if (!loaded) return false;
   // The user may have navigated away while the snapshot downloaded.
   if (useOrgStore.getState().currentVersionId !== versionId) return false;
 
-  useOrgStore.getState().replaceNodes(nodes as OrgNode[], {
+  useOrgStore.getState().replaceNodes(loaded.nodes as OrgNode[], {
     versionId,
     versionLabel: name,
+    rev: loaded.rev,
   });
   useOrgStore.getState().setRemoteAhead(null);
   if (updatedAt) {

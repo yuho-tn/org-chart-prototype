@@ -12,6 +12,7 @@ import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
 import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
 import { HomePage } from "./components/HomePage";
 import { useOrgStore } from "./store/useOrgStore";
+import { useOrgLock } from "./store/useOrgLock";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useEmployeesStore } from "./store/useEmployeesStore";
 import { useUiStore, sectionOfRoute, systemOfRoute, defaultRouteForSystem } from "./store/useUiStore";
@@ -215,9 +216,9 @@ export default function App() {
         if (cancelled) return;
         const versions = useVersionsStore.getState().versions;
         const meta = versions.find((v) => v.id === shareInit.versionId);
-        const nodes = await getSnapshot(shareInit.versionId);
+        const loaded = await getSnapshot(shareInit.versionId);
         if (cancelled) return;
-        if (!nodes) {
+        if (!loaded) {
           useOrgStore.getState().setToast({
             kind: "error",
             message:
@@ -226,9 +227,10 @@ export default function App() {
           return;
         }
         setSharedVersionLabel(meta?.name ?? null);
-        replaceNodes(nodes, {
+        replaceNodes(loaded.nodes, {
           versionId: shareInit.versionId,
           versionLabel: meta?.name ?? "共有バージョン",
+          rev: loaded.rev,
         });
         return;
       }
@@ -281,6 +283,7 @@ export default function App() {
         hydrateDraft(draft.nodes as Parameters<typeof hydrateDraft>[0], {
           versionId: bound ? bound.id : null,
           versionLabel: bound ? bound.name : draft.versionLabel,
+          rev: bound ? (draft.rev ?? null) : null,
         });
         // Reflect the restored file in the address bar so a reload deep-links
         // back to it. Unbound (new) drafts fall back to the blank #/org URL.
@@ -359,8 +362,13 @@ export default function App() {
     // edits silently. A dirty new draft (currentVersionId null) is kept.
     if (wanted === null) {
       if (st.currentVersionId && !st.dirty) clearToBlank();
+      // ブランク/デフォルト表示に入る時はロックモードを初期化（デフォルト
+      // 表示のロード側が改めて view にする）。
+      useOrgLock.getState().setMode("edit");
       return;
     }
+    // 明示的なファイルオープン（#/org/<id>）は編集モード＝ロック取得対象。
+    useOrgLock.getState().setMode("edit");
     // #/org/<id>: load that file. Guard unsaved edits with a confirm so a
     // back/forward doesn't wipe in-progress work.
     if (st.dirty) {
@@ -394,7 +402,11 @@ export default function App() {
         navigate({ name: "editor" }, { pushHistory: false });
         return;
       }
-      replaceNodes(loaded, { versionId: wanted, versionLabel: meta?.name });
+      replaceNodes(loaded.nodes, {
+        versionId: wanted,
+        versionLabel: meta?.name,
+        rev: loaded.rev,
+      });
     })();
     return () => {
       cancelled = true;
@@ -410,16 +422,56 @@ export default function App() {
     navigate,
   ]);
 
+  // ── P2: #/org は「公式デフォルト組織図」を閲覧モードで即表示 ────────
+  // 管理者が is_default を指定したファイルがあれば、ブランクではなくそれを
+  // ロック無しの閲覧モードでロードする（編集は TopBar の「編集する」から）。
+  const versionsList = useVersionsStore((s) => s.versions);
+  useEffect(() => {
+    if (viewOnly || !session || !bootRestored) return;
+    if (route.name !== "editor" || route.versionId) return;
+    const st = useOrgStore.getState();
+    if (st.currentVersionId || st.dirty || st.nodes.length > 0) return;
+    const def = versionsList.find((v) => v.is_default);
+    if (!def) return;
+    let cancelled = false;
+    void (async () => {
+      const loaded = await getSnapshot(def.id);
+      if (cancelled || !loaded) return;
+      const cur = useOrgStore.getState();
+      if (cur.currentVersionId || cur.dirty) return;
+      useOrgLock.getState().setMode("view");
+      replaceNodes(loaded.nodes, {
+        versionId: def.id,
+        versionLabel: def.name,
+        rev: loaded.rev,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    route,
+    versionsList,
+    viewOnly,
+    session,
+    bootRestored,
+    getSnapshot,
+    replaceNodes,
+  ]);
+
   // Auto-open the file picker when landing on the blank org page so the user
   // can immediately choose a file (the canvas is intentionally empty until
-  // then). Only fires when truly blank — not while a file is open.
+  // then). Only fires when truly blank — not while a file is open, and not
+  // when a default chart exists (それが即表示されるため).
   useEffect(() => {
     if (viewOnly || !session || !bootRestored) return;
     if (route.name !== "editor" || route.versionId) return;
     if (useOrgStore.getState().currentVersionId) return;
     if (useOrgStore.getState().nodes.length > 0) return;
+    if (useVersionsStore.getState().loading) return;
+    if (versionsList.some((v) => v.is_default)) return;
     setFilesDrawerOpen(true);
-  }, [route, viewOnly, session, bootRestored, setFilesDrawerOpen]);
+  }, [route, viewOnly, session, bootRestored, versionsList, setFilesDrawerOpen]);
 
   useEffect(() => {
     if (viewOnly) return;
@@ -441,6 +493,7 @@ export default function App() {
       versionId: st.currentVersionId,
       versionLabel: st.currentVersionLabel,
       savedAt: new Date().toISOString(),
+      rev: st.baseRev,
       nodes,
     });
   }, [nodes, dirty, bootReady, viewOnly, bootRestored]);
@@ -477,6 +530,22 @@ export default function App() {
     if (!currentUserEmail) return;
     presenceUpdateVersionId(currentVersionId);
   }, [currentVersionId, currentUserEmail, viewOnly, presenceUpdateVersionId]);
+
+  // ── P2: 編集ロックのライフサイクル ──────────────────────────────────
+  // 編集モードでファイルを開いている間だけロックを保持（heartbeat 30秒）。
+  // ファイル切替・ブランク化・サインアウト・アンマウントで解放。デフォルト
+  // 表示（mode=view）はロックを取らない。
+  const lockMode = useOrgLock((s) => s.mode);
+  useEffect(() => {
+    if (viewOnly || !session || !currentVersionId || lockMode !== "edit") {
+      void useOrgLock.getState().detach();
+      return;
+    }
+    void useOrgLock.getState().attach(currentVersionId);
+    return () => {
+      void useOrgLock.getState().detach();
+    };
+  }, [currentVersionId, lockMode, viewOnly, session]);
 
   // (Removed) The browser address bar used to auto-mirror the currently-
   // open file as `?v=<id>`. That clashed with the `?v=` share-link

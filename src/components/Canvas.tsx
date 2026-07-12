@@ -11,6 +11,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useOrgStore } from "../store/useOrgStore";
+import { useOrgLock, selectLockReadOnly } from "../store/useOrgLock";
 import { useUiStore } from "../store/useUiStore";
 import { useEmployeesStore } from "../store/useEmployeesStore";
 import { DepartmentNode, type DeptNodeData } from "./DepartmentNode";
@@ -50,7 +51,11 @@ export function Canvas() {
   const reparent = useOrgStore((s) => s.reparent);
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setToast = useOrgStore((s) => s.setToast);
-  const viewOnly = useUiStore((s) => s.viewOnly);
+  const uiViewOnly = useUiStore((s) => s.viewOnly);
+  // P2: 編集ロック非保持（他人が編集中）またはデフォルト閲覧表示のときも
+  // キャンバスは読み取り専用にする（保存不可な編集を作らせない）。
+  const lockReadOnly = useOrgLock(selectLockReadOnly);
+  const viewOnly = uiViewOnly || lockReadOnly;
   const employees = useEmployeesStore((s) => s.employees);
   const reactFlow = useReactFlow();
 
@@ -437,11 +442,12 @@ export function Canvas() {
 
   // Tray-originated dept drops anywhere on the canvas pane → place at root.
   const onPaneDragOver = useCallback((e: ReactDragEvent) => {
+    // 閲覧モード（共有ビュー/編集ロック非保持）ではドロップ受付もパンもしない
+    if (viewOnly) return;
     // 部署チップ・メンバーチップどちらのネイティブドラッグでも端オートパン
     if (
-      !viewOnly &&
-      (e.dataTransfer.types.includes("application/x-dept-id") ||
-        e.dataTransfer.types.includes("application/x-person-id"))
+      e.dataTransfer.types.includes("application/x-dept-id") ||
+      e.dataTransfer.types.includes("application/x-person-id")
     ) {
       updateAutoPan(e);
     }
@@ -463,6 +469,7 @@ export function Canvas() {
   const onPaneDrop = useCallback(
     (e: ReactDragEvent) => {
       stopAutoPan();
+      if (viewOnly) return;
       const deptId = e.dataTransfer.getData("application/x-dept-id");
       if (!deptId) return;
       e.preventDefault();
@@ -488,7 +495,7 @@ export function Canvas() {
         setToast({ kind: "error", message: result.reason });
       }
     },
-    [reparent, duplicateAtPosition, setToast, stopAutoPan],
+    [reparent, duplicateAtPosition, setToast, stopAutoPan, viewOnly],
   );
 
   const onPaneDragLeave = useCallback((e: ReactDragEvent) => {

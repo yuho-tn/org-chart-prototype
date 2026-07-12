@@ -19,7 +19,7 @@ import { useVersionsRealtime } from "./useVersionsRealtime";
  * → minimal.
  */
 const SELECT_TIERS = [
-  "id, name, author, note, created_at, updated_at, created_by_email, is_private, grants, is_confirmed, confirmed_period",
+  "id, name, author, note, created_at, updated_at, created_by_email, is_private, grants, is_confirmed, confirmed_period, rev, is_default",
   "id, name, author, note, created_at, updated_at, is_confirmed, confirmed_period",
   "id, name, author, note, created_at, is_confirmed, confirmed_period",
   "id, name, author, note, created_at, updated_at",
@@ -27,6 +27,7 @@ const SELECT_TIERS = [
 ] as const;
 
 const PERM_COLS_RE = /column .*(created_by_email|is_private|grants).* does not exist/i;
+const EDITING_COLS_RE = /column .*(rev|is_default).* does not exist/i;
 const FIX_COLS_RE = /column .*(is_confirmed|confirmed_period).* does not exist/i;
 const UPDATED_AT_RE = /column .*updated_at.* does not exist/i;
 
@@ -34,6 +35,10 @@ function pickNextTier(
   current: number,
   errorMessage: string,
 ): number | null {
+  if (EDITING_COLS_RE.test(errorMessage)) {
+    // 0027 未適用: rev / is_default を含まない tier へ落とす。
+    if (current < 1) return 1;
+  }
   if (PERM_COLS_RE.test(errorMessage)) {
     // Drop permission columns: jump to the first tier that has none.
     if (current < 1) return 1;
@@ -68,14 +73,23 @@ type VersionsState = {
     is_private?: boolean;
     grants?: VersionGrants;
   }) => Promise<VersionRow | null>;
-  /** Overwrite an existing file's nodes (the file-model "保存"). The row's
-   *  metadata is preserved; only the snapshot + updated_at change. Returns
-   *  the refreshed VersionRow on success. */
+  /** Overwrite an existing file's nodes (the file-model "保存"). 0027 以降は
+   *  SECURITY DEFINER RPC（org_save_snapshot）経由: 生きた他人ロックの拒否と
+   *  expected_rev 照合で後勝ち上書きを根絶する。expectedRev には「この編集の
+   *  元になったサーバ rev」（useOrgStore.baseRev）を渡すこと。 */
   updateSnapshot: (
     id: string,
     nodes: OrgNode[],
-    optionalPatch?: Partial<Pick<VersionRow, "name" | "note">>,
-  ) => Promise<VersionRow | null>;
+    opts?: {
+      expectedRev?: number | null;
+      patch?: Partial<Pick<VersionRow, "name" | "note">>;
+    },
+  ) => Promise<
+    | { ok: true; row: VersionRow; rev: number }
+    | { ok: false; reason: string; lockedBy?: string; serverRev?: number }
+  >;
+  /** 公式デフォルト組織図の付替え（admin以上・RPC）。id=null で解除。 */
+  setDefault: (id: string | null) => Promise<{ ok: boolean; reason?: string }>;
   /** Duplicate an existing file: copies snapshot+name and inserts as a fresh
    *  row owned by the current user. Confirmation flags are NOT copied — the
    *  duplicate always lands as a draft. */
@@ -98,8 +112,8 @@ type VersionsState = {
     id: string,
     patch: { is_confirmed: boolean; confirmed_period: string | null },
   ) => Promise<boolean>;
-  /** Returns the snapshot.nodes for a given version id, or null on error. */
-  getSnapshot: (id: string) => Promise<OrgNode[] | null>;
+  /** Returns the snapshot nodes + server rev for a given version id. */
+  getSnapshot: (id: string) => Promise<{ nodes: OrgNode[]; rev: number } | null>;
   /** Deletes a version by id. */
   remove: (id: string) => Promise<boolean>;
 };
@@ -193,78 +207,104 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     return row;
   },
 
-  updateSnapshot: async (id, nodes, optionalPatch) => {
-    if (!supabase) return null;
-    const patch: Record<string, unknown> = { snapshot: { nodes } };
-    if (optionalPatch?.name !== undefined) patch.name = optionalPatch.name;
-    if (optionalPatch?.note !== undefined) patch.note = optionalPatch.note;
+  updateSnapshot: async (id, nodes, opts) => {
+    if (!supabase) return { ok: false, reason: "supabase_unconfigured" };
 
-    // Same tier-fallback strategy as refresh/save: if the SELECT after the
-    // UPDATE references a column the user's DB doesn't have, retry the
-    // SELECT with progressively smaller column sets. The UPDATE itself
-    // doesn't reference optional columns so it can't fail for that reason.
+    // 0027: スナップショット保存は RPC 経由（ロック検証＋rev照合）。
+    const { data, error } = await supabase.rpc("org_save_snapshot", {
+      p_version_id: id,
+      p_snapshot: { nodes },
+      p_expected_rev: opts?.expectedRev ?? null,
+    });
+    if (error) {
+      // 0027 未適用環境では RPC が存在しない → 旧経路（直接UPDATE）へ退避。
+      const missing = /function .*org_save_snapshot.* does not exist|Could not find the function/i.test(
+        error.message,
+      );
+      if (!missing) {
+        set({ error: error.message });
+        return { ok: false, reason: error.message };
+      }
+      const { error: updErr } = await supabase
+        .from("org_versions")
+        .update({ snapshot: { nodes } })
+        .eq("id", id);
+      if (updErr) {
+        set({ error: updErr.message });
+        return { ok: false, reason: updErr.message };
+      }
+    } else {
+      const res = (data ?? {}) as {
+        ok?: boolean;
+        reason?: string;
+        locked_by?: string;
+        server_rev?: number;
+        rev?: number;
+      };
+      if (!res.ok) {
+        return {
+          ok: false,
+          reason: res.reason ?? "unknown",
+          lockedBy: res.locked_by,
+          serverRev: res.server_rev,
+        };
+      }
+    }
+
+    // 任意のメタデータ変更（name/note）は従来どおり直接 UPDATE（RLS適用）。
+    const patch: Record<string, unknown> = {};
+    if (opts?.patch?.name !== undefined) patch.name = opts.patch.name;
+    if (opts?.patch?.note !== undefined) patch.note = opts.patch.note;
+    if (Object.keys(patch).length > 0) {
+      await supabase.from("org_versions").update(patch).eq("id", id);
+    }
+
+    // 保存後の行を tier フォールバック付きで再取得し、ローカルキャッシュ更新。
     let tier = 0;
     let resp: { data: unknown; error: { message: string } | null } | null = null;
     while (tier < SELECT_TIERS.length) {
       resp = (await supabase
         .from("org_versions")
-        .update(patch)
-        .eq("id", id)
         .select(SELECT_TIERS[tier])
+        .eq("id", id)
         .maybeSingle()) as { data: unknown; error: { message: string } | null };
       if (!resp.error) break;
       const next = pickNextTier(tier, resp.error.message);
       if (next === null) break;
       tier = next;
     }
-    if (!resp) return null;
-    if (resp.error) {
-      set({ error: resp.error.message });
-      return null;
-    }
-    // RLS may withhold the returned row even when the update succeeded.
-    // In that case fall back to a separate select; if THAT also returns
-    // nothing, apply an optimistic patch locally so the UI stays in sync.
-    let row: VersionRow | null = (resp.data as VersionRow | null) ?? null;
-    if (!row) {
-      const refetch = await supabase
-        .from("org_versions")
-        .select(SELECT_TIERS[tier])
-        .eq("id", id)
-        .maybeSingle();
-      row = (refetch.data as VersionRow | null) ?? null;
-    }
-    if (!row) {
-      const existing = get().versions.find((v) => v.id === id);
-      if (!existing) return null;
-      const optimistic: VersionRow = {
-        ...existing,
-        ...(optionalPatch?.name !== undefined ? { name: optionalPatch.name } : {}),
-        ...(optionalPatch?.note !== undefined ? { note: optionalPatch.note } : {}),
-        updated_at: new Date().toISOString(),
-      };
-      set({
-        versions: get().versions.map((v) => (v.id === id ? optimistic : v)),
-      });
-      return optimistic;
-    }
-    // If the SELECT fell back to a smaller tier, the returned row may be
-    // missing optional columns (is_confirmed, confirmed_period, ...) that
-    // the local cache already knows. Merge the fresh row over the existing
-    // one so we don't blow away those flags just because the column list
-    // shrank for this round-trip.
+    const fetched = (resp?.data as VersionRow | null) ?? null;
     const existing = get().versions.find((v) => v.id === id);
-    const merged: VersionRow = existing ? { ...existing, ...row } : row;
-    set({
-      versions: get().versions.map((v) => (v.id === id ? merged : v)),
-    });
+    const merged: VersionRow | null = fetched
+      ? existing
+        ? { ...existing, ...fetched }
+        : fetched
+      : existing
+        ? { ...existing, updated_at: new Date().toISOString() }
+        : null;
+    if (!merged) return { ok: false, reason: "row_not_visible" };
+    set({ versions: get().versions.map((v) => (v.id === id ? merged : v)) });
     useVersionsRealtime.getState().markSelfSave(id, merged.updated_at);
     useVersionsRealtime.getState().broadcastChange({
       kind: "saved",
       versionId: id,
       name: merged.name,
     });
-    return merged;
+    return { ok: true, row: merged, rev: merged.rev ?? 0 };
+  },
+
+  setDefault: async (id) => {
+    if (!supabase) return { ok: false, reason: "supabase_unconfigured" };
+    const { data, error } = await supabase.rpc("org_set_default", {
+      p_version_id: id,
+    });
+    if (error) return { ok: false, reason: error.message };
+    const res = (data ?? {}) as { ok?: boolean; reason?: string };
+    if (!res.ok) return { ok: false, reason: res.reason };
+    set({
+      versions: get().versions.map((v) => ({ ...v, is_default: v.id === id })),
+    });
+    return { ok: true };
   },
 
   duplicate: async (id, nameOverride, author, created_by_email) => {
@@ -430,19 +470,27 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
 
   getSnapshot: async (id) => {
     if (!supabase) return null;
-    const { data, error } = await supabase
+    let resp = await supabase
       .from("org_versions")
-      .select("snapshot")
+      .select("snapshot, rev")
       .eq("id", id)
       .maybeSingle();
-    if (error) {
-      set({ error: error.message });
+    if (resp.error && EDITING_COLS_RE.test(resp.error.message)) {
+      // 0027 未適用: rev 抜きで再試行。
+      resp = (await supabase
+        .from("org_versions")
+        .select("snapshot")
+        .eq("id", id)
+        .maybeSingle()) as typeof resp;
+    }
+    if (resp.error) {
+      set({ error: resp.error.message });
       return null;
     }
-    if (!data) return null;
-    const snap = (data as { snapshot: { nodes?: OrgNode[] } | null }).snapshot;
-    if (!snap || !Array.isArray(snap.nodes)) return null;
-    return snap.nodes;
+    if (!resp.data) return null;
+    const row = resp.data as { snapshot: { nodes?: OrgNode[] } | null; rev?: number };
+    if (!row.snapshot || !Array.isArray(row.snapshot.nodes)) return null;
+    return { nodes: row.snapshot.nodes, rev: row.rev ?? 0 };
   },
 
   remove: async (id) => {

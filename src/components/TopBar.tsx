@@ -3,7 +3,8 @@ import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
 import { useVersionsStore } from "../store/useVersionsStore";
 import { useVersionsRealtime } from "../store/useVersionsRealtime";
-import { useAuthStore } from "../store/useAuthStore";
+import { useAuthStore, isUserManager } from "../store/useAuthStore";
+import { useOrgLock, selectLockReadOnly } from "../store/useOrgLock";
 import { SaveVersionDialog } from "./SaveVersionDialog";
 import { ShareDialog } from "./ShareDialog";
 
@@ -44,6 +45,20 @@ export function TopBar() {
   const versions = useVersionsStore((s) => s.versions);
   const viewOnly = useUiStore((s) => s.viewOnly);
   const currentUser = useAuthStore((s) => s.currentUser);
+  const baseRev = useOrgStore((s) => s.baseRev);
+
+  // ── P2: 編集ロック状態 ──
+  const lockMode = useOrgLock((s) => s.mode);
+  const lockHolder = useOrgLock((s) => s.holder);
+  const lockMine = useOrgLock((s) => s.mine);
+  const lockReadOnly = useOrgLock(selectLockReadOnly);
+  const setLockMode = useOrgLock((s) => s.setMode);
+  const navigate = useUiStore((s) => s.navigate);
+  const isWriterUser =
+    currentUser?.role === "master" ||
+    currentUser?.role === "privileged_admin" ||
+    currentUser?.role === "admin" ||
+    currentUser?.role === "editor";
 
   const [showSave, setShowSave] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -60,7 +75,10 @@ export function TopBar() {
     : null;
   const isConfirmedFile = !!currentFile?.is_confirmed;
   const canOverwrite =
-    !!currentVersionId && !viewOnly && currentUser?.role !== "viewer";
+    !!currentVersionId &&
+    !viewOnly &&
+    currentUser?.role !== "viewer" &&
+    !lockReadOnly;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -145,15 +163,32 @@ export function TopBar() {
   async function handleOverwrite() {
     if (!currentVersionId || !canOverwrite) return;
     setSaving(true);
-    const row = await updateSnapshot(currentVersionId, nodes);
+    const res = await updateSnapshot(currentVersionId, nodes, {
+      expectedRev: baseRev,
+    });
     setSaving(false);
-    if (!row) {
-      setToast({ kind: "error", message: "保存に失敗しました" });
+    if (!res.ok) {
+      if (res.reason === "rev_conflict") {
+        setToast({
+          kind: "error",
+          message:
+            "他の編集がサーバに先行しています。上のバナーから最新を取り込み、変更を再適用してください。",
+        });
+        void useVersionsRealtime.getState().checkNow();
+      } else if (res.reason === "locked") {
+        setToast({
+          kind: "error",
+          message: `${res.lockedBy ?? "他のユーザー"} さんが編集中のため保存できません。`,
+        });
+        void useOrgLock.getState().refreshState();
+      } else {
+        setToast({ kind: "error", message: "保存に失敗しました" });
+      }
       return;
     }
-    markClean({ versionId: row.id, versionLabel: row.name });
+    markClean({ versionId: res.row.id, versionLabel: res.row.name, rev: res.rev });
     setRemoteAhead(null);
-    setToast({ kind: "info", message: `「${row.name}」を上書き保存しました` });
+    setToast({ kind: "info", message: `「${res.row.name}」を上書き保存しました` });
   }
 
   function handleNewFile() {
@@ -163,7 +198,46 @@ export function TopBar() {
       );
       if (!ok) return;
     }
+    setLockMode("edit");
     newFile();
+  }
+
+  // デフォルト表示（閲覧モード）からの編集開始: URLをディープリンクに揃えて
+  // ロック取得対象（mode=edit）へ昇格する。
+  function handleStartEditing() {
+    if (!currentVersionId) return;
+    navigate(
+      { name: "editor", versionId: currentVersionId },
+      { pushHistory: false },
+    );
+    setLockMode("edit");
+  }
+
+  async function handleRetryLock() {
+    const ok = await useOrgLock.getState().tryAcquire();
+    if (ok) {
+      setToast({ kind: "info", message: "編集ロックを取得しました。編集できます。" });
+    } else {
+      void useOrgLock.getState().refreshState();
+      setToast({
+        kind: "info",
+        message: `${useOrgLock.getState().holder ?? "他のユーザー"} さんが編集中です。`,
+      });
+    }
+  }
+
+  async function handleStealLock() {
+    const holder = useOrgLock.getState().holder;
+    const ok = window.confirm(
+      `${holder ?? "現在の編集者"} さんから編集を引き継ぎます。相手は閲覧モードになります。よろしいですか？`,
+    );
+    if (!ok) return;
+    const stolen = await useOrgLock.getState().steal();
+    setToast(
+      stolen
+        ? { kind: "info", message: "編集を引き継ぎました。" }
+        : { kind: "error", message: "引き継ぎに失敗しました（権限が無い可能性があります）。" },
+    );
   }
 
   async function handlePullLatest() {
@@ -179,6 +253,39 @@ export function TopBar() {
 
   return (
     <>
+      {/* ── P2: デフォルト表示（閲覧モード）バナー ── */}
+      {!viewOnly && lockMode === "view" && currentVersionId && (
+        <div className="lockbanner lockbanner--view" role="status">
+          <span className="lockbanner__msg">
+            公式デフォルトの組織図を表示しています（閲覧モード）
+          </span>
+          {isWriterUser && (
+            <button className="btn btn--primary btn--xs" onClick={handleStartEditing}>
+              ✎ 編集する
+            </button>
+          )}
+        </div>
+      )}
+      {/* ── P2: 他ユーザー編集中（ロック取得失敗）バナー ── */}
+      {!viewOnly &&
+        lockMode === "edit" &&
+        currentVersionId &&
+        lockHolder &&
+        !lockMine && (
+          <div className="lockbanner lockbanner--held" role="alert">
+            <span className="lockbanner__msg">
+              🔒 {lockHolder} さんが編集中のため閲覧モードです。編集が終わると自動で引き継がれます。
+            </span>
+            <button className="btn btn--ghost btn--xs" onClick={handleRetryLock}>
+              再試行
+            </button>
+            {isUserManager(currentUser?.role) && (
+              <button className="btn btn--xs" onClick={handleStealLock}>
+                編集を引き継ぐ
+              </button>
+            )}
+          </div>
+        )}
       {remoteAhead && remoteAhead.versionId === currentVersionId && (
         <div className="remoteahead" role="alert">
           <span className="remoteahead__msg">
