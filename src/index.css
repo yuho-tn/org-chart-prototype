@@ -8065,3 +8065,229 @@ body.is-dragging .dept-card__add-child {
 .psub--scroll { overflow-x: auto; scrollbar-width: none; }
 .psub--scroll::-webkit-scrollbar { display: none; }
 .psub--scroll .psub__tab { white-space: nowrap; flex-shrink: 0; }
+
+/* ══ AI活用レベル（#/ailevel）══════════════════════════════════════════
+   称号バッジ（.ailbadge）＋分布ダッシュボード＋認定管理。色はレベル定義
+   （src/lib/aiLevels.ts）から inline style で供給し、ここは形だけ持つ。 */
+
+/* ── 称号バッジ ── */
+.ailbadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  line-height: 1;
+}
+.ailbadge--sm { font-size: 10px; padding: 2px 7px; }
+.ailbadge--md { font-size: 12px; padding: 4px 10px; }
+.ailbadge__lv { font-weight: 800; }
+.ailbadge__code { font-weight: 700; }
+.ailbadge__kind {
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-left: 2px;
+}
+
+/* ── ページ共通 ── */
+.ail__header { margin-bottom: 16px; }
+.ail__notice {
+  background: var(--warn-soft);
+  border: 1px solid #f3d9a4;
+  color: #92610c;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.ail__note { font-size: 12px; color: var(--text-muted); margin: 4px 0 10px; }
+.ail__msgOk { color: var(--ok); font-size: 13px; margin: 8px 0 0; }
+.ail__err { color: var(--danger); }
+
+/* ── 分布バー（全社・雇用区分別共用） ── */
+.ail__dist { display: flex; flex-direction: column; gap: 6px; }
+.ail__distRow { display: flex; align-items: center; gap: 10px; }
+.ail__distLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 220px;
+  flex-shrink: 0;
+}
+.ail__distLabel--compact { width: 130px; }
+.ail__distLv { font-weight: 800; font-size: 12px; width: 22px; }
+.ail__distCode { font-weight: 700; font-size: 12px; color: var(--text-strong); }
+.ail__distSub { font-size: 11px; color: var(--text-muted); }
+.ail__distTrack {
+  flex: 1;
+  height: 14px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.ail__distBar { height: 100%; border-radius: 999px; min-width: 0; transition: width 0.3s ease; }
+.ail__distBar--uncertified { background: var(--border-strong); }
+.ail__distRow--uncertified .ail__distCode { color: var(--text-muted); }
+.ail__distCount {
+  width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* ── 部門別（積み上げ帯） ── */
+.ail__depts { display: flex; flex-direction: column; gap: 6px; }
+.ail__deptRow { display: flex; align-items: center; gap: 10px; }
+.ail__deptName {
+  width: 180px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ail__deptTrack {
+  flex: 1;
+  display: flex;
+  height: 14px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.ail__deptSeg { min-width: 3px; }
+.ail__deptSeg--uncertified { background: var(--border-strong); }
+.ail__deptCount {
+  width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── 雇用区分別グリッド ── */
+.ail__bucketGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.ail__bucket {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--panel);
+}
+.ail__bucketTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+.ail__bucketTotal { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+
+/* ── L4+ 該当者リスト ── */
+.ail__listGroupTitle { font-size: 13px; margin: 14px 0 8px; color: var(--text-strong); }
+.ail__listGroupTitle .ail__note { display: inline; font-weight: 400; }
+.ail__people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ail__person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 999px;
+  padding: 5px 12px 5px 6px;
+  font-size: 13px;
+}
+.ail__person:hover { border-color: var(--navy-300); background: var(--navy-50); }
+.ail__personName { font-weight: 600; color: var(--text-strong); }
+.ail__personDept { font-size: 11px; color: var(--text-muted); }
+
+/* ── 7段階の定義 ── */
+.ail__defs { display: flex; flex-direction: column; gap: 10px; }
+.ail__def { display: flex; align-items: flex-start; gap: 12px; }
+.ail__def .ailbadge { margin-top: 2px; width: 168px; justify-content: center; flex-shrink: 0; }
+.ail__defBody { display: flex; flex-direction: column; gap: 2px; }
+.ail__defSub { font-weight: 700; font-size: 13px; color: var(--text-strong); }
+.ail__defText { font-size: 13px; color: var(--text); }
+.ail__defAppointment { font-size: 12px; color: #92610c; font-weight: 600; }
+
+/* ── 認定管理フォーム ── */
+.ail__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-top: 8px;
+}
+.ail__field { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.ail__field--wide { flex: 1; min-width: 240px; }
+.ail__field--actions { flex-direction: row; gap: 8px; }
+.ail__fieldLabel { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.ail__input {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--panel);
+}
+.ail__input:focus { outline: 2px solid var(--navy-200); border-color: var(--navy-500); }
+.ail__textarea {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+.ail__historySearch { max-width: 280px; margin-bottom: 10px; }
+.ail__tableWrap { overflow-x: auto; margin-top: 8px; }
+.ail__table td { vertical-align: middle; }
+.ail__rowError td { background: var(--danger-soft); }
+.ail__noteCell { font-size: 12px; color: var(--text-muted); max-width: 220px; }
+
+/* ── 従業員詳細のAIレベル欄 ── */
+.ail__current { display: flex; align-items: flex-start; gap: 14px; }
+.ail__currentBody { display: flex; flex-direction: column; gap: 2px; }
+.ail__currentSub { font-weight: 700; font-size: 14px; color: var(--text-strong); }
+.ail__currentDef { font-size: 13px; color: var(--text); }
+.ail__currentMeta { font-size: 12px; color: var(--text-muted); }
+.ail__history {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ail__historyRow { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ail__historyDate { font-variant-numeric: tabular-nums; color: var(--text-muted); width: 84px; }
+.ail__historyKind { color: var(--text-muted); }
+.ail__historyNote { color: var(--text-muted); }
+
+@media (max-width: 720px) {
+  .ail__distLabel { width: 150px; }
+  .ail__distSub { display: none; }
+  .ail__deptName { width: 110px; }
+  .ail__def .ailbadge { width: 132px; }
+}
