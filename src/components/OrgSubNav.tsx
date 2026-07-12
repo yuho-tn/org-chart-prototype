@@ -1,3 +1,4 @@
+import { FolderOpen } from "lucide-react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useUiStore } from "../store/useUiStore";
 import { ConfirmedBanner } from "./ConfirmedBanner";
@@ -45,7 +46,9 @@ export function OrgSubNav() {
             aria-expanded={filesModalOpen}
             title="組織図ファイル一覧を開く（下書き／確定版の切替・複製・権限・確定登録・削除など）"
           >
-            <span className="orgsub__fileIcon" aria-hidden>📁</span>
+            <span className="orgsub__fileIcon" aria-hidden>
+              <FolderOpen size={15} strokeWidth={2} />
+            </span>
             <span className="orgsub__fileLabel">ファイル：{fileLabel}</span>
             <span className="orgsub__fileCaret" aria-hidden>▾</span>
           </button>

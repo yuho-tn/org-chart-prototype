@@ -1,3 +1,21 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  Home,
+  Network,
+  Users,
+  Target,
+  CloudSun,
+  KeyRound,
+  ShieldCheck,
+  Wallet,
+  LayoutGrid,
+  LogOut,
+  ChevronDown,
+  ClipboardList,
+  Tags,
+  ScrollText,
+  type LucideIcon,
+} from "lucide-react";
 import {
   useUiStore,
   sectionOfRoute,
@@ -7,32 +25,34 @@ import {
   type Section,
   type SystemKey,
 } from "../store/useUiStore";
-import { useAuthStore } from "../store/useAuthStore";
-import { canManagePermissions, type AppUserRole } from "../lib/supabase";
+import { useAuthStore, isUserManager } from "../store/useAuthStore";
+import { canManagePermissions, canAccessPayroll, type AppUserRole } from "../lib/supabase";
 
-const TABS_BY_SYSTEM: Record<SystemKey, { id: Section; label: string; icon: string }[]> = {
+/**
+ * P1 IA再設計:
+ * - ヘッダーは1本（旧 SystemSwitcher 行は廃止・ブランド表記は左上の1箇所のみ）
+ * - メインナビは利用頻度の高い5つ（ホーム/組織図/メンバー/ミッション/パルス）
+ * - 管理系（ユーザー管理・権限管理・Payroll切替・サインアウト）は右上の
+ *   ユーザーメニュー（ドロップダウン）へ収容
+ */
+const TABS_BY_SYSTEM: Record<
+  SystemKey,
+  { id: Section; label: string; Icon: LucideIcon }[]
+> = {
   talenthub: [
-    { id: "home", label: "ホーム", icon: "🏠" },
-    { id: "org", label: "組織図", icon: "🗂" },
-    { id: "employees", label: "従業員マスター", icon: "👥" },
+    { id: "home", label: "ホーム", Icon: Home },
+    { id: "org", label: "組織図", Icon: Network },
+    { id: "employees", label: "メンバー", Icon: Users },
     // ミッションは全ログインユーザーに表示（自分のシートがあるため）
-    { id: "missions", label: "ミッション", icon: "🎯" },
-    // パルス ダッシュボードは admin 以上のみ表示（下のフィルタ参照）
-    { id: "pulse", label: "パルス", icon: "🌤" },
-    { id: "users", label: "ユーザー", icon: "🔑" },
-    // 権限管理は master / privileged_admin のみ表示（下のフィルタ参照）
-    { id: "permissions", label: "権限", icon: "🛡" },
+    { id: "missions", label: "ミッション", Icon: Target },
+    // パルス ダッシュボードは master/privileged_admin のみ表示（下のフィルタ参照）
+    { id: "pulse", label: "パルス", Icon: CloudSun },
   ],
   payroll: [
-    { id: "salary", label: "給与表", icon: "📋" },
-    { id: "grades", label: "等級マスター", icon: "🏷" },
-    { id: "audit_log", label: "監査ログ", icon: "📜" },
+    { id: "salary", label: "給与表", Icon: ClipboardList },
+    { id: "grades", label: "等級マスター", Icon: Tags },
+    { id: "audit_log", label: "監査ログ", Icon: ScrollText },
   ],
-};
-
-const BRAND_BY_SYSTEM: Record<SystemKey, { name: string; sub: string }> = {
-  talenthub: { name: "TalentHub", sub: "組織図 & 従業員管理" },
-  payroll: { name: "Payroll", sub: "給与・査定" },
 };
 
 const ROLE_LABEL: Record<AppUserRole, string> = {
@@ -43,36 +63,57 @@ const ROLE_LABEL: Record<AppUserRole, string> = {
   viewer: "viewer",
 };
 
-/**
- * Always-on top-level header for the app shell. Renders different tabs
- * depending on the active system (TalentHub vs Payroll). When in the
- * Payroll system, the header adopts an amber gradient so the user is
- * never confused about which system they are looking at.
- *
- * Sits BELOW the SystemSwitcher and ABOVE the section-specific subnavs
- * (see OrgSubNav etc.).
- */
+/** ユーザーメニュー内に置く管理系セクション（users / permissions）。 */
+const MENU_SECTIONS: Section[] = ["users", "permissions"];
+
 export function GlobalHeader() {
   const route = useUiStore((s) => s.route);
   const navigate = useUiStore((s) => s.navigate);
+  const switchSystem = useUiStore((s) => s.switchSystem);
   const currentSection = sectionOfRoute(route);
   const currentSystem = systemOfRoute(route);
   const currentUser = useAuthStore((s) => s.currentUser);
-  // 権限管理タブは master / privileged_admin のみ（SystemSwitcher の
-  // payroll ゲートと同じパターン）。
-  const tabs = TABS_BY_SYSTEM[currentSystem].filter(
-    (t) =>
-      (t.id !== "permissions" && t.id !== "pulse") ||
-      canManagePermissions(currentUser?.role),
-  );
-  const brand = BRAND_BY_SYSTEM[currentSystem];
   const signOut = useAuthStore((s) => s.signOut);
+  const role = currentUser?.role;
+
+  const tabs = TABS_BY_SYSTEM[currentSystem].filter(
+    (t) => t.id !== "pulse" || canManagePermissions(role),
+  );
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 外側クリック / Escape でメニューを閉じる
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   async function handleSignOut() {
     if (!confirm("サインアウトしますか？")) return;
     await signOut();
     window.location.reload();
   }
+
+  function goMenu(section: Section) {
+    setMenuOpen(false);
+    navigate(defaultRouteForSection(section));
+  }
+
+  const menuActive = MENU_SECTIONS.includes(currentSection);
 
   return (
     <header className={`ghdr ghdr--${currentSystem}`}>
@@ -82,9 +123,15 @@ export function GlobalHeader() {
         onClick={() => navigate(defaultRouteForSystem(currentSystem))}
         title="ホームへ"
       >
-        <span className="ghdr__brandMark" aria-hidden>▣</span>
-        <span className="ghdr__brandName">{brand.name}</span>
-        <span className="ghdr__brandSub">{brand.sub}</span>
+        <span className="ghdr__brandMark" aria-hidden>
+          <Network size={16} strokeWidth={2.4} />
+        </span>
+        <span className="ghdr__brandName">
+          {currentSystem === "payroll" ? "Payroll" : "TalentHub"}
+        </span>
+        {currentSystem === "payroll" && (
+          <span className="ghdr__sysChip">給与・査定</span>
+        )}
       </button>
 
       <nav className="ghdr__tabs" role="tablist">
@@ -96,7 +143,9 @@ export function GlobalHeader() {
             className={`ghdr__tab ${currentSection === t.id ? "is-active" : ""}`}
             onClick={() => navigate(defaultRouteForSection(t.id))}
           >
-            <span className="ghdr__tabIcon" aria-hidden>{t.icon}</span>
+            <span className="ghdr__tabIcon" aria-hidden>
+              <t.Icon size={15} strokeWidth={2} />
+            </span>
             {t.label}
           </button>
         ))}
@@ -105,21 +154,94 @@ export function GlobalHeader() {
       <div className="ghdr__spacer" />
 
       {currentUser && (
-        <button
-          className="ghdr__user"
-          onClick={handleSignOut}
-          title="クリックでサインアウト"
-        >
-          <span className="ghdr__avatar" aria-hidden>
-            {(currentUser.display_name ?? currentUser.email)[0]?.toUpperCase() ?? "?"}
-          </span>
-          <span className="ghdr__userInfo">
-            <span className="ghdr__userName">{currentUser.display_name ?? currentUser.email}</span>
-            <span className={`ghdr__userRole ghdr__userRole--${currentUser.role}`}>
-              {ROLE_LABEL[currentUser.role] ?? currentUser.role}
+        <div className="ghdr__menuWrap" ref={menuRef}>
+          <button
+            className={`ghdr__user ${menuActive || menuOpen ? "is-active" : ""}`}
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="アカウントメニュー"
+          >
+            <span className="ghdr__avatar" aria-hidden>
+              {(currentUser.display_name ?? currentUser.email)[0]?.toUpperCase() ?? "?"}
             </span>
-          </span>
-        </button>
+            <span className="ghdr__userInfo">
+              <span className="ghdr__userName">
+                {currentUser.display_name ?? currentUser.email}
+              </span>
+              <span className={`ghdr__userRole ghdr__userRole--${currentUser.role}`}>
+                {ROLE_LABEL[currentUser.role] ?? currentUser.role}
+              </span>
+            </span>
+            <span className={`ghdr__chevron ${menuOpen ? "is-open" : ""}`} aria-hidden>
+              <ChevronDown size={14} strokeWidth={2} />
+            </span>
+          </button>
+
+          {menuOpen && (
+            <div className="ghdrmenu" role="menu">
+              {isUserManager(role) && (
+                <button
+                  className={`ghdrmenu__item ${currentSection === "users" ? "is-active" : ""}`}
+                  role="menuitem"
+                  onClick={() => goMenu("users")}
+                >
+                  <KeyRound size={15} strokeWidth={2} />
+                  ユーザー管理
+                </button>
+              )}
+              {canManagePermissions(role) && (
+                <button
+                  className={`ghdrmenu__item ${currentSection === "permissions" ? "is-active" : ""}`}
+                  role="menuitem"
+                  onClick={() => goMenu("permissions")}
+                >
+                  <ShieldCheck size={15} strokeWidth={2} />
+                  権限管理
+                </button>
+              )}
+              {canAccessPayroll(role) && (
+                <>
+                  <div className="ghdrmenu__divider" role="separator" />
+                  {currentSystem === "talenthub" ? (
+                    <button
+                      className="ghdrmenu__item"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        switchSystem("payroll");
+                      }}
+                    >
+                      <Wallet size={15} strokeWidth={2} />
+                      Payroll（給与・査定）
+                    </button>
+                  ) : (
+                    <button
+                      className="ghdrmenu__item"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        switchSystem("talenthub");
+                      }}
+                    >
+                      <LayoutGrid size={15} strokeWidth={2} />
+                      TalentHub へ戻る
+                    </button>
+                  )}
+                </>
+              )}
+              <div className="ghdrmenu__divider" role="separator" />
+              <button
+                className="ghdrmenu__item ghdrmenu__item--danger"
+                role="menuitem"
+                onClick={handleSignOut}
+              >
+                <LogOut size={15} strokeWidth={2} />
+                サインアウト
+              </button>
+            </div>
+          )}
+        </div>
       )}
     </header>
   );

@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { GlobalHeader } from "./components/GlobalHeader";
-import { SystemSwitcher } from "./components/SystemSwitcher";
 import { SalaryTablePage } from "./components/payroll/SalaryTablePage";
 import { GradesPage } from "./components/payroll/GradesPage";
 import { AuditLogPage } from "./components/payroll/AuditLogPage";
@@ -533,8 +532,8 @@ export default function App() {
   }
 
   // Render the editor shell or a dedicated section page based on the route.
-  // SystemSwitcher (Talenthub vs Payroll) sits at the very top; GlobalHeader
-  // adapts its tabs to the active system; the content area swaps below.
+  // P1: ヘッダーは GlobalHeader 1本（旧 SystemSwitcher 行は廃止。Payroll への
+  // 切替はヘッダー右上のユーザーメニューから）。content area swaps below.
   const system = systemOfRoute(route);
   return (
     <div
@@ -548,7 +547,6 @@ export default function App() {
         .filter(Boolean)
         .join(" ")}
     >
-      <SystemSwitcher />
       <GlobalHeader />
       <SectionContent route={route} />
       <Toast />

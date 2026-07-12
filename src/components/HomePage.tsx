@@ -1,4 +1,14 @@
 import { useEffect, useMemo } from "react";
+import {
+  Network,
+  Megaphone,
+  Users,
+  Target,
+  Wallet,
+  ShieldCheck,
+  CloudSun,
+  type LucideIcon,
+} from "lucide-react";
 import { useUiStore, type Route } from "../store/useUiStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useAnnouncementsStore } from "../store/useAnnouncementsStore";
@@ -23,7 +33,7 @@ type FeatureCard = {
   key: string;
   label: string;
   desc: string;
-  icon: string;
+  Icon: LucideIcon;
   route: Route;
   /** 表示可否（未指定なら常時表示） */
   visible?: (role: AppUserRole | undefined) => boolean;
@@ -36,35 +46,35 @@ const CARDS: FeatureCard[] = [
     key: "org",
     label: "組織図",
     desc: "全社の配置・兼務・役割をツリー/一覧で確認・編集",
-    icon: "🗂",
+    Icon: Network,
     route: { name: "editor" },
   },
   {
     key: "announcements",
     label: "人事発令",
     desc: "月次の入社・退職・異動・任用の通知資料",
-    icon: "📢",
+    Icon: Megaphone,
     route: { name: "announcements" },
   },
   {
     key: "employees",
-    label: "従業員マスター",
-    desc: "社員・インターンの基本情報と在籍状況",
-    icon: "👥",
+    label: "メンバー",
+    desc: "社員・インターンのプロフィールと在籍状況",
+    Icon: Users,
     route: { name: "employees" },
   },
   {
     key: "missions",
     label: "ミッションシート",
     desc: "目標設定・中間/期末の記入と査定",
-    icon: "🎯",
+    Icon: Target,
     route: { name: "missions" },
   },
   {
     key: "salary",
     label: "給与・査定",
     desc: "給与表・等級マスター（権限者のみ）",
-    icon: "📋",
+    Icon: Wallet,
     route: { name: "salary" },
     visible: (role) => canAccessPayroll(role),
   },
@@ -72,17 +82,16 @@ const CARDS: FeatureCard[] = [
     key: "permissions",
     label: "権限管理",
     desc: "ユーザーのロールとアクセス権（権限者のみ）",
-    icon: "🛡",
+    Icon: ShieldCheck,
     route: { name: "permissions" },
     visible: (role) => canManagePermissions(role),
   },
   {
     key: "pulse",
     label: "パルスサーベイ",
-    desc: "組織のコンディションを定点観測（近日公開）",
-    icon: "📈",
-    route: { name: "home" },
-    soon: true,
+    desc: "今月のコンディションに回答（対象者）",
+    Icon: CloudSun,
+    route: { name: "survey" },
   },
 ];
 
@@ -124,7 +133,9 @@ export function HomePage() {
           className="home__widget"
           onClick={() => navigate({ name: "announcement", id: latestAnn.id })}
         >
-          <span className="home__widgetIcon" aria-hidden>📢</span>
+          <span className="home__widgetIcon" aria-hidden>
+            <Megaphone size={18} strokeWidth={2} />
+          </span>
           <span className="home__widgetBody">
             <span className="home__widgetLabel">最新の人事発令</span>
             <span className="home__widgetTitle">
@@ -143,7 +154,9 @@ export function HomePage() {
             disabled={c.soon}
             onClick={() => !c.soon && navigate(c.route)}
           >
-            <span className="home__cardIcon" aria-hidden>{c.icon}</span>
+            <span className="home__cardIcon" aria-hidden>
+              <c.Icon size={22} strokeWidth={1.8} />
+            </span>
             <span className="home__cardLabel">
               {c.label}
               {c.soon && <span className="home__badge">近日</span>}
