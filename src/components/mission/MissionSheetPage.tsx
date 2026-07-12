@@ -183,7 +183,7 @@ export function MissionSheetPage({ id }: { id: string }) {
     q: MissionQuestion,
     role: MissionRespondent,
     value: AnswerValue,
-  ) {
+  ): Promise<{ ok: boolean; reason?: string }> {
     const key = answerKey(q.id, role);
     setSaveStates((s) => ({ ...s, [key]: "saving" }));
     const res = await saveAnswer(id, q.id, role, value);
@@ -194,7 +194,29 @@ export function MissionSheetPage({ id }: { id: string }) {
       // 回答が変わったら計算プレビューは陳腐化するので破棄する
       setPreview(null);
     }
+    return res;
   }
+
+  /**
+   * 期初確定ダイアログの警告用: 上長の期初評価（credo_eval の goal_eval）が
+   * 未記入の設問ラベル。確定後は凍結ガードで差し戻し以外に入力経路がなくなる
+   * ため、確定前に非ブロッキングで注意喚起する。
+   */
+  const evaluatorCredoUnfilled = useMemo(() => {
+    if (!template) return [];
+    const labels: string[] = [];
+    for (const sec of template.definition.sections) {
+      for (const q of sec.questions) {
+        if (q.type !== "credo_eval") continue;
+        const resp = questionRespondent(q);
+        if (resp !== "evaluator" && resp !== "both") continue;
+        if (questionPhase(q) !== "goal") continue;
+        const ans = findAnswer(answers, q.id, "evaluator");
+        if (!isAnswerFilled(q, ans?.value)) labels.push(q.label);
+      }
+    }
+    return labels;
+  }, [template, answers]);
 
   /** required（本人・goal フェーズ）の未記入設問ラベルを列挙する。 */
   function collectMissingRequired(): string[] {
@@ -357,14 +379,14 @@ export function MissionSheetPage({ id }: { id: string }) {
       <DeadlineBanner template={template} stage={stage} />
 
       {progress && (
-        <div className="mission__progress" role="status">
-          <div className="mission__progressBar" aria-hidden="true">
+        <div className="mission__fillProgress" role="status">
+          <div className="mission__fillProgressBar" aria-hidden="true">
             <div
-              className="mission__progressFill"
+              className="mission__fillProgressFill"
               style={{ width: `${Math.round((progress.filled / progress.total) * 100)}%` }}
             />
           </div>
-          <span className="mission__progressLabel">
+          <span className="mission__fillProgressLabel">
             あなたの記入進捗 {progress.filled}/{progress.total}
             {progress.filled >= progress.total && " ✓"}
           </span>
@@ -605,7 +627,22 @@ export function MissionSheetPage({ id }: { id: string }) {
       {confirming === "confirm" && (
         <ConfirmDialog
           title="期初面談完了として確定"
-          message="期初目標を確定します。確定後、本人は期初設問を編集できなくなります。よろしいですか？"
+          message={
+            <>
+              期初目標を確定します。確定後、本人は期初設問を編集できなくなります。
+              {evaluatorCredoUnfilled.length > 0 && (
+                <>
+                  <br />
+                  <strong>
+                    ⚠ 上長の期初評価が未記入のCREDOが{evaluatorCredoUnfilled.length}件あります
+                    （{evaluatorCredoUnfilled.join("・")}）。確定後は差し戻し以外で入力できません。
+                  </strong>
+                </>
+              )}
+              <br />
+              よろしいですか？
+            </>
+          }
           confirmLabel="確定する"
           onConfirm={() => {
             setConfirming(null);
@@ -788,7 +825,7 @@ function AnswerField({
   showActual: boolean;
   /** 期初確定済みか（kpi_goal の目標系・credo_eval の期初系をロック。サーバトリガのミラー）。 */
   goalLocked: boolean;
-  onSave: (v: AnswerValue) => void;
+  onSave: (v: AnswerValue) => Promise<{ ok: boolean; reason?: string }>;
 }) {
   if (question.type === "kpi_goal") {
     return (
@@ -1011,7 +1048,11 @@ function DateField({
  * - evaluator 行: 期初評価＋期末評価（同上）。
  * 期初系（focus / goal_eval）は goalLocked（期初確定以降）で不活性 —
  * サーバ側 mission_answers_credo_guard トリガのミラー。
- * 保存は選択即保存（SelectField と同じ理由）で、既存 value にマージする。
+ * 保存は選択即保存（SelectField と同じ理由）。1行の value に複数フィールドを
+ * 持つため、連続クリックの基底は props（保存往復中は stale）ではなく
+ * ローカル値にする（レビュー指摘: 保存レースでクリックが巻き戻る対策）。
+ * props からの再同期は保存が in-flight でない時のみ。保存失敗時は props へ
+ * 巻き戻す。
  */
 function CredoEvalField({
   scale,
@@ -1028,9 +1069,28 @@ function CredoEvalField({
   editable: boolean;
   showFinal: boolean;
   goalLocked: boolean;
-  onSave: (v: AnswerValue) => void;
+  onSave: (v: AnswerValue) => Promise<{ ok: boolean; reason?: string }>;
 }) {
-  const cur: AnswerValue = value ?? {};
+  const propsJson = JSON.stringify(value ?? {});
+  const [local, setLocal] = useState<AnswerValue>(value ?? {});
+  const [syncedJson, setSyncedJson] = useState(propsJson);
+  const [pendingCount, setPendingCount] = useState(0);
+  if (propsJson !== syncedJson && pendingCount === 0) {
+    setSyncedJson(propsJson);
+    setLocal(value ?? {});
+  }
+  const cur: AnswerValue = local;
+  async function save(next: AnswerValue) {
+    setLocal(next);
+    setPendingCount((n) => n + 1);
+    try {
+      const res = await onSave(next);
+      // 失敗時は syncedJson を無効化して props（サーバ確定値）へ再同期させる
+      if (!res.ok) setSyncedJson("__stale__");
+    } finally {
+      setPendingCount((n) => n - 1);
+    }
+  }
   const goalEditable = editable && !goalLocked;
   const finalEditable = editable && showFinal;
 
@@ -1056,7 +1116,7 @@ function CredoEvalField({
               disabled={!enabled}
               aria-pressed={selected === mark}
               onClick={() => {
-                if (mark !== selected) onSave({ ...cur, [field]: mark });
+                if (mark !== selected) void save({ ...cur, [field]: mark });
               }}
             >
               {mark}
@@ -1075,7 +1135,7 @@ function CredoEvalField({
             type="checkbox"
             checked={!!cur.focus}
             disabled={!goalEditable}
-            onChange={(e) => onSave({ ...cur, focus: e.target.checked })}
+            onChange={(e) => void save({ ...cur, focus: e.target.checked })}
           />
           今期の注力テーマにする
         </label>

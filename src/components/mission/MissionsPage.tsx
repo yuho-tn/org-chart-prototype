@@ -329,7 +329,7 @@ function TargetsTab({
           <tr>
             <th>氏名</th>
             <th>部署</th>
-            <th style={{ width: 110 }}>当期</th>
+            <th style={{ width: 110 }}>最新期</th>
             <th style={{ width: 170 }}>ステージ</th>
             <th style={{ width: 110 }}>最終更新</th>
             <th>過去期</th>

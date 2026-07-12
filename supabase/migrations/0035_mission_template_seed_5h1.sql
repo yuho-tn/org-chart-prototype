@@ -10,6 +10,10 @@
 --      • 組織VISION【定量】【定性】の今期文言（heading のプレースホルダ差替え）
 --      • KPI ウエイト（暫定 40/30/30・合計100）と閾値表の確定
 --        —— published 後は変更経路がない既知制約。公開前に必ず確定すること
+--      • KPI は3本必須（required）でseed。運用を2本以下にする場合は設問ごと
+--        削除してウエイトを再配分すること（required 無し×ウエイト有り だと
+--        「未記入のまま期末提出時に上長達成度入力を強制され実質0点」の
+--        構造的な詰みが生まれるため、この組み合わせは作らない）
 --      • 各フェーズ締切日（deadlines）
 --   2. 公開（published）→ 発行タブから一括発行
 --
@@ -264,7 +268,7 @@ values (
     {
       "id": "results",
       "title": "成果（KPI目標）",
-      "description": "今期の成果目標をKPIとして設定します（数値・単位まで具体化）。⚠️ウエイトは暫定値（40/30/30）— 公開前に必ず確定してください（公開後は変更できません）。",
+      "description": "今期の成果目標を3本のKPIとして設定します（数値・単位まで具体化）。⚠️ウエイトは暫定値（40/30/30）— 公開前に必ず確定してください（公開後は変更できません）。",
       "questions": [
         {
           "id": "kpi_goal_1",
@@ -279,6 +283,7 @@ values (
           "id": "kpi_goal_2",
           "label": "KPI目標 2",
           "type": "kpi_goal",
+          "required": true,
           "respondent": "both",
           "phase": "goal",
           "weight": 30
@@ -287,6 +292,7 @@ values (
           "id": "kpi_goal_3",
           "label": "KPI目標 3",
           "type": "kpi_goal",
+          "required": true,
           "respondent": "both",
           "phase": "goal",
           "weight": 30

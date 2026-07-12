@@ -6840,28 +6840,29 @@ body.is-dragging .dept-card__add-child {
   font-size: 11px;
 }
 
-/* ── 記入進捗インジケータ（P5④） ── */
-.mission__progress {
+/* ── 記入進捗インジケータ（P5④）
+   ※ .mission__progress は既存の StageProgress（ol）が使用中のため別名 ── */
+.mission__fillProgress {
   display: flex;
   align-items: center;
   gap: 10px;
   margin: 8px 0;
   max-width: 720px;
 }
-.mission__progressBar {
+.mission__fillProgressBar {
   flex: 1;
   height: 6px;
   border-radius: 999px;
   background: var(--navy-50);
   overflow: hidden;
 }
-.mission__progressFill {
+.mission__fillProgressFill {
   height: 100%;
   border-radius: 999px;
   background: var(--primary);
   transition: width 0.25s ease;
 }
-.mission__progressLabel {
+.mission__fillProgressLabel {
   font-size: 11.5px;
   color: var(--text-muted);
   white-space: nowrap;
@@ -6871,7 +6872,7 @@ body.is-dragging .dept-card__add-child {
 @media (max-width: 640px) {
   .mission__answerInput,
   .mission__kpi,
-  .mission__progress {
+  .mission__fillProgress {
     max-width: 100%;
   }
   .mission__answerRow {

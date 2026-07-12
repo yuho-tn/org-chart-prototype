@@ -452,7 +452,8 @@ export function MissionTemplateEditorPage({ id }: { id: string }) {
                       <select
                         className="field__input field__input--xs"
                         value={q.phase ?? "goal"}
-                        disabled={!editable}
+                        // credo_eval は goal 固定（期初/期末の4枠を1設問で持つ設計）
+                        disabled={!editable || q.type === "credo_eval"}
                         onChange={(e) => updateQuestion(secIdx, qIdx, { phase: e.target.value as MissionPhase })}
                       >
                         {(Object.keys(PHASE_LABEL) as MissionPhase[]).map((p) => (
@@ -465,7 +466,8 @@ export function MissionTemplateEditorPage({ id }: { id: string }) {
                       <select
                         className="field__input field__input--xs"
                         value={q.respondent ?? "self"}
-                        disabled={!editable}
+                        // credo_eval は both 固定（本人×上長の4枠評価が前提）
+                        disabled={!editable || q.type === "credo_eval"}
                         onChange={(e) => updateQuestion(secIdx, qIdx, { respondent: e.target.value as QuestionRespondent })}
                       >
                         {(Object.keys(RESPONDENT_LABEL) as QuestionRespondent[]).map((r) => (
@@ -496,11 +498,13 @@ export function MissionTemplateEditorPage({ id }: { id: string }) {
                       />
                       必須
                     </label>
-                    <label className="payroll-checkbox" style={{ alignSelf: "end" }} title="アタリマエ項目（上長評価に✕が1つでもあるとランクはC上限）">
+                    <label className="payroll-checkbox" style={{ alignSelf: "end" }} title="アタリマエ項目（上長評価に✕が1つでもあるとランクはC上限）。✕判定は選択式の回答テキストのみを見るため、選択式以外では設定できません">
                       <input
                         type="checkbox"
                         checked={!!q.is_fundamental}
-                        disabled={!editable}
+                        // calc の✕判定は value.text しか読まない — select 以外に
+                        // 付けるとサイレント無効になるため設定不可（既設定は解除可）
+                        disabled={!editable || (q.type !== "select" && !q.is_fundamental)}
                         onChange={(e) => updateQuestion(secIdx, qIdx, { is_fundamental: e.target.checked || undefined })}
                       />
                       アタリマエ
