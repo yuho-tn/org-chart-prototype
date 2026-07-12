@@ -44,6 +44,15 @@ function newId(): string {
     : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * link ブロックの URL を安全なスキーム（http/https/mailto）のみ許可する。
+ * javascript:/data: 等は stored self-XSS になるため空文字にして弾く。
+ */
+export function safeLinkUrl(raw: unknown): string {
+  const u = String(raw ?? "").trim();
+  return /^(https?:\/\/|mailto:)/i.test(u) ? u : "";
+}
+
 /** 指定型の空ブロックを生成。 */
 export function emptyBlock(type: BlockType): ProfileBlock {
   const id = newId();
@@ -93,7 +102,7 @@ export function normalizeBlocks(raw: unknown): ProfileBlock[] {
         out.push({
           id,
           type: "link",
-          url: String(rec.url ?? ""),
+          url: safeLinkUrl(rec.url),
           title: rec.title ? String(rec.title) : undefined,
           description: rec.description ? String(rec.description) : undefined,
         });
@@ -105,19 +114,21 @@ export function normalizeBlocks(raw: unknown): ProfileBlock[] {
   return out;
 }
 
-/** 空ブロック（内容が空）を保存前に除去する。 */
+/** 保存前の整形: link は安全スキームへ sanitize、空ブロックは除去する。 */
 export function pruneBlocks(blocks: ProfileBlock[]): ProfileBlock[] {
-  return blocks.filter((b) => {
-    switch (b.type) {
-      case "heading":
-      case "text":
-        return b.text.trim() !== "";
-      case "image":
-        return b.images.length > 0;
-      case "link":
-        return b.url.trim() !== "";
-    }
-  });
+  return blocks
+    .map((b) => (b.type === "link" ? { ...b, url: safeLinkUrl(b.url) } : b))
+    .filter((b) => {
+      switch (b.type) {
+        case "heading":
+        case "text":
+          return b.text.trim() !== "";
+        case "image":
+          return b.images.length > 0;
+        case "link":
+          return b.url.trim() !== "";
+      }
+    });
 }
 
 /** blocks 内の全画像 path を収集（signed URL 一括発行用）。 */
@@ -129,5 +140,7 @@ export function collectBlockImagePaths(blocks: ProfileBlock[]): string[] {
   return paths;
 }
 
-/** URL らしき文字列にマッチ（text ブロックの自動リンク化用）。 */
-export const URL_REGEX = /(https?:\/\/[^\s<>"']+)/g;
+/** URL らしき文字列にマッチ（text ブロックの自動リンク化用）。
+ *  ※ global フラグは付けない（.test() のステートフル化を避ける。split の
+ *  キャプチャ分割は g なしでも機能する）。 */
+export const URL_REGEX = /(https?:\/\/[^\s<>"']+)/;

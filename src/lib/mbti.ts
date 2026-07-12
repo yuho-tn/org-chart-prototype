@@ -117,10 +117,11 @@ export function mbtiAvatarSvg(code: string): string {
     ? `<path d="M24 41 Q32 48 40 41" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round"/>`
     : `<line x1="25" y1="43" x2="39" y2="43" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>`;
 
-  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${code}">${antenna}${body}${eyes}${mouth}</svg>`;
+  // body を先に描く（S型の帽子つばが body に隠れないよう antenna は body の後）。
+  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${code}">${body}${antenna}${eyes}${mouth}</svg>`;
 }
 
 /** アバターSVGを data URI 化（img src 用）。 */
 export function mbtiAvatarDataUri(code: string): string {
-  return `data:image/svg+xml;utf8,${encodeURIComponent(mbtiAvatarSvg(code))}`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(mbtiAvatarSvg(code))}`;
 }

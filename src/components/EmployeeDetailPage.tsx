@@ -32,6 +32,7 @@ import {
   pruneBlocks,
   emptyBlock,
   collectBlockImagePaths,
+  safeLinkUrl,
   BLOCK_TYPE_LABEL,
   URL_REGEX,
   type ProfileBlock,
@@ -695,22 +696,25 @@ function BlockView({
                 ))}
               </div>
             );
-          case "link":
+          case "link": {
+            const safe = safeLinkUrl(b.url);
+            if (!safe) return null; // 不正スキームは描画しない（defense in depth）
             return (
               <a
                 key={b.id}
                 className="blockview__link"
-                href={b.url}
+                href={safe}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <span className="blockview__linkTitle">{b.title || b.url}</span>
+                <span className="blockview__linkTitle">{b.title || safe}</span>
                 {b.description && (
                   <span className="blockview__linkDesc">{b.description}</span>
                 )}
-                <span className="blockview__linkUrl">{b.url}</span>
+                <span className="blockview__linkUrl">{safe}</span>
               </a>
             );
+          }
         }
       })}
     </div>
