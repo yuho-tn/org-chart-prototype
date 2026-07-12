@@ -220,28 +220,65 @@ function MySheetsTab({
       </p>
     );
   }
+  // sheets は period 降順ソート済み（呼び出し側）— 先頭が当期
+  const [current, ...past] = sheets;
+  const currentTpl = templatesById[current.template_id];
   return (
-    <div className="mission__cards">
-      {sheets.map((sheet) => {
-        const tpl = templatesById[sheet.template_id];
-        return (
-          <div key={sheet.id} className="mission__card">
-            <div className="mission__cardHead">
-              <span className="mission__cardPeriod">
-                {periodLabel(sheet.period, periods)}
-              </span>
-              <StageBadge stage={sheet.stage} />
-            </div>
-            <div className="mission__cardTitle">{tpl?.title ?? "ミッションシート"}</div>
-            <DeadlineBanner template={tpl} stage={sheet.stage} />
-            <div className="mission__cardActions">
-              <button className="btn btn--primary" onClick={() => onOpen(sheet.id)}>
-                シートを開く
-              </button>
-            </div>
-          </div>
-        );
-      })}
+    <div className="mission__myTimeline">
+      <div className="mission__card mission__card--current">
+        <div className="mission__cardHead">
+          <span className="mission__cardPeriod">
+            {periodLabel(current.period, periods)}
+          </span>
+          <StageBadge stage={current.stage} />
+          {current.final_grade && (
+            <span className="mission__rankBadge">{current.final_grade}</span>
+          )}
+        </div>
+        <div className="mission__cardTitle">
+          {currentTpl?.title ?? "ミッションシート"}
+        </div>
+        <DeadlineBanner template={currentTpl} stage={current.stage} />
+        <div className="mission__cardActions">
+          <button className="btn btn--primary" onClick={() => onOpen(current.id)}>
+            シートを開く
+          </button>
+        </div>
+      </div>
+
+      {past.length > 0 && (
+        <>
+          <h3 className="mission__timelineHead">過去の期</h3>
+          <ul className="mission__timeline">
+            {past.map((sheet) => {
+              const tpl = templatesById[sheet.template_id];
+              return (
+                <li key={sheet.id} className="mission__timelineItem">
+                  <span className="mission__timelinePeriod">
+                    {periodLabel(sheet.period, periods)}
+                  </span>
+                  <span className="mission__timelineTitle">
+                    {tpl?.title ?? "ミッションシート"}
+                  </span>
+                  <StageBadge stage={sheet.stage} />
+                  {sheet.final_grade && (
+                    <span className="mission__rankBadge">{sheet.final_grade}</span>
+                  )}
+                  <button
+                    className="btn btn--ghost btn--xs"
+                    onClick={() => onOpen(sheet.id)}
+                  >
+                    参照する
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="empdetail__hint">
+            過去の期のシートは読み取り専用です（査定確定後は編集できません）。
+          </p>
+        </>
+      )}
     </div>
   );
 }

@@ -6759,6 +6759,66 @@ body.is-dragging .dept-card__add-child {
   width: 100%;
 }
 
+/* ── マイシート期別タイムライン（P5②） ── */
+.mission__myTimeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+}
+.mission__card--current {
+  border-color: var(--navy-300);
+  box-shadow: var(--shadow-1);
+}
+.mission__timelineHead {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.mission__timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mission__timelineItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-top: none;
+  background: var(--panel);
+  flex-wrap: wrap;
+}
+.mission__timelineItem:first-child {
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.mission__timelineItem:last-child {
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.mission__timelineItem:only-child {
+  border-radius: var(--radius-sm);
+}
+.mission__timelinePeriod {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--navy-700);
+  min-width: 72px;
+}
+.mission__timelineTitle {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--text);
+  min-width: 120px;
+}
+.mission__timelineItem .btn {
+  margin-left: auto;
+}
+
 /* ── ホーム（TalentHub トップ：機能ハブ＋軽ダッシュボード） ──────────── */
 .home { max-width: 1040px; }
 .home__hero { margin: 4px 0 20px; }
