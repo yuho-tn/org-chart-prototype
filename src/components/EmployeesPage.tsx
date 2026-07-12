@@ -6,6 +6,8 @@ import { useProfilesStore } from "../store/useProfilesStore";
 import { useUiStore } from "../store/useUiStore";
 import { employeeName, type EmployeeRow } from "../lib/supabase";
 import { avatarPathOf } from "../lib/profile";
+import { normalizeMbti, MBTI_BY_CODE, MBTI_GROUP_COLOR } from "../lib/mbti";
+import { STRENGTH_BY_ID, STRENGTH_DOMAIN_COLOR, normalizeStrengthIds } from "../lib/strengths";
 import { useRevalidateOnFocus } from "../lib/useRevalidateOnFocus";
 import type { ImportSummary } from "../store/useEmployeesStore";
 
@@ -555,6 +557,32 @@ export function EmployeesPage() {
                       )}
                       <span className="empcard__sub">{emp.department ?? "—"}</span>
                       <span className="empcard__sub">{emp.position_title ?? "—"}</span>
+                      {(() => {
+                        const mbti = normalizeMbti(prof?.mbti ?? null);
+                        const top = normalizeStrengthIds(prof?.strengths ?? [])[0];
+                        const topQ = top ? STRENGTH_BY_ID[top] : undefined;
+                        if (!mbti && !topQ) return null;
+                        return (
+                          <span className="empcard__tags">
+                            {mbti && (
+                              <span
+                                className="empcard__mbti"
+                                style={{ borderColor: MBTI_GROUP_COLOR[MBTI_BY_CODE[mbti].group] }}
+                              >
+                                {mbti}
+                              </span>
+                            )}
+                            {topQ && (
+                              <span
+                                className="empcard__strength"
+                                style={{ background: STRENGTH_DOMAIN_COLOR[topQ.domain] }}
+                              >
+                                {topQ.name_ja}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </span>
                   </button>
                 );

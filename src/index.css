@@ -7330,3 +7330,428 @@ body.is-dragging .dept-card__add-child {
   background: var(--navy-600);
   vertical-align: 1px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   P3: 従業員マスターリッチ化（経歴／タグ／MBTI／ストレングス／ブロック）
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── タグ（得意領域・趣味） ── */
+.empdetail__tags,
+.tagEditor__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+.tag--specialty {
+  background: var(--navy-50);
+  color: var(--navy-700);
+  border-color: var(--navy-100);
+}
+.tag--hobby {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: var(--border);
+}
+.tag__remove {
+  border: none;
+  background: transparent;
+  color: currentColor;
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 0 0 2px;
+  line-height: 1;
+}
+.tag__remove:hover {
+  opacity: 1;
+}
+
+/* ── SHO-SAN経歴（表示） ── */
+.empdetail__career {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.empdetail__careerRow {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--navy-300);
+  background: var(--navy-50);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.empdetail__career--auto .empdetail__careerRow {
+  border-left-color: var(--border-strong);
+  background: #fafafa;
+}
+.empdetail__careerPeriod {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--navy-700);
+  font-size: 13px;
+}
+.empdetail__careerBody {
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+/* ── MBTI バッジ（表示） ── */
+.mbtiBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 6px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+}
+.mbtiBadge__avatar {
+  border-radius: 50%;
+}
+.mbtiBadge__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.mbtiBadge__code {
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.mbtiBadge__nick {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.mbtiBadge__link {
+  text-decoration: none;
+  color: var(--text-subtle);
+  font-size: 13px;
+  padding-left: 2px;
+}
+.mbtiBadge__link:hover {
+  color: var(--primary);
+}
+
+/* ── ストレングスバッジ（表示・順位付き） ── */
+.empdetail__strengths,
+.strengthPicker__ranked {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.strengthBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 4px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.strengthBadge__rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  font-size: 11px;
+  font-weight: 800;
+}
+.strengthBadge__q {
+  opacity: 0.7;
+  font-size: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+
+/* ── 自由プロフィール（ブロック表示） ── */
+.blockview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.blockview__heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin: 4px 0 0;
+}
+.blockview__text {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  color: var(--text);
+  margin: 0;
+}
+.blockview__text a,
+.blockview__link {
+  color: var(--primary);
+}
+.blockview__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.blockview__image {
+  margin: 0;
+  max-width: 260px;
+}
+.blockview__image img {
+  max-width: 100%;
+  border-radius: var(--radius);
+  display: block;
+}
+.blockview__image figcaption {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.blockview__link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  background: var(--panel);
+  max-width: 480px;
+}
+.blockview__link:hover {
+  border-color: var(--navy-300);
+}
+.blockview__linkTitle {
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.blockview__linkDesc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.blockview__linkUrl {
+  font-size: 11px;
+  color: var(--text-subtle);
+  word-break: break-all;
+}
+
+/* ── 経歴エディタ ── */
+.careerEditor,
+.tagEditor,
+.blockEditor,
+.strengthPicker,
+.mbtiPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.careerEditor__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.careerEditor__period {
+  flex: 0 0 130px;
+}
+.careerEditor__tilde {
+  color: var(--text-muted);
+}
+.careerEditor__body {
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+
+/* ── タグエディタ ── */
+.tagEditor__input {
+  display: flex;
+  gap: 6px;
+  max-width: 420px;
+}
+.tag--removable {
+  padding-right: 8px;
+}
+
+/* ── MBTI ピッカー ── */
+.mbtiPicker__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.mbtiPicker__col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mbtiPicker__colHead {
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  padding-bottom: 2px;
+}
+.mbtiCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.mbtiCard:hover {
+  border-color: var(--navy-300);
+}
+.mbtiCard.is-selected {
+  border-width: 2px;
+  box-shadow: 0 0 0 3px var(--navy-50);
+}
+.mbtiCard__code {
+  font-weight: 800;
+  font-size: 12.5px;
+}
+.mbtiCard__nick {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.mbtiPicker__selected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* ── ストレングス ピッカー ── */
+.strengthPicker__ranked {
+  flex-direction: column;
+  gap: 6px;
+}
+.strengthPicker__rankRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.strengthPicker select {
+  max-width: 360px;
+}
+
+/* ── ブロックエディタ ── */
+.blockEditor__block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+}
+.blockEditor__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.blockEditor__type {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--navy-700);
+  background: var(--navy-50);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.blockEditor__spacer {
+  flex: 1;
+}
+.blockEditor__heading {
+  font-weight: 700;
+}
+.blockEditor__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+.blockEditor__imageItem {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 200px;
+}
+.blockEditor__imageItem img {
+  max-width: 100%;
+  border-radius: var(--radius);
+  display: block;
+}
+.blockEditor__link {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.blockEditor__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── ギャラリーカードの MBTI／ストレングス小バッジ ── */
+.empcard__tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.empcard__mbti {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  color: var(--text);
+}
+.empcard__strength {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #fff;
+}
+
+/* ── モバイル ── */
+@media (max-width: 768px) {
+  .mbtiPicker__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .empdetail__careerRow {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
