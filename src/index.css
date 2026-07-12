@@ -8307,3 +8307,135 @@ body.is-dragging .dept-card__add-child {
 .psub--scroll { overflow-x: auto; scrollbar-width: none; }
 .psub--scroll::-webkit-scrollbar { display: none; }
 .psub--scroll .psub__tab { white-space: nowrap; flex-shrink: 0; }
+
+/* ════════════════════════════════════════════════════════════
+   制度ハブ（#/reviews）Phase 1 — 量はしご / 質マトリクス / ドック / 軸カード
+   ════════════════════════════════════════════════════════════ */
+
+/* ── 進化エンジン凡例（はしご上部・既存 .reviews__engine を横スクロール可に） ── */
+.reviews__engine--legend { flex-wrap: wrap; margin-bottom: 16px; }
+
+/* ── 量の地図：16グレードはしご（常時全表示） ── */
+.reviews__ladderFull { display: flex; flex-direction: column; gap: 4px; }
+.reviews__lrow { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+.reviews__lrow--M { border-left: 4px solid var(--navy-900, #0B1D3A); }
+.reviews__lrow--E { border-left: 4px solid var(--navy-700, #1B3A6B); }
+.reviews__lrow--S { border-left: 4px solid var(--navy-500, #3A5F9E); }
+.reviews__lrow--P { border-left: 4px solid var(--navy-300, #8FACD6); }
+.reviews__lrowHead { display: grid; grid-template-columns: 52px 96px minmax(0, 1fr) auto minmax(118px, auto) 18px; align-items: center; gap: 12px; width: 100%; background: none; border: none; padding: 10px 14px; cursor: pointer; text-align: left; }
+.reviews__lrowHead:hover { background: var(--bg-soft); }
+.reviews__lcode { font-size: 14px; font-weight: 800; color: var(--text-strong); white-space: nowrap; }
+.reviews__lrank { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.reviews__ltitle { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reviews__lsalary { font-size: 12px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reviews__lnext { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--navy-700, #1B3A6B); background: var(--navy-50, #F0F4FA); border: 1px solid var(--navy-100, #DCE6F5); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.reviews__lnext svg { flex-shrink: 0; }
+.reviews__lnextCode { white-space: nowrap; }
+.reviews__lnext--rank { color: #fff; background: var(--navy-700, #1B3A6B); border-color: var(--navy-700, #1B3A6B); }
+.reviews__lnextTag { font-style: normal; font-size: 9px; font-weight: 800; background: rgba(255,255,255,0.22); border-radius: 3px; padding: 1px 5px; margin-left: 2px; }
+.reviews__lnext--top { color: var(--text-muted); background: var(--bg-soft); border-color: var(--border); }
+.reviews__lchev { color: var(--text-muted); transition: transform 0.15s; flex-shrink: 0; }
+.reviews__lchev.is-open { transform: rotate(180deg); }
+.reviews__lbody { padding: 2px 16px 14px 78px; display: flex; flex-direction: column; gap: 8px; }
+.reviews__lbody[hidden] { display: none; }
+.reviews__lbodyText { margin: 0; font-size: 12px; color: var(--text); line-height: 1.8; }
+.reviews__lpromo { margin: 0; font-size: 12px; color: var(--text); line-height: 1.8; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 10px 12px; }
+.reviews__lpromoLabel { display: inline-block; font-size: 10px; font-weight: 800; color: #fff; background: var(--navy-700, #1B3A6B); border-radius: 3px; padding: 1px 6px; margin-right: 8px; }
+
+/* ── 質の地図：13軸×4ランク マトリクス（デスクトップ） ── */
+.reviews__matrixWrap { display: block; }
+.reviews__matrix { display: grid; grid-template-columns: 128px repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--panel); position: relative; }
+/* ヘッダ角（左上・両方向 sticky） */
+.reviews__mxCorner { position: sticky; top: 0; left: 0; z-index: 5; display: flex; flex-direction: column; gap: 1px; justify-content: center; padding: 8px 10px; background: var(--navy-800, #122A52); color: #fff; border-right: 1px solid var(--border); }
+.reviews__mxCornerAxis { font-size: 12px; font-weight: 800; }
+.reviews__mxCornerRank { font-size: 9px; opacity: 0.75; }
+/* 列ヘッダ（P/S/E/M＋給与帯・上 sticky） */
+.reviews__mxColHead { position: sticky; top: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px; background: var(--navy-700, #1B3A6B); color: #fff; border-right: 1px solid rgba(255,255,255,0.14); text-align: center; }
+.reviews__mxColHead:last-child { border-right: none; }
+.reviews__mxColBadge { font-size: 10px; font-weight: 800; background: rgba(255,255,255,0.16); border-radius: 4px; padding: 1px 8px; }
+.reviews__mxColRank { font-size: 12px; font-weight: 800; }
+.reviews__mxColSalary { font-size: 10px; opacity: 0.82; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* セクション帯（全幅） */
+.reviews__mxBand { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; color: var(--text-muted); background: var(--bg-soft); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 5px 12px; }
+.reviews__mxBandNo { font-size: 10px; font-weight: 800; color: #fff; background: #C7161D; border-radius: 3px; padding: 1px 7px; letter-spacing: 0.04em; }
+.reviews__mxBand--sense .reviews__mxBandNo { background: var(--navy-700, #1B3A6B); }
+/* 軸名列（左 sticky） */
+.reviews__mxAxisName { position: sticky; left: 0; z-index: 3; display: flex; align-items: center; gap: 7px; padding: 10px 10px; background: var(--navy-50, #F0F4FA); border-right: 1px solid var(--border); border-top: 1px solid var(--border); }
+.reviews__mxAxisName--sense { background: color-mix(in srgb, var(--axis, #1B3A6B) 8%, #fff); }
+.reviews__mxAxisBadge { font-size: 10px; font-weight: 800; color: #fff; background: #C7161D; border-radius: 4px; padding: 2px 6px; letter-spacing: 0.02em; white-space: nowrap; }
+.reviews__mxAxisBadge--sense { color: var(--axis, var(--navy-700)); background: color-mix(in srgb, var(--axis, #1B3A6B) 14%, #fff); border: 1px solid color-mix(in srgb, var(--axis, #1B3A6B) 34%, transparent); }
+.reviews__mxAxisLabel { font-size: 13px; font-weight: 800; color: var(--text-strong); line-height: 1.35; }
+/* セル（title のみ・淡→濃ヒートマップ・クリックでドック） */
+.reviews__mxCell { display: flex; align-items: center; text-align: left; border: none; border-top: 1px solid var(--border); border-right: 1px solid var(--border); padding: 10px 12px; cursor: pointer; background: color-mix(in srgb, var(--mxBase, var(--navy-700)) var(--mxPct, 10%), #fff); transition: box-shadow 0.12s; }
+.reviews__mxCell:last-child { border-right: none; }
+.reviews__mxCell:hover { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--mxBase, var(--navy-700)) 55%, transparent); }
+.reviews__mxCell.is-active { box-shadow: inset 0 0 0 2px var(--mxBase, var(--navy-700)); }
+.reviews__mxCellTitle { font-size: 12px; font-weight: 700; color: var(--navy-900, #0B1D3A); line-height: 1.4; }
+
+/* ── ドック（マトリクス下・表を隠さず展開） ── */
+.reviews__dock { margin-top: 10px; border: 1px solid var(--border-strong, #d1d5db); border-left: 4px solid var(--axis, var(--navy-700, #1B3A6B)); border-radius: var(--radius-lg); background: var(--panel); box-shadow: var(--shadow-2); overflow: hidden; }
+.reviews__dockHead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--navy-50, #F0F4FA); border-bottom: 1px solid var(--border); }
+.reviews__dock--sense .reviews__dockHead { background: color-mix(in srgb, var(--axis, #1B3A6B) 8%, #fff); }
+.reviews__dockNav { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; border: 1px solid var(--border-strong, #d1d5db); background: #fff; color: var(--text-strong); cursor: pointer; flex-shrink: 0; }
+.reviews__dockNav:hover:not(:disabled) { background: var(--bg-soft); }
+.reviews__dockNav:disabled { opacity: 0.35; cursor: default; }
+.reviews__dockTitleWrap { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; min-width: 0; }
+.reviews__dockAxis { font-size: 15px; font-weight: 800; color: var(--text-strong); }
+.reviews__dockTimes { color: var(--text-subtle); font-weight: 800; }
+.reviews__dockRank { display: inline-flex; align-items: baseline; gap: 6px; font-size: 14px; font-weight: 800; color: var(--axis, var(--navy-700, #1B3A6B)); }
+.reviews__dockRankGrades { font-style: normal; font-size: 10px; font-weight: 800; color: var(--text-muted); background: var(--navy-100, #DCE6F5); border-radius: 3px; padding: 1px 6px; }
+.reviews__dockSalary { font-size: 11px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reviews__dockClose { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; border: none; background: none; color: var(--text-muted); cursor: pointer; flex-shrink: 0; }
+.reviews__dockClose:hover { background: var(--bg-soft); color: var(--text-strong); }
+.reviews__dockBody { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.reviews__dockCellTitle { margin: 0; font-size: 15px; font-weight: 800; color: var(--text-strong); line-height: 1.5; }
+.reviews__dockCellText { margin: 0; font-size: 13px; color: var(--text); line-height: 1.8; }
+.reviews__dockExample { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.8; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 10px 12px; }
+.reviews__dockExampleLabel { display: inline-block; font-size: 10px; font-weight: 800; color: var(--navy-700, #1B3A6B); background: var(--navy-100, #DCE6F5); border-radius: 3px; padding: 0 5px; margin-right: 6px; }
+.reviews__dockStory { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+.reviews__dockStoryStep { font-size: 11px; font-weight: 700; color: var(--text-muted); background: var(--bg-soft); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.reviews__dockStoryStep.is-current { color: #fff; background: var(--axis, var(--navy-700, #1B3A6B)); border-color: var(--axis, var(--navy-700, #1B3A6B)); }
+.reviews__dockStoryArrow { color: var(--text-subtle); font-size: 11px; }
+
+/* ── モバイル：軸カード縦積み（デスクトップは非表示） ── */
+.reviews__axisCards { display: none; }
+.reviews__axisCardsBand { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; color: var(--text-muted); margin: 6px 0 2px; }
+.reviews__axisCard { border: 1px solid var(--border); border-left: 4px solid var(--axis, var(--navy-700, #1B3A6B)); border-radius: var(--radius-lg); background: var(--panel); overflow: hidden; }
+.reviews__axisCardHead { display: flex; flex-direction: column; gap: 8px; width: 100%; background: none; border: none; padding: 12px 14px; cursor: pointer; text-align: left; min-height: 44px; }
+.reviews__axisCardTop { display: flex; align-items: center; gap: 8px; }
+.reviews__axisCardName { flex: 1; font-size: 15px; font-weight: 800; color: var(--text-strong); }
+.reviews__axisCardStory { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 6px; font-size: 10px; color: var(--text-muted); }
+.reviews__axisCardStep { white-space: nowrap; font-weight: 700; }
+.reviews__axisCardArrow { color: var(--text-subtle); flex-shrink: 0; }
+.reviews__axisCardBody { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 14px; }
+.reviews__axisCardRank { display: flex; flex-direction: column; gap: 5px; background: var(--bg-soft); border: 1px solid var(--border); border-left: 3px solid var(--navy-300, #8FACD6); border-radius: var(--radius-sm); padding: 10px 12px; }
+.reviews__axisCardRank--M { border-left-color: var(--navy-900, #0B1D3A); }
+.reviews__axisCardRank--E { border-left-color: var(--navy-700, #1B3A6B); }
+.reviews__axisCardRank--S { border-left-color: var(--navy-500, #3A5F9E); }
+.reviews__axisCardRank--P { border-left-color: var(--navy-300, #8FACD6); }
+.reviews__axisCardRankHead { display: flex; align-items: center; gap: 6px; }
+.reviews__axisCardRankName { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.reviews__axisCardRankTitle { font-size: 13px; font-weight: 800; color: var(--text-strong); line-height: 1.5; }
+.reviews__axisCardRankText { margin: 0; font-size: 12px; color: var(--text); line-height: 1.75; }
+.reviews__axisCardRankEx { margin: 0; font-size: 11px; color: var(--text-muted); line-height: 1.75; }
+
+/* ── VBCF 折り畳み ── */
+.reviews__foldHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.reviews__h2--fold { margin-bottom: 0; }
+.reviews__foldToggle { font-size: 12px; font-weight: 700; color: var(--primary); background: var(--navy-50, #F0F4FA); border: 1px solid var(--navy-100, #DCE6F5); border-radius: 999px; padding: 5px 14px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.reviews__foldToggle:hover { background: var(--navy-100, #DCE6F5); }
+.reviews__foldBody { display: flex; flex-direction: column; }
+
+/* ── レスポンシブ：~760px でマトリクス→軸カードへ切替 ── */
+@media (max-width: 760px) {
+  .reviews__matrixWrap { display: none; }
+  .reviews__axisCards { display: flex; flex-direction: column; gap: 8px; }
+  .reviews__lrowHead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .reviews__lrank { display: none; }
+  .reviews__ltitle { flex: 1 1 auto; min-width: 0; white-space: normal; }
+  .reviews__lchev { order: 2; margin-left: auto; }
+  .reviews__lsalary { order: 3; flex-basis: 100%; }
+  .reviews__lnext { order: 4; }
+  .reviews__lbody { padding-left: 16px; }
+}
+
