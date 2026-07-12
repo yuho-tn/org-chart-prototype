@@ -8109,6 +8109,7 @@ body.is-dragging .dept-card__add-child {
 .ail__note { font-size: 12px; color: var(--text-muted); margin: 4px 0 10px; }
 .ail__msgOk { color: var(--ok); font-size: 13px; margin: 8px 0 0; }
 .ail__err { color: var(--danger); }
+.ail__warn { color: var(--warn); font-size: 12px; }
 
 /* ── 分布バー（全社・雇用区分別共用） ── */
 .ail__dist { display: flex; flex-direction: column; gap: 6px; }
@@ -8264,6 +8265,7 @@ body.is-dragging .dept-card__add-child {
 .ail__tableWrap { overflow-x: auto; margin-top: 8px; }
 .ail__table td { vertical-align: middle; }
 .ail__rowError td { background: var(--danger-soft); }
+.ail__rowWarn td { background: var(--warn-soft); }
 .ail__noteCell { font-size: 12px; color: var(--text-muted); max-width: 220px; }
 
 /* ── 従業員詳細のAIレベル欄 ── */

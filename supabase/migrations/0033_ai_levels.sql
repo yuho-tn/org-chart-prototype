@@ -67,6 +67,12 @@ create index if not exists ai_level_grants_employee_idx
 create index if not exists ai_level_grants_created_idx
   on public.ai_level_grants (created_at desc);
 
+-- 一括投入の冪等化キー: 同一 社員×レベル×種別×認定日 の重複行を禁止。
+-- クライアントは upsert(onConflict=この4列, ignoreDuplicates) で投入する
+-- ＝同じシートの再貼り付けが二重登録にならない。
+create unique index if not exists ai_level_grants_dedup_idx
+  on public.ai_level_grants (employee_number, level, kind, certified_at);
+
 -- created_by はサーバ側で auth.email() を強制スタンプ。
 create or replace function public.ai_level_grants_stamp_author()
 returns trigger

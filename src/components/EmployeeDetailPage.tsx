@@ -166,6 +166,7 @@ export function EmployeeDetailPage({ num }: { num: string }) {
   // ── AI活用レベル（閲覧専用・編集は認定管理ページへ） ──
   const aiGrants = useAiLevelsStore((s) => s.grants);
   const aiLevelsLoaded = useAiLevelsStore((s) => s.loaded);
+  const aiLevelsError = useAiLevelsStore((s) => s.error);
   const refreshAiLevels = useAiLevelsStore((s) => s.refresh);
 
   const myAiGrants = useMemo(
@@ -541,12 +542,13 @@ export function EmployeeDetailPage({ num }: { num: string }) {
                 </div>
                 {myAiGrants.length > 1 && (
                   <ol className="ail__history">
+                    {/* note（認定根拠メモ）は管理者向け情報のためここでは
+                        表示しない（認定管理ページのみで閲覧） */}
                     {myAiGrants.map((g) => (
                       <li key={g.id} className="ail__historyRow">
                         <span className="ail__historyDate">{g.certified_at}</span>
                         <AiLevelBadge level={g.level} size="sm" />
                         <span className="ail__historyKind">{AI_LEVEL_KIND_LABEL[g.kind]}</span>
-                        {g.note && <span className="ail__historyNote">{g.note}</span>}
                       </li>
                     ))}
                   </ol>
@@ -555,6 +557,10 @@ export function EmployeeDetailPage({ num }: { num: string }) {
                   ※ レベルは失効なし（上がるだけ）。認定はAIレベル制度に基づき付与されます（編集は認定管理ページから）。
                 </p>
               </>
+            ) : aiLevelsError ? (
+              <p className="empdetail__empty">
+                AIレベルの読み込みでエラーが発生しました（{aiLevelsError}）。再読み込みしてください。
+              </p>
             ) : (
               <p className="empdetail__empty">
                 {aiLevelsLoaded ? "AI活用レベルは未認定です。" : "読み込み中…"}

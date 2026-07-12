@@ -30,13 +30,19 @@ type BulkPreviewRow = {
   raw: string;
   entry?: BulkEntry & { name: string };
   error?: string;
+  /** 登録は可能だが注意が必要な行（既に同レベル以上・退職者への付与等）。 */
+  warn?: string;
 };
+
+/** 一括投入の区切り文字: 半角カンマ / タブ / 読点 / 全角カンマ。 */
+const BULK_SEPARATOR = /[,\t、，]/;
 
 export function AiLevelAdminPage() {
   const role = useAuthStore((s) => s.currentUser?.role);
   const employees = useEmployeesStore((s) => s.employees);
   const refreshEmployees = useEmployeesStore((s) => s.refresh);
   const grants = useAiLevelsStore((s) => s.grants);
+  const levelOf = useAiLevelsStore((s) => s.levelByEmployee);
   const loaded = useAiLevelsStore((s) => s.loaded);
   const loading = useAiLevelsStore((s) => s.loading);
   const missing = useAiLevelsStore((s) => s.missing);
@@ -130,13 +136,14 @@ export function AiLevelAdminPage() {
 
   function onBulkPreview() {
     setBulkMsg(null);
+    const today = todayStr();
     const lines = bulkText
       .split(/\r?\n/)
       .map((l, i) => ({ line: i + 1, raw: l.trim() }))
       .filter((l) => l.raw !== "");
     const seen = new Set<string>();
     const rows: BulkPreviewRow[] = lines.map(({ line, raw }) => {
-      const parts = raw.split(/[,\t、]/).map((p) => p.trim());
+      const parts = raw.split(BULK_SEPARATOR).map((p) => p.trim());
       if (parts.length < 2) {
         return { line, raw, error: "「employee_number,level」形式ではありません" };
       }
@@ -153,10 +160,21 @@ export function AiLevelAdminPage() {
         return { line, raw, error: `社員番号 ${num} が重複しています` };
       }
       seen.add(num);
+      // 警告（登録は可能）: 既存の現在レベル以下 / 退職者への付与。
+      const warns: string[] = [];
+      const cur = levelOf.get(num);
+      if (cur && cur.level >= lv) {
+        warns.push(`既に同レベル以上の認定あり（現在 L${cur.level}）`);
+      }
+      // マスターの在籍判定（activeEmployees と同じ: left_at 無し or 未来日）
+      if (emp.left_at && emp.left_at <= today) {
+        warns.push(`退職者です（退職日 ${emp.left_at}）`);
+      }
       return {
         line,
         raw,
         entry: { employee_number: num, level: lv, name: employeeName(emp) },
+        warn: warns.length > 0 ? warns.join(" / ") : undefined,
       };
     });
     setBulkPreview(rows);
@@ -173,10 +191,14 @@ export function AiLevelAdminPage() {
       return;
     }
     const summary = await bulkImport(entries, { kind: bulkKind, certified_at: bulkDate });
+    const skippedNote =
+      summary.skipped > 0 ? `／重複スキップ ${summary.skipped}件` : "";
     if (summary.errors.length > 0) {
-      setBulkMsg(`登録 ${summary.inserted}件／エラー: ${summary.errors.join(" / ")}`);
+      setBulkMsg(`登録 ${summary.inserted}件${skippedNote}／エラー: ${summary.errors.join(" / ")}`);
     } else {
-      setBulkMsg(`${summary.inserted}件を一括登録しました（${AI_LEVEL_KIND_LABEL[bulkKind]}・認定日 ${bulkDate}）。`);
+      setBulkMsg(
+        `${summary.inserted}件を一括登録しました${skippedNote}（${AI_LEVEL_KIND_LABEL[bulkKind]}・認定日 ${bulkDate}）。`,
+      );
       setBulkText("");
       setBulkPreview(null);
     }
@@ -214,6 +236,7 @@ export function AiLevelAdminPage() {
 
   const validBulkCount = bulkPreview?.filter((r) => r.entry).length ?? 0;
   const errorBulkCount = bulkPreview?.filter((r) => r.error).length ?? 0;
+  const warnBulkCount = bulkPreview?.filter((r) => r.warn).length ?? 0;
 
   return (
     <main className="page ail">
@@ -292,7 +315,7 @@ export function AiLevelAdminPage() {
               className="ail__input"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="認定根拠・審査メモなど"
+              placeholder="管理者のみ閲覧。認定根拠メモ等"
             />
           </label>
           <div className="ail__field ail__field--actions">
@@ -365,7 +388,9 @@ export function AiLevelAdminPage() {
         {bulkPreview && bulkPreview.length > 0 && (
           <div className="ail__tableWrap">
             <p className="ail__note">
-              有効 {validBulkCount}件{errorBulkCount > 0 && ` ／ エラー ${errorBulkCount}件（エラー行はスキップされます）`}
+              有効 {validBulkCount}件
+              {warnBulkCount > 0 && ` ／ 警告 ${warnBulkCount}件（登録は可能）`}
+              {errorBulkCount > 0 && ` ／ エラー ${errorBulkCount}件（エラー行はスキップされます）`}
             </p>
             <table className="empmgr__table ail__table">
               <thead>
@@ -379,14 +404,27 @@ export function AiLevelAdminPage() {
               </thead>
               <tbody>
                 {bulkPreview.map((r) => (
-                  <tr key={r.line} className={r.error ? "ail__rowError" : undefined}>
+                  <tr
+                    key={r.line}
+                    className={
+                      r.error ? "ail__rowError" : r.warn ? "ail__rowWarn" : undefined
+                    }
+                  >
                     <td>{r.line}</td>
-                    <td>{r.entry?.employee_number ?? r.raw.split(/[,\t、]/)[0]}</td>
+                    <td>{r.entry?.employee_number ?? r.raw.split(BULK_SEPARATOR)[0]}</td>
                     <td>{r.entry?.name ?? "—"}</td>
                     <td>
                       {r.entry ? <AiLevelBadge level={r.entry.level} size="sm" /> : "—"}
                     </td>
-                    <td>{r.error ? <span className="ail__err">{r.error}</span> : "OK"}</td>
+                    <td>
+                      {r.error ? (
+                        <span className="ail__err">{r.error}</span>
+                      ) : r.warn ? (
+                        <span className="ail__warn">⚠ {r.warn}</span>
+                      ) : (
+                        "OK"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
