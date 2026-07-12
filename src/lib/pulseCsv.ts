@@ -6,7 +6,10 @@
  */
 
 function csvCell(v: unknown): string {
-  const s = v == null ? "" : String(v);
+  let s = v == null ? "" : String(v);
+  // CSV/フォーミュラ・インジェクション対策: Excel が式として解釈する先頭文字
+  // （= + - @ タブ CR）は ' を前置して無害化する（自由記述セルが通るため必須）。
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return `"${s.replace(/"/g, '""')}"`;
 }
 

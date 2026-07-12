@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
   const nameOf = (e: any) => e.display_name ?? e.full_name ?? "";
   const title = mode === "reminder" ? "【リマインド】月次パルスサーベイのご回答のお願い" : "月次パルスサーベイのご回答のお願い";
   const text = (name: string) =>
-    `${name}さん\n\n${period} の月次パルスサーベイにご回答ください${due}。\n所要3分・天気5段階＋一言コメントです。\n\n▼回答はこちら（ログイン必須）\n${link}\n\n※このメッセージは TalentHub パルスサーベイから自動送信されています。`;
+    `${name}さん\n\n${period} の月次パルスサーベイにご回答ください${due}。\n所要3分・かんたんな選択式＋一言コメントです。\n\n▼回答はこちら（ログイン必須）\n${link}\n\n※このメッセージは TalentHub パルスサーベイから自動送信されています。`;
 
   // ── Slack DM（users.lookupByEmail → chat.postMessage） ──
   async function slackDM(email: string, msg: string): Promise<boolean> {

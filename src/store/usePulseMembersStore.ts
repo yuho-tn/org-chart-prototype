@@ -149,6 +149,8 @@ export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
       supabase.rpc("pulse_person_history", { p_employee_number: employeeNumber }),
       fetchCareData(employeeNumber),
     ]);
+    // A→B と素早く遷移して A のレスポンスが後着した場合は破棄（人物取り違え防止）
+    if (get().personEmp !== employeeNumber) return;
     if (historyRes.error) {
       set({
         personLoading: false,
@@ -182,6 +184,10 @@ export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
       return { ok: false, reason: error.message };
     }
     const care = await fetchCareData(employeeNumber);
+    if (get().personEmp !== employeeNumber) {
+      set({ careSaving: false });
+      return { ok: true };
+    }
     set({ careSaving: false, careLogs: care.careLogs, personAlerts: care.personAlerts });
     return { ok: true };
   },
@@ -191,6 +197,7 @@ export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
     const { error } = await supabase.rpc("pulse_delete_care_log", { p_id: id });
     if (error) return { ok: false, reason: error.message };
     const care = await fetchCareData(employeeNumber);
+    if (get().personEmp !== employeeNumber) return { ok: true };
     set({ careLogs: care.careLogs, personAlerts: care.personAlerts });
     return { ok: true };
   },

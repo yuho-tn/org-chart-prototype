@@ -115,10 +115,21 @@ select cron.schedule(
 
 前提: migration 0029〜0031（メンバー推移 / eNPS / 面談ログ）を検証済みで、
 **最後に 0032（テストデータ掃除＋初期設問セット seed）を適用**する。
+0032 は誤適用防止のため **`supabase/manual/` に隔離**してある（migrations/ に
+置くと次の db push で無条件適用＝テストデータ不可逆削除のため）。
 
-1. **【agent可】** `supabase db push --linked` で 0032 適用
+1. **【裕鵬さん承認必須（削除を伴う）】** 0032 の適用:
+   ```bash
+   # 承認後に実行（番号はその時点の次番号に振り直す）
+   git mv supabase/manual/0032_pulse_production_activation.sql supabase/migrations/
+   supabase db push --linked
+   ```
    → 「【テスト】」で始まる設問セットのサイクル・回答・アラート・集計が一掃され、
      draft の「月次パルスサーベイ v1」（天気4問＋eNPS 1問＋自由記述）が seed される
+   ※ 掃除前に対象データを残したい場合は各画面のCSVダウンロードで控えを取る
+   ※ 検証中に記録したテスト用の面談ログ（pulse_care_logs）は cycle 非依存のため
+     残留する — 検証の最後に個人詳細画面から手動削除する。検証用に付与した
+     pulse_access 行も棚卸しする
 2. **【裕鵬さん】** secrets 投入（§1〜2。ANTHROPIC / Slack / Resend / PULSE_APP_URL）
 3. **【裕鵬さん】** #/pulse/admin で「月次パルスサーベイ v1」の設問文言を最終編集 → **有効化**
    ※ 有効化後は設問凍結（変更は「複製で新版」→ 編集 → 有効化）

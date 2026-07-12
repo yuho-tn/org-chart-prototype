@@ -286,13 +286,26 @@ export function memberTrend(history: PulseHistoryPoint[]): PulseTrend {
   return "flat";
 }
 
+/** "YYYY-MM" → 通算月数（隣接判定用）。不正形式は null。 */
+function monthIndex(period: string): number | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!m) return null;
+  return Number(m[1]) * 12 + Number(m[2]);
+}
+
 /**
- * 「3ヶ月連続下降」フラグ: 直近3サイクルの回答が単調に下降している
- * （p[-3] > p[-2] > p[-1]）。回答が3点未満なら false。
+ * 「3ヶ月連続下降」フラグ: 直近3回答が暦月で連続しており、かつ単調に
+ * 下降している（p[-3] > p[-2] > p[-1]）。回答が3点未満・月が飛んでいる
+ * （未回答月を挟む）場合は false。
  */
 export function isConsecutiveDecline(history: PulseHistoryPoint[]): boolean {
-  const pts = history.filter((h) => h.overall != null).map((h) => h.overall as number);
+  const pts = history.filter((h) => h.overall != null);
   if (pts.length < 3) return false;
   const [a, b, c] = pts.slice(-3);
-  return a > b && b > c;
+  const ma = monthIndex(a.period);
+  const mb = monthIndex(b.period);
+  const mc = monthIndex(c.period);
+  if (ma == null || mb == null || mc == null) return false;
+  if (mb - ma !== 1 || mc - mb !== 1) return false;
+  return (a.overall as number) > (b.overall as number) && (b.overall as number) > (c.overall as number);
 }
