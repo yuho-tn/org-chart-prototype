@@ -28,6 +28,7 @@ export type Section =
   | "survey"
   | "pulse"
   | "reviews"
+  | "ailevel"
   | "users"
   | "permissions"
   | "salary"
@@ -76,6 +77,10 @@ export type Route =
   | { name: "reviews_grade" }
   | { name: "reviews_flow" }
   | { name: "reviews_rules" }
+  // AI活用レベル（分布=全ログインユーザー可視。section は共通 "ailevel"）
+  | { name: "ailevel" }
+  // AIレベル 認定管理（管理者のみ・ページ側でゲート）
+  | { name: "ailevel_admin" }
   // Payroll
   | { name: "salary" }
   | { name: "grades" }
@@ -112,6 +117,9 @@ export function sectionOfRoute(r: Route): Section {
     case "reviews_flow":
     case "reviews_rules":
       return "reviews";
+    case "ailevel":
+    case "ailevel_admin":
+      return "ailevel";
     case "users":
       return "users";
     case "permissions":
@@ -153,6 +161,8 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "pulse" };
     case "reviews":
       return { name: "reviews" };
+    case "ailevel":
+      return { name: "ailevel" };
     case "users":
       return { name: "users" };
     case "permissions":
@@ -225,6 +235,9 @@ function readRouteFromHash(): Route {
   if (h === "#/reviews/grade") return { name: "reviews_grade" };
   if (h === "#/reviews/flow") return { name: "reviews_flow" };
   if (h === "#/reviews/rules") return { name: "reviews_rules" };
+  // AI活用レベル
+  if (h === "#/ailevel") return { name: "ailevel" };
+  if (h === "#/ailevel/admin") return { name: "ailevel_admin" };
   // Payroll routes
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
   if (h === "#/payroll/grades") return { name: "grades" };
@@ -282,6 +295,10 @@ function routeToHash(r: Route): string {
       return "#/reviews/flow";
     case "reviews_rules":
       return "#/reviews/rules";
+    case "ailevel":
+      return "#/ailevel";
+    case "ailevel_admin":
+      return "#/ailevel/admin";
     case "salary":
       return "#/payroll";
     case "grades":

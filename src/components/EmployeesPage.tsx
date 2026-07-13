@@ -3,6 +3,8 @@ import { useEmployeesStore, isCasualEmployment } from "../store/useEmployeesStor
 import { useAuthStore, isOrgPowerUser } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import { useProfilesStore } from "../store/useProfilesStore";
+import { useAiLevelsStore } from "../store/useAiLevelsStore";
+import { AiLevelBadge } from "./ailevel/AiLevelBadge";
 import { useUiStore } from "../store/useUiStore";
 import { employeeName, type EmployeeRow } from "../lib/supabase";
 import { avatarPathOf } from "../lib/profile";
@@ -60,6 +62,10 @@ export function EmployeesPage() {
   const ensurePhotoUrls = useProfilesStore((s) => s.ensurePhotoUrls);
   const photoUrls = useProfilesStore((s) => s.photoUrls);
 
+  // AI活用レベル — ギャラリーの称号小バッジ用（未認定は非表示）
+  const aiLevelOf = useAiLevelsStore((s) => s.levelByEmployee);
+  const refreshAiLevels = useAiLevelsStore((s) => s.refresh);
+
   // Full editors (master / privileged_admin / admin) can manage the
   // employees master incl. CSV import / add / edit / delete. Regular
   // editors and viewers are read-only.
@@ -85,13 +91,15 @@ export function EmployeesPage() {
   useEffect(() => {
     refresh();
     refreshProfiles();
-  }, [refresh, refreshProfiles]);
+    refreshAiLevels();
+  }, [refresh, refreshProfiles, refreshAiLevels]);
 
   // P0-1: タブ復帰・フォーカス時に裏で再検証（初回ロードのスタックや
   // 長時間放置後の古いデータを自動回復。silent なのでスピナーは出ない）
   useRevalidateOnFocus(() => {
     refresh({ silent: true });
     refreshProfiles({ silent: true });
+    refreshAiLevels({ silent: true });
   });
 
   useEffect(() => {
@@ -561,9 +569,11 @@ export function EmployeesPage() {
                         const mbti = normalizeMbti(prof?.mbti ?? null);
                         const top = normalizeStrengthIds(prof?.strengths ?? [])[0];
                         const topQ = top ? STRENGTH_BY_ID[top] : undefined;
-                        if (!mbti && !topQ) return null;
+                        const aiLevel = aiLevelOf.get(emp.employee_number);
+                        if (!mbti && !topQ && !aiLevel) return null;
                         return (
                           <span className="empcard__tags">
+                            {aiLevel && <AiLevelBadge level={aiLevel.level} size="sm" />}
                             {mbti && (
                               <span
                                 className="empcard__mbti"

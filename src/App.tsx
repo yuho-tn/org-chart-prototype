@@ -109,6 +109,17 @@ const ReviewsFlowPage = lazy(() =>
 const ReviewsRulesPage = lazy(() =>
   import("./components/reviews/ReviewsRulesPage").then((m) => ({ default: m.ReviewsRulesPage })),
 );
+// AI活用レベル（#/ailevel 配下・分布=全ログインユーザー／認定管理=管理者）。
+const AiLevelDashboardPage = lazy(() =>
+  import("./components/ailevel/AiLevelDashboardPage").then((m) => ({
+    default: m.AiLevelDashboardPage,
+  })),
+);
+const AiLevelAdminPage = lazy(() =>
+  import("./components/ailevel/AiLevelAdminPage").then((m) => ({
+    default: m.AiLevelAdminPage,
+  })),
+);
 
 export default function App() {
   const hydrateDraft = useOrgStore((s) => s.hydrateDraft);
@@ -779,6 +790,22 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     return (
       <Suspense fallback={<PageLoading />}>
         <ReviewsRulesPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "ailevel") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <AiLevelDashboardPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "ailevel_admin") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <AiLevelAdminPage />
       </Suspense>
     );
   }
