@@ -52,6 +52,9 @@ export function EmployeesPage() {
   const importFromSheetUrl = useEmployeesStore((s) => s.importFromSheetUrl);
   const sheetCsvUrl = useEmployeesStore((s) => s.sheetCsvUrl);
   const setSheetCsvUrl = useEmployeesStore((s) => s.setSheetCsvUrl);
+  const syncFromSmartHr = useEmployeesStore((s) => s.syncFromSmartHr);
+  const smartHrState = useEmployeesStore((s) => s.smartHrState);
+  const loadSmartHrState = useEmployeesStore((s) => s.loadSmartHrState);
   const currentUser = useAuthStore((s) => s.currentUser);
   const setToast = useOrgStore((s) => s.setToast);
   const navigate = useUiStore((s) => s.navigate);
@@ -87,12 +90,15 @@ export function EmployeesPage() {
   const [importResult, setImportResult] = useState<ImportSummary | null>(null);
   const [urlDraft, setUrlDraft] = useState(sheetCsvUrl);
   const [showImporter, setShowImporter] = useState(false);
+  // SmartHR 同期（正＝SmartHR）。CSVとは別系統の状態。
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     refresh();
     refreshProfiles();
     refreshAiLevels();
-  }, [refresh, refreshProfiles, refreshAiLevels]);
+    loadSmartHrState();
+  }, [refresh, refreshProfiles, refreshAiLevels, loadSmartHrState]);
 
   // P0-1: タブ復帰・フォーカス時に裏で再検証（初回ロードのスタックや
   // 長時間放置後の古いデータを自動回復。silent なのでスピナーは出ない）
@@ -288,6 +294,37 @@ export function EmployeesPage() {
     }
   }
 
+  /** SmartHR API から従業員マスターを同期（正＝SmartHR）。 */
+  async function handleSmartHrSync() {
+    setSyncing(true);
+    try {
+      const res = await syncFromSmartHr();
+      if (!res.ok) {
+        setToast({ kind: "error", message: `SmartHR同期に失敗：${res.error ?? "不明なエラー"}` });
+        return;
+      }
+      const s = res.summary;
+      const errs = s?.errors?.length ?? 0;
+      setToast({
+        kind: errs ? "error" : "info",
+        message: errs
+          ? `SmartHR同期：${s?.fetched ?? 0}名取得・${errs}件エラー`
+          : `SmartHR同期完了：${s?.fetched ?? 0}名（在籍${(s?.employed ?? 0) + (s?.absent ?? 0)}／退職${s?.retired ?? 0}）`,
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  /** 最終同期の相対表示（例: "3分前 / 2026-07-15 06:00"）。 */
+  function lastSyncLabel(): string | null {
+    const at = smartHrState?.last_run_at;
+    if (!at) return null;
+    const d = new Date(at);
+    const badge = smartHrState?.last_status === "error" ? "⚠ " : "";
+    return `${badge}最終同期 ${d.toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
+  }
+
   return (
     <main className="page">
       <div className="page__header">
@@ -302,14 +339,27 @@ export function EmployeesPage() {
           </p>
         </div>
         <div className="page__actions">
-          {isMaster && sheetCsvUrl && (
-            <button
-              className="btn"
-              onClick={handleQuickReimport}
-              disabled={importing}
-              title="保存済みの「ウェブに公開」URL（SmartHR自動連携タブ）から最新の名簿を再取込します"
+          {isMaster && lastSyncLabel() && (
+            <span
+              className="emppage__chip"
+              title={
+                smartHrState?.summary
+                  ? `取得${smartHrState.summary.fetched ?? "-"}名 ／ 在籍${(smartHrState.summary.employed ?? 0) + (smartHrState.summary.absent ?? 0)} ／ 退職${smartHrState.summary.retired ?? 0}`
+                  : "SmartHRからの最終同期"
+              }
+              style={{ alignSelf: "center" }}
             >
-              {importing ? "取り込み中…" : "⟳ シートから再取込"}
+              {lastSyncLabel()}
+            </span>
+          )}
+          {isMaster && (
+            <button
+              className="btn btn--primary"
+              onClick={handleSmartHrSync}
+              disabled={syncing || importing}
+              title="SmartHR API から従業員マスターを取り込みます（SmartHRが正・社員番号で突合・削除なし）"
+            >
+              {syncing ? "SmartHR同期中…" : "⟳ SmartHR同期"}
             </button>
           )}
           {isMaster && (
@@ -317,11 +367,11 @@ export function EmployeesPage() {
               className="btn btn--ghost"
               onClick={() => setShowImporter((v) => !v)}
             >
-              {showImporter ? "▲ インポートを閉じる" : "▾ CSVインポート"}
+              {showImporter ? "▲ 予備(CSV)を閉じる" : "▾ 予備：CSV取込"}
             </button>
           )}
           {isMaster && (
-            <button className="btn btn--primary" onClick={startNew}>
+            <button className="btn" onClick={startNew}>
               ＋新規追加
             </button>
           )}
@@ -345,9 +395,10 @@ export function EmployeesPage() {
 
       {showImporter && isMaster && (
         <fieldset className="empmgr__import">
-          <legend className="field__label">CSVインポート（社員番号で突合・上書き）</legend>
+          <legend className="field__label">予備：CSV取込（社員番号で突合・上書き）</legend>
           <p className="modal__body" style={{ fontSize: 12, marginBottom: 8 }}>
-            連携元は従業員名簿スプレッドシートの「SmartHR自動連携」タブです。取込方法は2つ：
+            <strong>通常は上の「⟳ SmartHR同期」を使ってください</strong>（SmartHRが正）。
+            こちらはSmartHR障害時やスポット補正用の予備手段です。取込方法は2つ：
             ①Google Sheetsの「ファイル ＞ 共有 ＞ ウェブに公開」で対象タブを
             <strong>CSV形式で公開</strong>したURLを貼り付けて「URLから取込」／
             ②シートをCSVでダウンロードしてファイルアップロード。
@@ -355,6 +406,13 @@ export function EmployeesPage() {
             <strong>社員番号が空の行はスキップ</strong>されます。
             「使用ネーム」は取込では変更されません（手動管理）。
           </p>
+          {sheetCsvUrl && (
+            <div className="empmgr__importRow" style={{ marginBottom: 8 }}>
+              <button className="btn" onClick={handleQuickReimport} disabled={importing || syncing}>
+                {importing ? "取り込み中…" : "⟳ 保存済みシートURLから再取込"}
+              </button>
+            </div>
+          )}
           <div className="empmgr__importRow">
             <input
               className="field__input"

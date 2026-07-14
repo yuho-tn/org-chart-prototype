@@ -69,6 +69,23 @@ export type ImportSummary = {
   errors: string[];
 };
 
+// ── SmartHR 連携（Edge Function `smarthr-sync` の結果） ──
+export type SmartHrSyncSummary = {
+  fetched: number;
+  upserted: number;
+  employed: number;
+  absent: number;
+  retired: number;
+  position_updated: number;
+  errors: string[];
+};
+export type SmartHrSyncState = {
+  last_run_at: string | null;
+  last_status: "ok" | "error" | null;
+  summary: (Partial<SmartHrSyncSummary> & { error?: string }) | null;
+};
+export type SmartHrSyncResult = { ok: boolean; summary?: SmartHrSyncSummary; error?: string };
+
 type EmployeesState = {
   employees: EmployeeRow[];
   loading: boolean;
@@ -87,6 +104,13 @@ type EmployeesState = {
   /** Fetch CSV from a published Google Sheets URL and import it. */
   importFromSheetUrl: (url: string) => Promise<ImportSummary>;
   setSheetCsvUrl: (url: string) => void;
+
+  /** SmartHR 同期の最終状態（UIの「最終同期: …」表示用）。null=未取得 */
+  smartHrState: SmartHrSyncState | null;
+  /** SmartHR API から従業員マスターを同期（Edge Function 経由）。正＝SmartHR。 */
+  syncFromSmartHr: () => Promise<SmartHrSyncResult>;
+  /** 最終同期状態を smarthr_sync_state から読み込む。 */
+  loadSmartHrState: () => Promise<void>;
 };
 
 function readStoredUrl(): string {
@@ -292,6 +316,39 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
   setSheetCsvUrl: (url) => {
     writeStoredUrl(url);
     set({ sheetCsvUrl: url });
+  },
+
+  smartHrState: null,
+
+  syncFromSmartHr: async () => {
+    if (!supabase) return { ok: false, error: "Supabase未設定です" };
+    const { data, error } = await supabase.functions.invoke("smarthr-sync", { body: {} });
+    if (error) {
+      // 非2xx時は FunctionsHttpError。本文の {error} を拾えれば優先表示。
+      let msg = error.message;
+      try {
+        const b = await (error as { context?: Response }).context?.json?.();
+        if (b && (b as { error?: string }).error) msg = (b as { error: string }).error;
+      } catch {
+        // ignore parse failure
+      }
+      await get().loadSmartHrState();
+      return { ok: false, error: msg };
+    }
+    // 207(部分成功)は data.errors に詳細。ok として summary を返しつつ errors を保持。
+    await get().refresh();
+    await get().loadSmartHrState();
+    return { ok: true, summary: data as SmartHrSyncSummary };
+  },
+
+  loadSmartHrState: async () => {
+    if (!supabase) return;
+    const { data } = await supabase
+      .from("smarthr_sync_state")
+      .select("last_run_at, last_status, summary")
+      .eq("id", true)
+      .maybeSingle();
+    if (data) set({ smartHrState: data as SmartHrSyncState });
   },
 }));
 
