@@ -33,7 +33,8 @@ export type Section =
   | "permissions"
   | "salary"
   | "grades"
-  | "audit_log";
+  | "audit_log"
+  | "labor";
 
 /**
  * Concrete routes. Most routes belong to exactly one section — see
@@ -84,7 +85,9 @@ export type Route =
   // Payroll
   | { name: "salary" }
   | { name: "grades" }
-  | { name: "audit_log" };
+  | { name: "audit_log" }
+  // 人件費管理（chrome 無し・ナビ導線なし・URL直打ち専用・laborcost_admins限定）
+  | { name: "labor" };
 
 export function sectionOfRoute(r: Route): Section {
   switch (r.name) {
@@ -130,6 +133,8 @@ export function sectionOfRoute(r: Route): Section {
       return "grades";
     case "audit_log":
       return "audit_log";
+    case "labor":
+      return "labor";
   }
 }
 
@@ -173,6 +178,8 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "grades" };
     case "audit_log":
       return { name: "audit_log" };
+    case "labor":
+      return { name: "labor" };
   }
 }
 
@@ -242,6 +249,8 @@ function readRouteFromHash(): Route {
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
   if (h === "#/payroll/grades") return { name: "grades" };
   if (h === "#/payroll/audit-log") return { name: "audit_log" };
+  // 人件費管理（ナビ導線なし・URL直打ち専用）
+  if (h === "#/labor") return { name: "labor" };
   return { name: "home" };
 }
 
@@ -305,6 +314,8 @@ function routeToHash(r: Route): string {
       return "#/payroll/grades";
     case "audit_log":
       return "#/payroll/audit-log";
+    case "labor":
+      return "#/labor";
   }
 }
 

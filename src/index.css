@@ -8666,3 +8666,299 @@ body.is-dragging .dept-card__add-child {
   .ail__deptName { width: 110px; }
   .ail__def .ailbadge { width: 132px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   人件費管理（#/labor・LaborPage）— chrome無しスタンドアロン
+   ═══════════════════════════════════════════════════════════════════ */
+
+.labor-page {
+  min-height: 100vh;
+  background: #f7f7f5;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: #1f2328;
+}
+.labor-gate {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #57606a;
+  font-size: 14px;
+}
+.labor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #1c2b3a;
+  color: #fff;
+}
+.labor-title { display: flex; align-items: center; gap: 10px; }
+.labor-title h1 { font-size: 15px; margin: 0; font-weight: 700; }
+.labor-lock { font-size: 14px; }
+.labor-badge {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.14);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.labor-header-right { display: flex; align-items: center; gap: 14px; }
+.labor-backlink { color: #9fc0e8; font-size: 12px; text-decoration: none; }
+.labor-backlink:hover { text-decoration: underline; }
+.labor-save { font-size: 12px; color: #c9d6e2; }
+.labor-save--ok { color: #7ee2a8; }
+.labor-save--error { color: #ffb3b3; }
+
+.labor-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px 0;
+  background: #fff;
+  border-bottom: 1px solid #d8dee4;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.labor-tabs { display: flex; gap: 2px; }
+.labor-tab {
+  border: none;
+  background: transparent;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  color: #57606a;
+}
+.labor-tab--on { color: #0b5cad; border-bottom-color: #0b5cad; font-weight: 700; }
+.labor-terms { display: flex; gap: 4px; padding-bottom: 6px; }
+.labor-term {
+  border: 1px solid #d0d7de;
+  background: #fff;
+  border-radius: 14px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #333;
+}
+.labor-term--on { background: #0b5cad; border-color: #0b5cad; color: #fff; font-weight: 700; }
+.labor-term--disabled { opacity: 0.35; cursor: not-allowed; }
+
+.labor-main { flex: 1; padding: 12px 16px 40px; overflow: auto; }
+.labor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.labor-btn {
+  border: 1px solid #d0d7de;
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.labor-btn:hover { background: #f3f4f6; }
+.labor-btn:disabled { opacity: 0.4; cursor: default; }
+.labor-btn--on { background: #0b5cad; color: #fff; border-color: #0b5cad; }
+.labor-btn--on:hover { background: #0b5cad; }
+.labor-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #57606a; }
+.labor-note { font-size: 11.5px; color: #77828c; }
+.labor-hint { font-size: 11.5px; color: #8a949e; margin-top: 8px; }
+.labor-warn {
+  background: #fff3cd;
+  border: 1px solid #ffe08a;
+  color: #664d03;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+.labor-warn-inline { color: #b35900; }
+.labor-select {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  background: #fff;
+}
+.labor-addperson { display: flex; gap: 6px; margin-left: auto; }
+.labor-addperson input {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  width: 150px;
+}
+.labor-forecast-ctl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #57606a; }
+.labor-forecast-chip { padding: 1px 8px; border-radius: 8px; font-size: 11px; }
+
+/* ── スプレッドシートグリッド ── */
+.lg-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+  border: 1px solid #c9d1d9;
+  border-radius: 6px;
+  background: #fff;
+  outline: none;
+  user-select: none;
+  position: relative;
+}
+.lg-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 12.5px;
+}
+.lg-table th,
+.lg-table td {
+  border-right: 1px solid #e4e9ee;
+  border-bottom: 1px solid #e4e9ee;
+  padding: 3px 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 24px;
+  box-sizing: border-box;
+}
+.lg-table thead th {
+  position: sticky;
+  background: #f0f3f6;
+  font-weight: 600;
+  color: #444d56;
+  text-align: center;
+  z-index: 3;
+  font-size: 11.5px;
+}
+.lg-table thead tr:first-child th { top: 0; }
+.lg-table thead tr:last-child th { top: 25px; border-bottom: 2px solid #c9d1d9; }
+.lg-group-row th { background: #e6ebf1; height: 25px; }
+.lg-table th.lg-sticky,
+.lg-table td.lg-sticky {
+  position: sticky;
+  z-index: 2;
+  background: #fbfcfd;
+}
+.lg-table thead th.lg-sticky { z-index: 4; background: #eef1f5; }
+.lg-cell { cursor: cell; }
+.lg-num { text-align: right; font-variant-numeric: tabular-nums; }
+.lg-ro { background: #f6f8fa; color: #57606a; }
+.lg-col-ro { color: #8a949e; }
+.lg-sel { background: rgba(11, 92, 173, 0.10); }
+td.lg-sticky.lg-sel { background: #e3edf7; }
+.lg-focus {
+  outline: 2px solid #0b5cad;
+  outline-offset: -2px;
+  background: #fff;
+}
+.lg-edit {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  font: inherit;
+  padding: 0;
+  background: #fff;
+}
+.lg-departed td { color: #9aa4ae; }
+.lg-departed td.lg-sticky { color: #9aa4ae; font-style: italic; }
+.lg-forecast { background: #fef6e0; color: #8a6100; }
+.lg-forecast.lg-sel { background: #f4e8c8; }
+.lg-total-row td {
+  background: #eef4fb;
+  font-weight: 700;
+  border-top: 2px solid #b6c9dc;
+}
+
+/* ── DIV按分ビュー ── */
+.labor-divtable,
+.labor-rawtable,
+.labor-fronttable {
+  border-collapse: collapse;
+  background: #fff;
+  font-size: 12.5px;
+  min-width: 720px;
+}
+.labor-divtable th,
+.labor-divtable td,
+.labor-rawtable th,
+.labor-rawtable td,
+.labor-fronttable th,
+.labor-fronttable td {
+  border: 1px solid #e4e9ee;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+.labor-divtable thead th,
+.labor-rawtable thead th,
+.labor-fronttable thead th {
+  background: #f0f3f6;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.labor-head-item { min-width: 260px; text-align: left; }
+.labor-num { text-align: right; font-variant-numeric: tabular-nums; }
+.labor-strong { font-weight: 700; }
+.labor-divhead td { background: #dfe9f3; font-weight: 700; }
+.labor-tmhead td { background: #f2f6fa; }
+.labor-grand td { background: #1c2b3a; color: #fff; font-weight: 700; }
+.labor-sub td { color: #57606a; }
+.labor-line td { border-top: 2px solid #c8d3de; }
+.labor-member td { color: #6a737d; font-size: 12px; }
+.labor-calc td { font-style: italic; background: #fafbfc; }
+.labor-indent { padding-left: 22px !important; }
+.labor-indent2 { padding-left: 40px !important; }
+.labor-caret { display: inline-block; width: 12px; color: #57606a; }
+.labor-clickable { cursor: pointer; }
+.labor-clickable:hover td { filter: brightness(0.97); }
+.labor-mcount { color: #8a949e; font-weight: 400; font-size: 11px; }
+.labor-share { color: #b35900; margin-left: 4px; font-size: 11px; }
+.labor-halfswitch { display: flex; gap: 6px; }
+
+/* ── ローデータ ── */
+.labor-rawtable tbody tr.labor-raw-総額 td { background: #f0f6ee; font-weight: 600; }
+.labor-rawtable tbody tr.labor-raw-フロント td { background: #fbf6ee; }
+.labor-rawtable tbody tr.labor-raw-コーポレート td { background: #f4f2f8; }
+
+/* ── 設定 ── */
+.labor-settings section {
+  background: #fff;
+  border: 1px solid #e4e9ee;
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+.labor-settings h3 { margin: 0 0 6px; font-size: 13.5px; }
+.labor-tmassign {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 4px 18px;
+  margin-top: 8px;
+}
+.labor-tmrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.labor-tmrow.lg-departed { color: #9aa4ae; }
+.labor-tmname { min-width: 110px; }
+.labor-tmdept { color: #8a949e; font-size: 11.5px; min-width: 84px; }
+.labor-tmrow .labor-select { flex: 1; }
+.labor-rateinput,
+.labor-targetinput {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12.5px;
+  width: 90px;
+  text-align: right;
+}
+.labor-inline { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }

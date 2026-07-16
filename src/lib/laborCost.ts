@@ -1,0 +1,406 @@
+/**
+ * 人件費管理モジュール（#/labor）のドメイン型と計算エンジン。
+ *
+ * 単位はすべて「万円」（元スプレッドシート準拠）。
+ * 期: '1' | '2' | '2.5' | '3' | '4' | '5'。H1=7〜12月、H2=翌年1〜6月。
+ *
+ * 按分ロジック（5期 DIV按分・ローデータ出力の仕様）:
+ *   - ボーナス（夏ボ/冬ボ）は当該半期の6ヶ月に均等按分（÷6）
+ *   - 兼務者は兼務率で分割計上（所属に 1-rate、兼務先に rate）
+ *   - 社会保険料は (給与+ボーナス按分) × insurance_rate を加算
+ *   - フロント所属の総コストは DIV別売上目標（半期固定）比で各DIVへ按分
+ *   - コーポレートは按分せずコーポレート費として出力
+ *   - 途中入社は在籍月（金額が入っている月）のみ計上＝月次データそのまま
+ */
+
+// ── 型 ──────────────────────────────────────────────────────────────
+
+export type TermCode = "1" | "2" | "2.5" | "3" | "4" | "5";
+export type Half = "H1" | "H2";
+
+/** H1 slots then H2 slots. 'BS'=夏ボ / 'BW'=冬ボ */
+export type Slot =
+  | "7" | "8" | "9" | "10" | "11" | "12" | "BS"
+  | "1" | "2" | "3" | "4" | "5" | "6" | "BW";
+
+export const H1_MONTHS = ["7", "8", "9", "10", "11", "12"] as const;
+export const H2_MONTHS = ["1", "2", "3", "4", "5", "6"] as const;
+export const H1_SLOTS: Slot[] = ["BS", "7", "8", "9", "10", "11", "12"];
+export const H2_SLOTS: Slot[] = ["BW", "1", "2", "3", "4", "5", "6"];
+
+export function halfOfSlot(slot: Slot): Half {
+  return slot === "BS" || ["7", "8", "9", "10", "11", "12"].includes(slot)
+    ? "H1"
+    : "H2";
+}
+
+export type LaborTermRow = {
+  code: TermCode;
+  label: string;
+  start_year: number;
+  sort_order: number;
+};
+
+export type LaborPersonRow = {
+  id: string;
+  name: string;
+  employee_number: string | null;
+  hired_at: string | null;
+  departed: boolean;
+  sort_order: number;
+};
+
+export type LaborAssignmentRow = {
+  person_id: string;
+  term: TermCode;
+  half: Half;
+  dept: string | null;
+  kenmu_dept: string | null;
+  kenmu_rate: number;
+  tm: string | null;
+};
+
+export type LaborAmountRow = {
+  person_id: string;
+  term: TermCode;
+  slot: Slot;
+  amount: number;
+  is_forecast: boolean;
+};
+
+export type DeptTreatment = "product" | "front" | "corporate";
+
+export type LaborDeptMapRow = {
+  term: TermCode;
+  dept: string;
+  div: string | null;
+  treatment: DeptTreatment;
+};
+
+export type LaborTmRow = { tm: string; div: string; sort_order: number };
+
+export type LaborFrontTargetRow = {
+  term: TermCode;
+  half: Half;
+  div: string;
+  sales_target: number;
+};
+
+// ── 表示ヘルパ ───────────────────────────────────────────────────────
+
+/** term × slot → 実カレンダー年月。 */
+export function slotYearMonth(
+  term: LaborTermRow,
+  slot: Slot,
+): { year: number; month: number } {
+  const half = halfOfSlot(slot);
+  if (half === "H1") {
+    const month = slot === "BS" ? 7 : Number(slot);
+    return { year: term.start_year, month };
+  }
+  const month = slot === "BW" ? 12 : Number(slot);
+  // 冬ボは下期の頭（12月支給扱い＝start_year年12月）に紐づけるが、
+  // 按分計算では月次に均等割りするため出力には単体で出さない。
+  return { year: slot === "BW" ? term.start_year : term.start_year + 1, month };
+}
+
+export function ymLabel(year: number, month: number): string {
+  return `${year}年${month}月`;
+}
+
+export function fmtMan(v: number | null | undefined, dash = "—"): string {
+  if (v == null) return dash;
+  if (v === 0) return "0";
+  const r = Math.round(v * 10) / 10;
+  return r % 1 === 0 ? r.toLocaleString() : r.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+// ── データ索引 ──────────────────────────────────────────────────────
+
+export type AmountKey = `${string}::${TermCode}::${Slot}`;
+export function amountKey(personId: string, term: TermCode, slot: Slot): AmountKey {
+  return `${personId}::${term}::${slot}`;
+}
+
+export type AssignKey = `${string}::${TermCode}::${Half}`;
+export function assignKey(personId: string, term: TermCode, half: Half): AssignKey {
+  return `${personId}::${term}::${half}`;
+}
+
+// ── 按分計算 ────────────────────────────────────────────────────────
+
+export type MonthCell = { salary: number; bonusAlloc: number };
+
+export type TmBreakdown = {
+  tm: string;
+  div: string;
+  /** person行: 月次給与（兼務分割後）。key = month slot ('7'..'12' or '1'..'6') */
+  members: {
+    personId: string;
+    name: string;
+    share: number; // このTMへの配分率（1 or 兼務分）
+    months: Record<string, number>;
+    bonus: number; // 半期ボーナス（配分後・按分前の総額）
+  }[];
+  /** 月次: メンバー給与計 */
+  salaryByMonth: Record<string, number>;
+  /** 月次: ボーナス按分計（Σ bonus/6） */
+  bonusByMonth: Record<string, number>;
+  /** 月次: 社保 = (salary+bonus) × rate */
+  insuranceByMonth: Record<string, number>;
+  /** 月次: プロダクト計 = salary+bonus+insurance */
+  totalByMonth: Record<string, number>;
+};
+
+export type DivBreakdown = {
+  div: string;
+  tms: TmBreakdown[];
+  productByMonth: Record<string, number>;
+  frontAllocByMonth: Record<string, number>;
+  totalByMonth: Record<string, number>;
+};
+
+export type HalfComputation = {
+  term: TermCode;
+  half: Half;
+  months: readonly string[];
+  divs: DivBreakdown[];
+  /** フロント原資（給与/ボーナス按分/社保 込み）月次 */
+  frontPoolByMonth: Record<string, number>;
+  /** フロント按分比率（div→ratio） */
+  frontRatios: Record<string, number>;
+  /** コーポレート費（社保込み）月次 */
+  corporateByMonth: Record<string, number>;
+  corporateSalaryByMonth: Record<string, number>;
+  corporateBonusByMonth: Record<string, number>;
+  corporateInsuranceByMonth: Record<string, number>;
+  /** フロント原資の内訳 */
+  frontSalaryByMonth: Record<string, number>;
+  frontBonusByMonth: Record<string, number>;
+  frontInsuranceByMonth: Record<string, number>;
+  /** 全社総計（プロダクト+フロント+コーポレート） */
+  grandTotalByMonth: Record<string, number>;
+  /** マッピング不明の所属（データ健全性アラート用） */
+  unmappedDepts: string[];
+};
+
+const UNASSIGNED_TM = "（TM未割当）";
+
+type Inputs = {
+  term: LaborTermRow;
+  half: Half;
+  people: LaborPersonRow[];
+  assignments: Record<AssignKey, LaborAssignmentRow>;
+  amounts: Record<AmountKey, LaborAmountRow>;
+  deptMap: LaborDeptMapRow[];
+  tms: LaborTmRow[];
+  frontTargets: LaborFrontTargetRow[];
+  insuranceRate: number;
+};
+
+export function computeHalf(inp: Inputs): HalfComputation {
+  const { term, half, people, assignments, amounts } = inp;
+  const months = half === "H1" ? H1_MONTHS : H2_MONTHS;
+  const bonusSlot: Slot = half === "H1" ? "BS" : "BW";
+
+  const mapByDept = new Map(
+    inp.deptMap.filter((m) => m.term === term.code).map((m) => [m.dept, m]),
+  );
+  const divOrder: string[] = [];
+  for (const t of [...inp.tms].sort((a, b) => a.sort_order - b.sort_order)) {
+    if (!divOrder.includes(t.div)) divOrder.push(t.div);
+  }
+  for (const m of inp.deptMap) {
+    if (m.term === term.code && m.treatment === "product" && m.div && !divOrder.includes(m.div)) {
+      divOrder.push(m.div);
+    }
+  }
+
+  const zero = () => Object.fromEntries(months.map((m) => [m, 0])) as Record<string, number>;
+
+  // div → tm → TmBreakdown
+  const tmMap = new Map<string, TmBreakdown>();
+  const tmDivOf = new Map(inp.tms.map((t) => [t.tm, t.div]));
+  const ensureTm = (div: string, tm: string): TmBreakdown => {
+    const key = `${div}::${tm}`;
+    let b = tmMap.get(key);
+    if (!b) {
+      b = {
+        tm, div, members: [],
+        salaryByMonth: zero(), bonusByMonth: zero(),
+        insuranceByMonth: zero(), totalByMonth: zero(),
+      };
+      tmMap.set(key, b);
+    }
+    return b;
+  };
+
+  const frontSalary = zero(); const frontBonus = zero();
+  const corpSalary = zero(); const corpBonus = zero();
+  const unmapped = new Set<string>();
+
+  for (const p of people) {
+    const a = assignments[assignKey(p.id, term.code, half)];
+    if (!a) continue;
+    const monthAmt = (m: string) =>
+      amounts[amountKey(p.id, term.code, m as Slot)]?.amount ?? 0;
+    const bonus = amounts[amountKey(p.id, term.code, bonusSlot)]?.amount ?? 0;
+    const hasAny = bonus !== 0 || months.some((m) => monthAmt(m) !== 0);
+    if (!hasAny) continue;
+
+    // 配分先: 所属(1-rate) + 兼務先(rate)。
+    // 元シート仕様: 兼務先が空欄でも兼務率>0なら所属から差し引く
+    // （その分はSHO-SAN人件費の外＝どこにも計上しない。例: 丹野30%）。
+    const targets: { dept: string; share: number }[] = [];
+    const rate = Math.min(Math.max(a.kenmu_rate ?? 0, 0), 1);
+    if (a.dept) targets.push({ dept: a.dept, share: 1 - rate });
+    if (a.kenmu_dept && rate > 0) targets.push({ dept: a.kenmu_dept, share: rate });
+    if (targets.length === 0) continue;
+
+    for (const t of targets) {
+      const map = mapByDept.get(t.dept);
+      if (!map) { unmapped.add(t.dept); continue; }
+      if (map.treatment === "front") {
+        for (const m of months) frontSalary[m] += monthAmt(m) * t.share;
+        for (const m of months) frontBonus[m] += (bonus * t.share) / 6;
+        continue;
+      }
+      if (map.treatment === "corporate") {
+        for (const m of months) corpSalary[m] += monthAmt(m) * t.share;
+        for (const m of months) corpBonus[m] += (bonus * t.share) / 6;
+        continue;
+      }
+      // product
+      const div = map.div ?? t.dept;
+      // TM: 兼務先計上でも本人のTM割当を使う（同一人物のTMは1つ）
+      let tm = a.tm ?? UNASSIGNED_TM;
+      // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）
+      const tmDiv = tm !== UNASSIGNED_TM ? tmDivOf.get(tm) : undefined;
+      const targetDiv = tmDiv ?? div;
+      if (tm !== UNASSIGNED_TM && tmDiv && tmDiv !== div && map.div) {
+        // 所属deptのdivとTMのdivが食い違う場合はTM側を正とする
+      }
+      const b = ensureTm(targetDiv, tm);
+      const monthsRec: Record<string, number> = {};
+      for (const m of months) {
+        const v = monthAmt(m) * t.share;
+        monthsRec[m] = v;
+        b.salaryByMonth[m] += v;
+        b.bonusByMonth[m] += (bonus * t.share) / 6;
+      }
+      b.members.push({
+        personId: p.id, name: p.name, share: t.share,
+        months: monthsRec, bonus: bonus * t.share,
+      });
+    }
+  }
+
+  const rate = inp.insuranceRate;
+  for (const b of tmMap.values()) {
+    for (const m of months) {
+      b.insuranceByMonth[m] = (b.salaryByMonth[m] + b.bonusByMonth[m]) * rate;
+      b.totalByMonth[m] = b.salaryByMonth[m] + b.bonusByMonth[m] + b.insuranceByMonth[m];
+    }
+  }
+
+  // フロント原資（社保込み）と按分比率
+  const frontIns = zero(); const frontPool = zero();
+  for (const m of months) {
+    frontIns[m] = (frontSalary[m] + frontBonus[m]) * rate;
+    frontPool[m] = frontSalary[m] + frontBonus[m] + frontIns[m];
+  }
+  const corpIns = zero(); const corpTotal = zero();
+  for (const m of months) {
+    corpIns[m] = (corpSalary[m] + corpBonus[m]) * rate;
+    corpTotal[m] = corpSalary[m] + corpBonus[m] + corpIns[m];
+  }
+
+  const targetsRows = inp.frontTargets.filter(
+    (f) => f.term === term.code && f.half === half,
+  );
+  const targetSum = targetsRows.reduce((s, f) => s + f.sales_target, 0);
+  const frontRatios: Record<string, number> = {};
+  for (const f of targetsRows) {
+    frontRatios[f.div] = targetSum > 0 ? f.sales_target / targetSum : 0;
+  }
+
+  // DIV集計
+  const tmSort = new Map(inp.tms.map((t) => [t.tm, t.sort_order]));
+  const divs: DivBreakdown[] = [];
+  for (const div of divOrder) {
+    const tms = [...tmMap.values()]
+      .filter((b) => b.div === div)
+      .sort((a, b) =>
+        (tmSort.get(a.tm) ?? 999) - (tmSort.get(b.tm) ?? 999) || a.tm.localeCompare(b.tm),
+      );
+    const productByMonth = zero();
+    for (const b of tms) for (const m of months) productByMonth[m] += b.totalByMonth[m];
+    const frontAllocByMonth = zero();
+    for (const m of months) frontAllocByMonth[m] = frontPool[m] * (frontRatios[div] ?? 0);
+    const totalByMonth = zero();
+    for (const m of months) totalByMonth[m] = productByMonth[m] + frontAllocByMonth[m];
+    divs.push({ div, tms, productByMonth, frontAllocByMonth, totalByMonth });
+  }
+
+  const grand = zero();
+  for (const m of months) {
+    grand[m] = divs.reduce((s, d) => s + d.totalByMonth[m], 0) + corpTotal[m];
+  }
+
+  return {
+    term: term.code, half, months, divs,
+    frontPoolByMonth: frontPool, frontRatios,
+    corporateByMonth: corpTotal,
+    corporateSalaryByMonth: corpSalary,
+    corporateBonusByMonth: corpBonus,
+    corporateInsuranceByMonth: corpIns,
+    frontSalaryByMonth: frontSalary,
+    frontBonusByMonth: frontBonus,
+    frontInsuranceByMonth: frontIns,
+    grandTotalByMonth: grand,
+    unmappedDepts: [...unmapped],
+  };
+}
+
+// ── ローデータ出力 ──────────────────────────────────────────────────
+
+export type RawRow = {
+  ym: string;        // '2026年7月'
+  tm: string;        // TM名 / 'フロント按分' / 'コーポレート' / '—'
+  div: string;
+  kind: "プロダクト" | "フロント" | "総額" | "コーポレート";
+  amount: number;    // 万円（小数1桁丸め）
+};
+
+export function buildRawRows(
+  term: LaborTermRow,
+  comps: HalfComputation[],
+): RawRow[] {
+  const rows: RawRow[] = [];
+  const round1 = (v: number) => Math.round(v * 10) / 10;
+  for (const c of comps) {
+    for (const m of c.months) {
+      const year = c.half === "H1" ? term.start_year : term.start_year + 1;
+      const ym = ymLabel(year, Number(m));
+      for (const d of c.divs) {
+        for (const t of d.tms) {
+          rows.push({ ym, tm: t.tm, div: d.div, kind: "プロダクト", amount: round1(t.totalByMonth[m]) });
+        }
+        rows.push({ ym, tm: "フロント按分", div: d.div, kind: "フロント", amount: round1(d.frontAllocByMonth[m]) });
+        rows.push({ ym, tm: "—", div: d.div, kind: "総額", amount: round1(d.totalByMonth[m]) });
+      }
+      rows.push({ ym, tm: "コーポレート", div: "コーポレート", kind: "コーポレート", amount: round1(c.corporateByMonth[m]) });
+    }
+  }
+  return rows;
+}
+
+export function rawRowsToTsv(rows: RawRow[]): string {
+  const head = "年月\tTM\tDiv\t種別\t金額（万円）";
+  return [head, ...rows.map((r) => `${r.ym}\t${r.tm}\t${r.div}\t${r.kind}\t${r.amount}`)].join("\n");
+}
+
+export function rawRowsToCsv(rows: RawRow[]): string {
+  const head = "年月,TM,Div,種別,金額（万円）";
+  return [head, ...rows.map((r) => `${r.ym},${r.tm},${r.div},${r.kind},${r.amount}`)].join("\n");
+}

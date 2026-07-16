@@ -47,6 +47,11 @@ const SharedAnnouncementPage = lazy(() =>
 const SurveyPage = lazy(() =>
   import("./components/pulse/SurveyPage").then((m) => ({ default: m.SurveyPage })),
 );
+// 人件費管理（#/labor）。chrome 無し・ナビ導線なし・URL直打ち専用。
+// laborcost_admins 許可リスト（RLS＋RPCの二重防御）でページ側ゲート。
+const LaborPage = lazy(() =>
+  import("./components/labor/LaborPage").then((m) => ({ default: m.LaborPage })),
+);
 // パルスサーベイ 管理ダッシュボード（#/pulse・app シェル内・権限者）。
 const PulseDashboardPage = lazy(() =>
   import("./components/pulse/PulseDashboardPage").then((m) => ({ default: m.PulseDashboardPage })),
@@ -632,6 +637,15 @@ export default function App() {
     return (
       <Suspense fallback={<BootSplash />}>
         <SurveyPage />
+      </Suspense>
+    );
+  }
+
+  // 人件費管理: chrome 無しスタンドアロン。ナビには一切出さない。
+  if (route.name === "labor") {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <LaborPage />
       </Suspense>
     );
   }
