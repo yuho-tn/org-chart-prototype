@@ -73,7 +73,7 @@ type State = {
   redo: () => void;
 
   addPerson: (name: string) => Promise<LaborPersonRow | null>;
-  updatePerson: (id: string, patch: Partial<Pick<LaborPersonRow, "name" | "departed" | "employee_number" | "hired_at">>) => Promise<void>;
+  updatePerson: (id: string, patch: Partial<Pick<LaborPersonRow, "name" | "departed" | "employee_number" | "hired_at" | "incentive_rate">>) => Promise<void>;
 
   setForecastFlag: (term: TermCode, half: Half, isForecast: boolean) => Promise<void>;
   updateFrontTarget: (term: TermCode, half: Half, div: string, value: number) => Promise<void>;

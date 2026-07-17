@@ -235,6 +235,24 @@ export function LaborSettingsTab({ term }: { term: TermCode }) {
                   <option key={e.num} value={e.num}>{e.label}</option>
                 ))}
               </select>
+              <label className="labor-incentive" title="インセンティブの売上に対する掛け率（フロント陣のみ）">
+                インセン
+                <input
+                  className="labor-rateinput labor-rateinput--sm"
+                  type="number"
+                  step="1"
+                  min="0"
+                  placeholder="—"
+                  value={p.incentive_rate != null ? Math.round(p.incentive_rate * 1000) / 10 : ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    void store.updatePerson(p.id, {
+                      incentive_rate: v === "" ? null : Number(v) / 100,
+                    });
+                  }}
+                />
+                %
+              </label>
             </div>
           ))}
         </div>

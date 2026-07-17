@@ -8962,3 +8962,12 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   text-align: right;
 }
 .labor-inline { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.labor-incentive {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #77828c;
+  white-space: nowrap;
+}
+.labor-rateinput--sm { width: 52px; padding: 2px 6px; }

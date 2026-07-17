@@ -48,6 +48,8 @@ export type LaborPersonRow = {
   hired_at: string | null;
   departed: boolean;
   sort_order: number;
+  /** インセンティブの売上に対する掛け率（0.05=5%）。フロント陣のみ・null=対象外 */
+  incentive_rate?: number | null;
 };
 
 export type LaborAssignmentRow = {
