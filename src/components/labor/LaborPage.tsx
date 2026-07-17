@@ -35,6 +35,9 @@ export function LaborPage() {
 
   const [tab, setTab] = useState<TabKey>("sheet");
   const [term, setTerm] = useState<TermCode>("5");
+  // DIV按分/出力/設定タブは5期固定。ハイライトも実表示に合わせる（誤認防止）。
+  const lockedTo5 = tab === "div" || tab === "raw" || tab === "settings";
+  const effectiveTerm: TermCode = lockedTo5 ? "5" : term;
 
   useEffect(() => {
     void checkAccess();
@@ -90,13 +93,13 @@ export function LaborPage() {
         </nav>
         <div className="labor-terms">
           {terms.map((t) => {
-            const disabled = (tab === "div" || tab === "raw" || tab === "settings") && t.code !== "5";
+            const disabled = lockedTo5 && t.code !== "5";
             return (
               <button
                 key={t.code}
                 className={
                   "labor-term" +
-                  (term === t.code ? " labor-term--on" : "") +
+                  (effectiveTerm === t.code ? " labor-term--on" : "") +
                   (disabled ? " labor-term--disabled" : "")
                 }
                 title={disabled ? "DIV按分・出力は5期のみ対応" : t.label}
@@ -127,7 +130,7 @@ export function LaborPage() {
 
 function SaveIndicator({ state, error }: { state: string; error: string | null }) {
   if (state === "error") {
-    return <span className="labor-save labor-save--error" title={error ?? undefined}>⚠ 保存エラー（再編集で再試行）</span>;
+    return <span className="labor-save labor-save--error" title={error ?? undefined}>⚠ 保存エラー（自動で再試行中）</span>;
   }
   if (state === "saving" || state === "pending") {
     return <span className="labor-save">保存中…</span>;

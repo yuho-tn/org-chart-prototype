@@ -88,6 +88,7 @@ let amountQueue = new Map<AmountKey, AmountPatch>();
 let assignQueue = new Map<AssignKey, LaborAssignmentRow>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const FLUSH_MS = 800;
+const RETRY_MS = 4000;
 
 async function flushQueues(set: (p: Partial<State>) => void, get: () => State) {
   if (!supabase) return;
@@ -136,7 +137,23 @@ async function flushQueues(set: (p: Partial<State>) => void, get: () => State) {
       saveError: null,
     });
   } catch (e) {
+    // 保存失敗: drain済みの失敗ペイロードをキューへ戻す（await中に入った
+    // 新しい編集は温存＝上書きしない）。DB未反映のまま消えるのを防ぐ。
+    for (const p of amountRows) {
+      const key = amountKey(p.personId, p.term, p.slot);
+      if (!amountQueue.has(key)) amountQueue.set(key, p);
+    }
+    for (const a of assignRows) {
+      const key = assignKey(a.person_id, a.term, a.half);
+      if (!assignQueue.has(key)) assignQueue.set(key, a);
+    }
     set({ saveState: "error", saveError: e instanceof Error ? e.message : String(e) });
+    // 追加編集を待たずに回復させる自動リトライ（失敗が続く限り一定間隔で再送）
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      void flushQueues(set, get);
+    }, RETRY_MS);
   }
 }
 

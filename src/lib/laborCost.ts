@@ -180,8 +180,12 @@ export type HalfComputation = {
   frontSalaryByMonth: Record<string, number>;
   frontBonusByMonth: Record<string, number>;
   frontInsuranceByMonth: Record<string, number>;
-  /** 全社総計（プロダクト+フロント+コーポレート） */
+  /** 全社総計（プロダクト+フロント+コーポレート・按分残差込み） */
   grandTotalByMonth: Record<string, number>;
+  /** フロント原資のうちDIVへ配分し切れなかった残差（総計には加算済み） */
+  frontUnallocatedByMonth: Record<string, number>;
+  /** フロント按分の残差が有意にある（売上目標未登録/0など）＝要確認 */
+  frontUnallocated: boolean;
   /** マッピング不明の所属（データ健全性アラート用） */
   unmappedDepts: string[];
 };
@@ -215,6 +219,13 @@ export function computeHalf(inp: Inputs): HalfComputation {
   for (const m of inp.deptMap) {
     if (m.term === term.code && m.treatment === "product" && m.div && !divOrder.includes(m.div)) {
       divOrder.push(m.div);
+    }
+  }
+  // 売上目標のあるDIVも配分先として必ず並べる（product行が無いDIVでも
+  // フロント按分の受け皿を用意し、按分残差＝総計欠落を防ぐ）。
+  for (const f of inp.frontTargets) {
+    if (f.term === term.code && f.half === half && f.sales_target > 0 && !divOrder.includes(f.div)) {
+      divOrder.push(f.div);
     }
   }
 
@@ -344,9 +355,22 @@ export function computeHalf(inp: Inputs): HalfComputation {
     divs.push({ div, tms, productByMonth, frontAllocByMonth, totalByMonth });
   }
 
+  // フロント原資が実際にDIVへ配分された合計と、配分し切れなかった残差。
+  // 売上目標が未登録/全0、または目標DIVがdivOrderに無いと残差が生じる。
+  // 残差は総計に必ず加算し（金額の欠落を防ぐ）、警告フラグで可視化する。
+  const frontAllocated = zero();
+  for (const d of divs) for (const m of months) frontAllocated[m] += d.frontAllocByMonth[m];
+  const frontUnalloc = zero();
+  let frontUnallocated = false;
+  for (const m of months) {
+    frontUnalloc[m] = frontPool[m] - frontAllocated[m];
+    if (Math.abs(frontUnalloc[m]) > 0.05) frontUnallocated = true;
+  }
+
   const grand = zero();
   for (const m of months) {
-    grand[m] = divs.reduce((s, d) => s + d.totalByMonth[m], 0) + corpTotal[m];
+    grand[m] =
+      divs.reduce((s, d) => s + d.totalByMonth[m], 0) + corpTotal[m] + frontUnalloc[m];
   }
 
   return {
@@ -360,6 +384,8 @@ export function computeHalf(inp: Inputs): HalfComputation {
     frontBonusByMonth: frontBonus,
     frontInsuranceByMonth: frontIns,
     grandTotalByMonth: grand,
+    frontUnallocatedByMonth: frontUnalloc,
+    frontUnallocated,
     unmappedDepts: [...unmapped],
   };
 }

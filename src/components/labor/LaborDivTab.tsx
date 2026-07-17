@@ -88,6 +88,14 @@ export function LaborDivTab({ term }: { term: TermCode }) {
         </div>
       )}
 
+      {comp.frontUnallocated && (
+        <div className="labor-warn">
+          ⚠ フロント人件費を各DIVへ按分し切れていません（売上目標が未登録/0、または目標DIVがTM一覧に無い可能性）。
+          残差 {fmtMan(months.reduce((s, m) => s + (comp.frontUnallocatedByMonth[m] ?? 0), 0))}万円/半期は
+          全社総計には加算していますが、DIV別には配分されていません。設定タブの売上目標を確認してください。
+        </div>
+      )}
+
       <table className="labor-divtable">
         <thead>
           <tr>

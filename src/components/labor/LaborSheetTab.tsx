@@ -89,7 +89,11 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
     for (const p of sorted) {
       const a1 = assignments[assignKey(p.id, term, "H1")];
       const a2 = assignments[assignKey(p.id, term, "H2")];
-      const amt = (slot: Slot) => amounts[amountKey(p.id, term, slot)]?.amount ?? null;
+      // 万円で0は「無データ」＝空欄扱い（スプシ挙動）。Deleteで0が残っても空表示。
+      const amt = (slot: Slot) => {
+        const v = amounts[amountKey(p.id, term, slot)]?.amount;
+        return v ? v : null;
+      };
       let h1 = 0; let h2 = 0; let hasData = false;
       const cells: GridRow["cells"] = {
         name: p.name + (p.departed ? "（退職）" : ""),
