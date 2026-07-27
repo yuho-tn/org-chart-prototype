@@ -1,7 +1,11 @@
 import { useMemo, useState, type ReactElement } from "react";
 import { useLaborCostStore } from "../../store/useLaborCostStore";
+import { useEmployeesStore } from "../../store/useEmployeesStore";
 import type { Half, HalfComputation, TermCode } from "../../lib/laborCost";
 import { computeHalf, fmtMan } from "../../lib/laborCost";
+
+/** personId → 正式名称（個人別シートと同じ規則: マスターの display_name || full_name、無ければ labor_people.name）。 */
+type NameResolver = (personId: string, fallback: string) => string;
 
 /**
  * DIV別 月次按分ビュー（読み取り専用・自動計算）。
@@ -15,9 +19,22 @@ import { computeHalf, fmtMan } from "../../lib/laborCost";
 
 export function LaborDivTab({ term }: { term: TermCode }) {
   const store = useLaborCostStore();
+  const employees = useEmployeesStore((s) => s.employees);
   const [half, setHalf] = useState<Half>("H1");
 
   const termRow = store.terms.find((t) => t.code === term);
+
+  // DIV按分のメンバー名を個人別シートと同じ「正式名称」で表示する
+  // （集計は labor_people.name の省略名を使うため、ここで従業員マスター名に解決）。
+  const nameOf: NameResolver = useMemo(() => {
+    const empByNum = new Map(employees.map((e) => [e.employee_number, e]));
+    const numByPerson = new Map(store.people.map((p) => [p.id, p.employee_number]));
+    return (personId: string, fallback: string) => {
+      const num = numByPerson.get(personId);
+      const emp = num ? empByNum.get(num) : null;
+      return emp?.display_name || emp?.full_name || fallback;
+    };
+  }, [employees, store.people]);
 
   const comp: HalfComputation | null = useMemo(() => {
     if (!termRow) return null;
@@ -116,7 +133,7 @@ export function LaborDivTab({ term }: { term: TermCode }) {
         </thead>
         <tbody>
           {comp.divs.map((d) => (
-            <DivBlock key={d.div} d={d} MonthCells={MonthCells} />
+            <DivBlock key={d.div} d={d} MonthCells={MonthCells} nameOf={nameOf} />
           ))}
 
           {/* 按分原資プール（フロント → 間接の順・group付き） */}
@@ -159,9 +176,11 @@ export function LaborDivTab({ term }: { term: TermCode }) {
 function DivBlock({
   d,
   MonthCells,
+  nameOf,
 }: {
   d: HalfComputation["divs"][number];
   MonthCells: (p: { rec: Record<string, number>; strong?: boolean }) => ReactElement;
+  nameOf: NameResolver;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -175,7 +194,7 @@ function DivBlock({
       {open && (
         <>
           {d.tms.map((t) => (
-            <TmBlock key={t.tm} t={t} MonthCells={MonthCells} />
+            <TmBlock key={t.tm} t={t} MonthCells={MonthCells} nameOf={nameOf} />
           ))}
           <tr className="labor-sub labor-line">
             <td className="labor-indent">プロダクト計（スタッフ人件費）</td>
@@ -237,9 +256,11 @@ function PoolBlock({
 function TmBlock({
   t,
   MonthCells,
+  nameOf,
 }: {
   t: HalfComputation["divs"][number]["tms"][number];
   MonthCells: (p: { rec: Record<string, number>; strong?: boolean }) => ReactElement;
+  nameOf: NameResolver;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -256,7 +277,7 @@ function TmBlock({
           {t.members.map((m, i) => (
             <tr key={m.personId + i} className="labor-member">
               <td className="labor-indent2">
-                {m.name}
+                {nameOf(m.personId, m.name)}
                 {m.share < 1 && (
                   <span className="labor-share">×{Math.round(m.share * 100)}%</span>
                 )}

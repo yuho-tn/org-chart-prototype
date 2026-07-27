@@ -33,6 +33,8 @@ export type GridColumn = {
   align?: "left" | "right";
   /** text セルの入力候補（datalist）／select の選択肢 */
   options?: string[];
+  /** select の選択肢を行ごとに動的算出（例: TMを所属DIVで絞る）。指定時は options より優先。 */
+  optionsFor?: (row: GridRow) => string[];
 };
 
 export type GridRow = {
@@ -555,7 +557,7 @@ export function LaborGrid({
                         }
                       >
                         <option value="">（未設定）</option>
-                        {(col.options ?? []).map((o) => (
+                        {(col.optionsFor ? col.optionsFor(row) : col.options ?? []).map((o) => (
                           <option key={o} value={o}>{o}</option>
                         ))}
                       </select>
