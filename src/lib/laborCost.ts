@@ -77,6 +77,8 @@ export type LaborDeptMapRow = {
   dept: string;
   div: string | null;
   treatment: DeptTreatment;
+  /** DIVの表示順（0037→0039で追加）。未設定は末尾扱い。 */
+  sort_order?: number;
 };
 
 export type LaborTmRow = { tm: string; div: string; sort_order: number };
@@ -191,6 +193,9 @@ export type HalfComputation = {
 };
 
 const UNASSIGNED_TM = "（TM未割当）";
+/** TMを持たない設計のDIV（SNS/制作/HR等）でメンバーを直計上する際のラベル。
+ *  TMを持つDIVでの UNASSIGNED_TM（＝要割当の警告対象）と区別する。 */
+const DIV_DIRECT_TM = "（DIV直計上）";
 
 type Inputs = {
   term: LaborTermRow;
@@ -212,6 +217,11 @@ export function computeHalf(inp: Inputs): HalfComputation {
   const mapByDept = new Map(
     inp.deptMap.filter((m) => m.term === term.code).map((m) => [m.dept, m]),
   );
+  // DIV表示順の正 = labor_dept_map.sort_order（0039で追加）。
+  const divSort = new Map<string, number>();
+  for (const m of inp.deptMap) {
+    if (m.term === term.code && m.div) divSort.set(m.div, m.sort_order ?? 999);
+  }
   const divOrder: string[] = [];
   for (const t of [...inp.tms].sort((a, b) => a.sort_order - b.sort_order)) {
     if (!divOrder.includes(t.div)) divOrder.push(t.div);
@@ -228,6 +238,12 @@ export function computeHalf(inp: Inputs): HalfComputation {
       divOrder.push(f.div);
     }
   }
+  // dept_map の sort_order で並べ替え（未定義DIVは末尾・名前順）。
+  divOrder.sort(
+    (a, b) => (divSort.get(a) ?? 999) - (divSort.get(b) ?? 999) || a.localeCompare(b),
+  );
+  // TMを設計上持つDIVの集合（＝未割当を警告対象にするか、DIV直計上にするかの判定）。
+  const divsWithTms = new Set(inp.tms.map((t) => t.div));
 
   const zero = () => Object.fromEntries(months.map((m) => [m, 0])) as Record<string, number>;
 
@@ -286,13 +302,14 @@ export function computeHalf(inp: Inputs): HalfComputation {
       // product
       const div = map.div ?? t.dept;
       // TM: 兼務先計上でも本人のTM割当を使う（同一人物のTMは1つ）
-      let tm = a.tm ?? UNASSIGNED_TM;
+      const assignedTm = a.tm ?? null;
       // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）
-      const tmDiv = tm !== UNASSIGNED_TM ? tmDivOf.get(tm) : undefined;
+      const tmDiv = assignedTm ? tmDivOf.get(assignedTm) : undefined;
       const targetDiv = tmDiv ?? div;
-      if (tm !== UNASSIGNED_TM && tmDiv && tmDiv !== div && map.div) {
-        // 所属deptのdivとTMのdivが食い違う場合はTM側を正とする
-      }
+      // TM未割当時: そのDIVが設計上TMを持つなら「（TM未割当）」＝要割当、
+      // 持たない設計（SNS/制作/HR）なら「（DIV直計上）」でメンバー直計上。
+      const tm =
+        assignedTm ?? (divsWithTms.has(targetDiv) ? UNASSIGNED_TM : DIV_DIRECT_TM);
       const b = ensureTm(targetDiv, tm);
       const monthsRec: Record<string, number> = {};
       for (const m of months) {

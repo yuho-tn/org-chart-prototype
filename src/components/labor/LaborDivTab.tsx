@@ -113,9 +113,9 @@ export function LaborDivTab({ term }: { term: TermCode }) {
             <DivBlock key={d.div} d={d} MonthCells={MonthCells} />
           ))}
 
-          {/* フロント原資 */}
+          {/* フロント原資（各DIVへ売上目標比で按分・下の按分行が各DIVの受け分） */}
           <tr className="labor-divhead">
-            <td>フロント（按分原資）</td>
+            <td>フロントDIV（按分原資）</td>
             <MonthCells rec={comp.frontPoolByMonth} strong />
           </tr>
           <tr className="labor-sub">
