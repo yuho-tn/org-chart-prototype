@@ -113,6 +113,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ initialized: true });
       return;
     }
+    // 未ログイン時は app_users を読まない — anon は RLS(0017)で拒否されるため
+    // サインイン画面に「permission denied」が露出するだけで意味がない。
+    if (!get().session) {
+      set({ loading: false, initialized: true, users: [], currentUser: null, error: null });
+      return;
+    }
     set({ loading: true, error: null });
     const { data, error } = await supabase
       .from("app_users")

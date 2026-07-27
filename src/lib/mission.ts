@@ -34,7 +34,9 @@ export type QuestionType =
   | "textarea"
   | "select"
   | "number"
-  | "kpi_goal";
+  | "kpi_goal"
+  | "date"
+  | "credo_eval";
 
 export type MissionPhase = "goal" | "mid" | "final";
 
@@ -84,7 +86,17 @@ export type MissionQuestion = {
   is_fundamental?: boolean;
   /** 加点評価フラグ（type=number のみ。上長入力点をそのまま合計へ加算）。 */
   is_bonus?: boolean;
+  /** type=credo_eval のみ。CREDO項目の固定表示コンテンツ（label=クレド名）。 */
+  credo?: { no?: string; phrase?: string; detail?: string };
+  /**
+   * type=credo_eval のみ。評価スケール（既定 CREDO_EVAL_SCALE = ○△✕）。
+   * テンプレJSONBに持つためスケール変更はテンプレ編集で完結する。
+   */
+  scale?: string[];
 };
+
+/** credo_eval の既定評価スケール（2026-07-13 裕鵬さん確定＝○△✕の3段階）。 */
+export const CREDO_EVAL_SCALE: string[] = ["○", "△", "✕"];
 
 export type MissionSection = {
   id: string;
@@ -191,11 +203,26 @@ export type KpiGoalValue = {
   achievement_rate?: number | null;
 };
 
-/** text/textarea/select→{text} / number→{number} / kpi_goal→KpiGoalValue */
+/**
+ * credo_eval 型設問の value。goal_eval=期初評価・final_eval=期末評価
+ * （スケールは設問の scale。既定 ○△✕）。focus=注力テーマ選択（self 行のみ）。
+ * kpi_goal と同様に 1 設問が goal/final 両フェーズに跨る（期初系フィールドは
+ * 期初確定後サーバトリガで凍結・期末評価は mid_done の入力窓で記入）。
+ */
+export type CredoEvalValue = {
+  focus?: boolean;
+  goal_eval?: string;
+  final_eval?: string;
+};
+
+/** text/textarea/select→{text} / number→{number} / date→{date} / kpi_goal→KpiGoalValue / credo_eval→CredoEvalValue */
 export type AnswerValue = {
   text?: string;
   number?: number | null;
-} & KpiGoalValue;
+  /** type=date のみ（YYYY-MM-DD）。 */
+  date?: string;
+} & KpiGoalValue &
+  CredoEvalValue;
 
 export type MissionAnswerRow = {
   id: string;
@@ -271,6 +298,11 @@ export function isAnswerFilled(
       return value.number != null;
     case "kpi_goal":
       return Boolean(value.title?.trim()) || value.target_value != null;
+    case "date":
+      return Boolean(value.date?.trim());
+    case "credo_eval":
+      // required 検証は期初評価を基準にする（focus は選択制・final は期末窓）
+      return Boolean(value.goal_eval?.trim());
     default:
       return Boolean(value.text?.trim());
   }
@@ -303,8 +335,9 @@ export function isEvaluatorOfClient(
  *   final→mid_done で記入可。
  * - role='evaluator': 評価者 or manage。phase=goal→goal_submitted、
  *   mid→goal_confirmed、final→mid_done で記入可。
- * - kpi_goal（phase=goal）のみ両ロールとも mid_done でも記入可（期末の
- *   実績値・達成度の入力窓。目標系フィールドはサーバトリガで凍結）。
+ * - kpi_goal / credo_eval（phase=goal）のみ両ロールとも mid_done でも記入可
+ *   （期末の実績値・達成度／期末評価の入力窓。期初系フィールドはサーバ
+ *   トリガで凍結）。
  * - heading は回答を持たない。assessed は常に false。
  */
 export function canWriteAnswerClient(
@@ -320,7 +353,9 @@ export function canWriteAnswerClient(
   const phase = questionPhase(question);
   const resp = questionRespondent(question);
   const kpiActualWindow =
-    question.type === "kpi_goal" && phase === "goal" && sheet.stage === "mid_done";
+    (question.type === "kpi_goal" || question.type === "credo_eval") &&
+    phase === "goal" &&
+    sheet.stage === "mid_done";
   if (role === "self") {
     if (resp !== "self" && resp !== "both") return false;
     if (!meNumber || sheet.employee_number !== meNumber) return false;

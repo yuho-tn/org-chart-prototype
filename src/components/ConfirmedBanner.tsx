@@ -74,10 +74,14 @@ export function ConfirmedBanner() {
       setToast({ kind: "error", message: "複製に失敗しました" });
       return;
     }
-    const nodes = await getSnapshot(row.id);
-    if (nodes) {
+    const loaded = await getSnapshot(row.id);
+    if (loaded) {
       setViewOnly(false);
-      replaceNodes(nodes, { versionId: row.id, versionLabel: row.name });
+      replaceNodes(loaded.nodes, {
+        versionId: row.id,
+        versionLabel: row.name,
+        rev: loaded.rev,
+      });
     }
     setToast({ kind: "info", message: `「${trimmed}」を別案として作成しました` });
     setOpen(false);

@@ -79,10 +79,10 @@ export function AnnouncementsListPage() {
     let nodesA: OrgNode[] = [];
     let nodesB: OrgNode[] = [];
     if (input.versionAId) {
-      nodesA = (await getSnapshot(input.versionAId)) ?? [];
+      nodesA = (await getSnapshot(input.versionAId))?.nodes ?? [];
     }
     if (input.versionBId) {
-      nodesB = (await getSnapshot(input.versionBId)) ?? [];
+      nodesB = (await getSnapshot(input.versionBId))?.nodes ?? [];
     }
     const payload = computeAnnouncement(nodesA, nodesB, employees, input.period);
     const row = await create({

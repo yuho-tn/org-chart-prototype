@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import { useEmployeesStore } from "../store/useEmployeesStore";
+import { useUiStore } from "../store/useUiStore";
 import { isSupabaseConfigured } from "../lib/supabase";
 
 /**
@@ -14,11 +15,16 @@ export function UnlinkedAlert() {
   const nodes = useOrgStore((s) => s.nodes);
   const setSelected = useOrgStore((s) => s.setSelected);
   const employees = useEmployeesStore((s) => s.employees);
+  const viewOnly = useUiStore((s) => s.viewOnly);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   const unlinked = useMemo(() => {
     if (!isSupabaseConfigured) return [];
+    // Read-only share view is anonymous → the employee master is RLS-empty,
+    // which would flag every person as unlinked. A viewer can't fix links
+    // anyway, so suppress the alert entirely in view-only mode.
+    if (viewOnly) return [];
     const valid = new Set(employees.map((e) => e.employee_number));
     return nodes.filter(
       (n) =>
@@ -26,7 +32,7 @@ export function UnlinkedAlert() {
         !n.isUnplaced &&
         (!n.employeeNumber || !valid.has(n.employeeNumber)),
     );
-  }, [nodes, employees]);
+  }, [nodes, employees, viewOnly]);
 
   // Close when clicking outside or pressing Escape
   useEffect(() => {

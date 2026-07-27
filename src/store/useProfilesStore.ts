@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { fetchWithRetry } from "../lib/query";
 import { useAuthStore, isUserManager } from "./useAuthStore";
 import { useEmployeesStore } from "./useEmployeesStore";
 import {
   levelForPositionTitle,
   signedPhotoUrls,
   buildPhotoPath,
+  buildBlockImagePath,
   PROFILE_PHOTOS_BUCKET,
   SIGNED_URL_TTL_SEC,
   type ProfileRow,
@@ -50,8 +52,9 @@ type ProfilesState = {
   /** path → 発行時刻(ms)。photoUrls の鮮度判定用。 */
   photoUrlIssuedAt: Record<string, number>;
 
-  /** プロフィール一覧＋権限マスター（levels / permissions / grants）をロード。 */
-  refresh: () => Promise<void>;
+  /** プロフィール一覧＋権限マスター（levels / permissions / grants）をロード。
+   *  silent: ロード済みならスピナーを出さず裏で再検証（フォーカス時再検証用）。 */
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   /** 機密層を1件 fetch。権限が無い場合（RLS 403 / 0行）は静かに無視。 */
   fetchConfidential: (employeeNumber: string) => Promise<void>;
   /** 未取得の signed URL をまとめて発行してキャッシュに足す。 */
@@ -74,6 +77,12 @@ type ProfilesState = {
     file: File,
     caption?: string,
   ) => Promise<SaveResult>;
+  /** ブロックエディタ画像をアップロード（長辺1600pxへ縮小・profile-photos の
+   *  {num}/blocks/ 配下）。プロフィール行は更新せず、path を返す。 */
+  uploadBlockImage: (
+    employeeNumber: string,
+    file: File,
+  ) => Promise<{ ok: boolean; reason?: string; path?: string }>;
   removePhoto: (employeeNumber: string, path: string) => Promise<SaveResult>;
   setAvatar: (employeeNumber: string, path: string | null) => Promise<SaveResult>;
 
@@ -93,6 +102,36 @@ type ProfilesState = {
 const RLS_DENIED_MSG =
   "保存がDBに反映されませんでした（権限が無い可能性があります）。";
 
+/** 画像を長辺 maxEdge px まで縮小して JPEG Blob を返す（縮小不要なら null）。 */
+async function resizeImage(file: File, maxEdge: number): Promise<Blob | null> {
+  if (!file.type.startsWith("image/")) return null;
+  if (typeof createImageBitmap !== "function" || typeof document === "undefined") {
+    return null;
+  }
+  const bmp = await createImageBitmap(file);
+  const longEdge = Math.max(bmp.width, bmp.height);
+  if (longEdge <= maxEdge) {
+    bmp.close?.();
+    return null;
+  }
+  const scale = maxEdge / longEdge;
+  const w = Math.round(bmp.width * scale);
+  const h = Math.round(bmp.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    bmp.close?.();
+    return null;
+  }
+  ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+  return await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), "image/jpeg", 0.85),
+  );
+}
+
 /** jsonb カラムの取りうる null / 不正値を配列に正規化する。 */
 function normalizeProfile(row: ProfileRow): ProfileRow {
   return {
@@ -100,6 +139,11 @@ function normalizeProfile(row: ProfileRow): ProfileRow {
     strengths: Array.isArray(row.strengths) ? row.strengths : [],
     custom_items: Array.isArray(row.custom_items) ? row.custom_items : [],
     photos: Array.isArray(row.photos) ? row.photos : [],
+    // P3 追加列（migration 0028 適用前の行は undefined になりうる）
+    career_rows: Array.isArray(row.career_rows) ? row.career_rows : [],
+    specialties: Array.isArray(row.specialties) ? row.specialties : [],
+    hobby_tags: Array.isArray(row.hobby_tags) ? row.hobby_tags : [],
+    blocks: Array.isArray(row.blocks) ? row.blocks : [],
   };
 }
 
@@ -115,18 +159,27 @@ export const useProfilesStore = create<ProfilesState>((set, get) => ({
   photoUrls: {},
   photoUrlIssuedAt: {},
 
-  refresh: async () => {
+  refresh: async (opts) => {
     if (!isSupabaseConfigured || !supabase) {
       set({ loaded: true });
       return;
     }
-    set({ loading: true, error: null });
-    const [pRes, lRes, mRes, gRes] = await Promise.all([
-      supabase.from("employee_profiles").select("*"),
-      supabase.from("position_levels").select("*"),
-      supabase.from("module_permissions").select("*"),
-      supabase.from("permission_grants").select("*"),
-    ]);
+    const sb = supabase;
+    const silent = Boolean(opts?.silent) && get().loaded;
+    if (!silent) set({ loading: true, error: null });
+    let pRes, lRes, mRes, gRes;
+    try {
+      [pRes, lRes, mRes, gRes] = await Promise.all([
+        fetchWithRetry(() => sb.from("employee_profiles").select("*")),
+        fetchWithRetry(() => sb.from("position_levels").select("*")),
+        fetchWithRetry(() => sb.from("module_permissions").select("*")),
+        fetchWithRetry(() => sb.from("permission_grants").select("*")),
+      ]);
+    } catch (e) {
+      // タイムアウト／ネットワーク断（リトライ尽き）。silent 時はデータ温存。
+      set({ loading: false, loaded: true, error: (e as Error).message });
+      return;
+    }
     if (pRes.error || lRes.error || mRes.error || gRes.error) {
       const err = pRes.error ?? lRes.error ?? mRes.error ?? gRes.error;
       const isMissing = err && /does not exist|could not find the table/i.test(err.message);
@@ -306,6 +359,23 @@ export const useProfilesStore = create<ProfilesState>((set, get) => ({
     }
     await get().ensurePhotoUrls([path]);
     return { ok: true };
+  },
+
+  uploadBlockImage: async (employeeNumber, file) => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    let uploadFile: Blob = file;
+    try {
+      uploadFile = (await resizeImage(file, 1600)) ?? file;
+    } catch {
+      uploadFile = file; // 縮小失敗時は原本をそのまま上げる
+    }
+    const path = buildBlockImagePath(employeeNumber, file.name);
+    const { error: upErr } = await supabase.storage
+      .from(PROFILE_PHOTOS_BUCKET)
+      .upload(path, uploadFile, { contentType: file.type || "image/jpeg" });
+    if (upErr) return { ok: false, reason: upErr.message };
+    await get().ensurePhotoUrls([path]);
+    return { ok: true, path };
   },
 
   removePhoto: async (employeeNumber, path) => {

@@ -63,6 +63,10 @@ export type VersionRow = {
   is_confirmed?: boolean;
   /** YYYY-MM string identifying the month a confirmed version represents. */
   confirmed_period?: string | null;
+  /** Migration 0027: 保存毎に+1する楽観ロック用リビジョン。 */
+  rev?: number | null;
+  /** Migration 0027: 全員共通の「公式デフォルト組織図」フラグ（全体1件）。 */
+  is_default?: boolean | null;
 };
 
 export type VersionWithSnapshot = VersionRow & {

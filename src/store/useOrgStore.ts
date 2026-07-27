@@ -28,6 +28,8 @@ type Store = AppState & {
   currentVersionId: string | null;
   /** label shown next to the dirty/saved badge */
   currentVersionLabel: string | null;
+  /** 0027: この編集の元になったサーバ rev（保存時の照合値）。null = 不明/新規。 */
+  baseRev: number | null;
   /** in-memory clipboard for Cmd+C / Cmd+V */
   clipboard: Clipboard;
   /** Set when the server has a newer revision of the open file than what
@@ -95,6 +97,9 @@ type Store = AppState & {
   /** Start a fresh file: clears nodes to seed and detaches from any loaded
    *  version. Used by the "＋新規作成" flow. */
   newFile: () => void;
+  /** Unload any open file, leaving a truly empty canvas (no seed template).
+   *  Used for the #/org "blank" landing where no file is selected yet. */
+  clearToBlank: () => void;
   /** Rewind nodes to the snapshot captured before the given log entry. */
   restoreToLog: (logId: string) => { ok: boolean; reason?: string };
   saveDraft: () => void;
@@ -104,10 +109,15 @@ type Store = AppState & {
    *  the right file. `versionId: null` means an unsaved new file. */
   hydrateDraft: (
     nodes: OrgNode[],
-    meta: { versionId: string | null; versionLabel: string | null },
+    meta: { versionId: string | null; versionLabel: string | null; rev?: number | null },
   ) => void;
-  replaceNodes: (nodes: OrgNode[], meta?: { versionId?: string; versionLabel?: string }) => void;
-  markClean: (meta?: { versionId?: string; versionLabel?: string }) => void;
+  replaceNodes: (
+    nodes: OrgNode[],
+    meta?: { versionId?: string; versionLabel?: string; rev?: number | null },
+  ) => void;
+  markClean: (
+    meta?: { versionId?: string; versionLabel?: string; rev?: number | null },
+  ) => void;
   /** Update only the display label for the currently-loaded file (used when
    *  the file is renamed from the file list). Doesn't touch dirty state. */
   setCurrentVersionLabel: (label: string) => void;
@@ -192,6 +202,7 @@ export const useOrgStore = create<Store>((set, get) => ({
   dirty: false,
   currentVersionId: null,
   currentVersionLabel: null,
+  baseRev: null,
   remoteAhead: null,
   clipboard: null,
 
@@ -796,6 +807,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       selectedId: null,
       currentVersionId: null,
       currentVersionLabel: null,
+      baseRev: null,
       log: logEntry(state, "reset", "初期データへリセット"),
       dirty: true,
     });
@@ -810,12 +822,27 @@ export const useOrgStore = create<Store>((set, get) => ({
       selectedId: null,
       currentVersionId: null,
       currentVersionLabel: null,
+      baseRev: null,
       log: logEntry(state, "reset", "新規ファイルを作成"),
       dirty: true,
       toast: {
         kind: "info",
         message: "新規ファイルを開きました。保存するとサーバに登録されます。",
       },
+    });
+  },
+
+  clearToBlank: () => {
+    set({
+      past: [],
+      future: [],
+      nodes: [],
+      selectedId: null,
+      currentVersionId: null,
+      currentVersionLabel: null,
+      baseRev: null,
+      dirty: false,
+      remoteAhead: null,
     });
   },
 
@@ -859,6 +886,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       selectedId: null,
       currentVersionId: meta?.versionId ?? null,
       currentVersionLabel: meta?.versionLabel ?? null,
+      baseRev: meta?.rev ?? null,
       dirty: false,
       remoteAhead: null,
       log: logEntry(
@@ -877,6 +905,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       dirty: false,
       currentVersionId: meta?.versionId ?? state.currentVersionId,
       currentVersionLabel: meta?.versionLabel ?? state.currentVersionLabel,
+      baseRev: meta?.rev !== undefined ? meta.rev : state.baseRev,
       log: meta?.versionLabel
         ? logEntry(state, "save", `バージョン「${meta.versionLabel}」を保存`)
         : state.log,
@@ -907,6 +936,7 @@ export const useOrgStore = create<Store>((set, get) => ({
       future: [],
       currentVersionId: meta.versionId,
       currentVersionLabel: meta.versionLabel,
+      baseRev: meta.rev ?? null,
       dirty: true,
       log: [
         makeLog(

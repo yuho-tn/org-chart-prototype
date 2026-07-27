@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { GlobalHeader } from "./components/GlobalHeader";
-import { SystemSwitcher } from "./components/SystemSwitcher";
 import { SalaryTablePage } from "./components/payroll/SalaryTablePage";
 import { GradesPage } from "./components/payroll/GradesPage";
 import { AuditLogPage } from "./components/payroll/AuditLogPage";
@@ -13,6 +12,7 @@ import { AnnouncementsListPage } from "./components/AnnouncementsListPage";
 import { AnnouncementDetailPage } from "./components/AnnouncementDetailPage";
 import { HomePage } from "./components/HomePage";
 import { useOrgStore } from "./store/useOrgStore";
+import { useOrgLock } from "./store/useOrgLock";
 import { useVersionsStore, isSupabaseConfigured } from "./store/useVersionsStore";
 import { useEmployeesStore } from "./store/useEmployeesStore";
 import { useUiStore, sectionOfRoute, systemOfRoute, defaultRouteForSystem } from "./store/useUiStore";
@@ -20,11 +20,12 @@ import { useAuthStore } from "./store/useAuthStore";
 import { canAccessPayroll, canManagePermissions } from "./lib/supabase";
 import { usePresenceStore } from "./store/usePresenceStore";
 import { useVersionsRealtime } from "./store/useVersionsRealtime";
-import { parseShareParams, clearShareParamsFromUrl } from "./lib/share";
 import {
-  STORAGE_KEYS,
-  readStorage,
-  writeStorage,
+  parseShareParams,
+  clearShareParamsFromUrl,
+  parseAnnouncementShareToken,
+} from "./lib/share";
+import {
   readDraft,
   writeDraft,
   clearDraft,
@@ -35,6 +36,47 @@ import {
 // 給与 pages don't pay for it — this is what makes those pages open fast.
 const EditorShell = lazy(() => import("./components/EditorShell"));
 const ViewerShell = lazy(() => import("./components/ViewerShell"));
+// 人事発令の匿名共有ビュー（?a=<token>）。稀な経路なので lazy。
+const SharedAnnouncementPage = lazy(() =>
+  import("./components/SharedAnnouncementPage").then((m) => ({
+    default: m.SharedAnnouncementPage,
+  })),
+);
+// パルスサーベイ 回答画面（#/survey）。ログイン必須だが app シェルを持たない
+// chrome 無しルート — 認証ゲート後に単独描画する。
+const SurveyPage = lazy(() =>
+  import("./components/pulse/SurveyPage").then((m) => ({ default: m.SurveyPage })),
+);
+// 人件費管理（#/labor）。chrome 無し・ナビ導線なし・URL直打ち専用。
+// laborcost_admins 許可リスト（RLS＋RPCの二重防御）でページ側ゲート。
+const LaborPage = lazy(() =>
+  import("./components/labor/LaborPage").then((m) => ({ default: m.LaborPage })),
+);
+// パルスサーベイ 管理ダッシュボード（#/pulse・app シェル内・権限者）。
+const PulseDashboardPage = lazy(() =>
+  import("./components/pulse/PulseDashboardPage").then((m) => ({ default: m.PulseDashboardPage })),
+);
+// パルスサーベイ メンバー別回答推移（#/pulse/members・実名閲覧権限者のみ）。
+const PulseMembersPage = lazy(() =>
+  import("./components/pulse/PulseMembersPage").then((m) => ({ default: m.PulseMembersPage })),
+);
+const PulseMemberDetailPage = lazy(() =>
+  import("./components/pulse/PulseMembersPage").then((m) => ({
+    default: m.PulseMemberDetailPage,
+  })),
+);
+// パルスサーベイ アラート一覧＋対応管理（#/pulse/alerts・app シェル内・権限者）。
+const PulseAlertsPage = lazy(() =>
+  import("./components/pulse/PulseAlertsPage").then((m) => ({ default: m.PulseAlertsPage })),
+);
+// パルスサーベイ コメント一覧（#/pulse/comments・app シェル内・権限者）。
+const PulseCommentsPage = lazy(() =>
+  import("./components/pulse/PulseCommentsPage").then((m) => ({ default: m.PulseCommentsPage })),
+);
+// パルスサーベイ 設定（#/pulse/admin・質問セット/設問/サイクル・admin）。
+const PulseAdminPage = lazy(() =>
+  import("./components/pulse/PulseAdminPage").then((m) => ({ default: m.PulseAdminPage })),
+);
 // P1: 従業員詳細（プロフィール）と権限管理も lazy — 通常の一覧閲覧では
 // ロードさせない。
 const EmployeeDetailPage = lazy(() =>
@@ -56,13 +98,42 @@ const MissionTemplateEditorPage = lazy(() =>
 const MissionSheetPage = lazy(() =>
   import("./components/mission/MissionSheetPage").then((m) => ({ default: m.MissionSheetPage })),
 );
+// 人事評価制度（#/reviews 配下・静的コンテンツ5ページ）。通常閲覧では読み込ませない。
+const ReviewsOverviewPage = lazy(() =>
+  import("./components/reviews/ReviewsOverviewPage").then((m) => ({ default: m.ReviewsOverviewPage })),
+);
+const ReviewsRankPage = lazy(() =>
+  import("./components/reviews/ReviewsRankPage").then((m) => ({ default: m.ReviewsRankPage })),
+);
+const ReviewsGradePage = lazy(() =>
+  import("./components/reviews/ReviewsGradePage").then((m) => ({ default: m.ReviewsGradePage })),
+);
+const ReviewsFlowPage = lazy(() =>
+  import("./components/reviews/ReviewsFlowPage").then((m) => ({ default: m.ReviewsFlowPage })),
+);
+const ReviewsRulesPage = lazy(() =>
+  import("./components/reviews/ReviewsRulesPage").then((m) => ({ default: m.ReviewsRulesPage })),
+);
+// AI活用レベル（#/ailevel 配下・分布=全ログインユーザー／認定管理=管理者）。
+const AiLevelDashboardPage = lazy(() =>
+  import("./components/ailevel/AiLevelDashboardPage").then((m) => ({
+    default: m.AiLevelDashboardPage,
+  })),
+);
+const AiLevelAdminPage = lazy(() =>
+  import("./components/ailevel/AiLevelAdminPage").then((m) => ({
+    default: m.AiLevelAdminPage,
+  })),
+);
 
 export default function App() {
   const hydrateDraft = useOrgStore((s) => s.hydrateDraft);
   const replaceNodes = useOrgStore((s) => s.replaceNodes);
+  const clearToBlank = useOrgStore((s) => s.clearToBlank);
   const refreshVersions = useVersionsStore((s) => s.refresh);
   const getSnapshot = useVersionsStore((s) => s.getSnapshot);
   const setView = useUiStore((s) => s.setView);
+  const setFilesDrawerOpen = useUiStore((s) => s.setFilesDrawerOpen);
   const setViewOnly = useUiStore((s) => s.setViewOnly);
   const setSharedVersionLabel = useUiStore((s) => s.setSharedVersionLabel);
   const view = useUiStore((s) => s.view);
@@ -73,6 +144,9 @@ export default function App() {
     versionId: null,
     ready: false,
   });
+  // 人事発令の匿名共有リンク（?a=<token>）。存在すれば認証に関わらず読み取り
+  // 専用の共有ビューを描画する（RPC はトークン一致の published 1件のみ返す）。
+  const [annShareToken, setAnnShareToken] = useState<string | null>(null);
   // Gates the draft-persisting effect: until the boot restore has read the
   // stored draft, that effect must not run — otherwise its clearDraft()
   // would wipe the draft before boot ever sees it.
@@ -92,6 +166,11 @@ export default function App() {
   const bootReady = !!session;
 
   useEffect(() => {
+    const annToken = parseAnnouncementShareToken();
+    if (annToken) {
+      setAnnShareToken(annToken);
+      return; // announcement share short-circuits the org share-link flow
+    }
     const params = parseShareParams();
     // Stash the parsed params but defer the viewOnly decision until auth
     // resolves (see effect below). Otherwise a signed-in owner returning
@@ -115,12 +194,19 @@ export default function App() {
     if (!authInitialized) return;
     if (!shareInit.versionId) return;
     if (session) {
-      // Owner returning to their own URL — strip the share param so the
-      // next reload behaves like a normal sign-in and the main boot
-      // restore picks the file from the local "last opened" pointer
-      // rather than treating it as a share.
+      // Owner (signed in) opening a share link: don't drop them on the
+      // blank home — show the shared file itself. Convert ?v=<id> into the
+      // #/org/<id> deep link and strip the search param; the URL-driven
+      // loader below then fetches & displays that file (editable, since a
+      // signed-in owner isn't a viewer). This is what makes the link work
+      // for 丹野 himself, not just anonymous recipients.
+      const sharedVersionId = shareInit.versionId;
       clearShareParamsFromUrl();
       setShareInit({ versionId: null, ready: true });
+      navigate(
+        { name: "editor", versionId: sharedVersionId },
+        { pushHistory: false },
+      );
     } else {
       // No session: this is a genuine share-link visit. Lock viewer mode.
       setViewOnly(true);
@@ -171,9 +257,9 @@ export default function App() {
         if (cancelled) return;
         const versions = useVersionsStore.getState().versions;
         const meta = versions.find((v) => v.id === shareInit.versionId);
-        const nodes = await getSnapshot(shareInit.versionId);
+        const loaded = await getSnapshot(shareInit.versionId);
         if (cancelled) return;
-        if (!nodes) {
+        if (!loaded) {
           useOrgStore.getState().setToast({
             kind: "error",
             message:
@@ -182,9 +268,10 @@ export default function App() {
           return;
         }
         setSharedVersionLabel(meta?.name ?? null);
-        replaceNodes(nodes, {
+        replaceNodes(loaded.nodes, {
           versionId: shareInit.versionId,
           versionLabel: meta?.name ?? "共有バージョン",
+          rev: loaded.rev,
         });
         return;
       }
@@ -237,7 +324,14 @@ export default function App() {
         hydrateDraft(draft.nodes as Parameters<typeof hydrateDraft>[0], {
           versionId: bound ? bound.id : null,
           versionLabel: bound ? bound.name : draft.versionLabel,
+          rev: bound ? (draft.rev ?? null) : null,
         });
+        // Reflect the restored file in the address bar so a reload deep-links
+        // back to it. Unbound (new) drafts fall back to the blank #/org URL.
+        navigate(
+          bound ? { name: "editor", versionId: bound.id } : { name: "editor" },
+          { pushHistory: false },
+        );
         if (bound?.updated_at && bound.updated_at > draft.savedAt) {
           useOrgStore.getState().setToast({
             kind: "info",
@@ -263,15 +357,10 @@ export default function App() {
         return;
       }
 
-      // ── 2. No draft → open the last file the user had, else newest ──
-      if (versions.length === 0) return;
-      const lastId = readStorage(STORAGE_KEYS.lastVersionId);
-      const target =
-        (lastId && versions.find((v) => v.id === lastId)) || versions[0];
-      const nodes = await getSnapshot(target.id);
-      if (!cancelled && nodes) {
-        replaceNodes(nodes, { versionId: target.id, versionLabel: target.name });
-      }
+      // ── 2. No draft → stay blank ────────────────────────────────────
+      // The org page now lands on an empty canvas; the file to show is
+      // named by the URL (#/org/<id>) and loaded by the URL-driven effect
+      // below. A bare #/org keeps the blank state + auto-opens the picker.
     })().finally(() => {
       // Boot restore is done (or bailed): the draft has been read, so the
       // persisting effect may now safely take over.
@@ -297,16 +386,141 @@ export default function App() {
   // hooks must be called in the same order on every render.
   const systemSwitching = useUiStore((s) => s.systemSwitching);
 
+  // ── URL-driven file loading (#/org/<id>) ──────────────────────────────
+  // The org page treats the URL as the source of truth for which file is on
+  // screen: deep-links, reloads and browser back/forward all land on the
+  // right file, and a bare #/org shows the blank picker. Runs after the boot
+  // draft-restore so unsaved work is never clobbered.
+  useEffect(() => {
+    if (viewOnly) return; // anonymous ?v= share is handled separately
+    if (!session) return;
+    if (!bootRestored) return;
+    if (route.name !== "editor") return;
+    const wanted = route.versionId ?? null;
+    const st = useOrgStore.getState();
+    if (wanted === st.currentVersionId) return; // already showing it
+    // #/org (no id): unload to the blank canvas — but never discard unsaved
+    // edits silently. A dirty new draft (currentVersionId null) is kept.
+    if (wanted === null) {
+      if (st.currentVersionId && !st.dirty) clearToBlank();
+      // ブランク/デフォルト表示に入る時はロックモードを初期化（デフォルト
+      // 表示のロード側が改めて view にする）。
+      useOrgLock.getState().setMode("edit");
+      return;
+    }
+    // 明示的なファイルオープン（#/org/<id>）は編集モード＝ロック取得対象。
+    useOrgLock.getState().setMode("edit");
+    // #/org/<id>: load that file. Guard unsaved edits with a confirm so a
+    // back/forward doesn't wipe in-progress work.
+    if (st.dirty) {
+      const ok = window.confirm(
+        "未保存の変更があります。別のファイルを開くと現在の変更は失われます。続けますか？",
+      );
+      if (!ok) {
+        // Revert the address bar to the file that stays loaded.
+        navigate(
+          st.currentVersionId
+            ? { name: "editor", versionId: st.currentVersionId }
+            : { name: "editor" },
+          { pushHistory: false },
+        );
+        return;
+      }
+    }
+    let cancelled = false;
+    void (async () => {
+      const versions = useVersionsStore.getState().versions;
+      const meta = versions.find((v) => v.id === wanted);
+      const loaded = await getSnapshot(wanted);
+      if (cancelled) return;
+      if (!loaded) {
+        useOrgStore.getState().setToast({
+          kind: "error",
+          message:
+            "指定されたファイルが見つかりません（削除されたか、閲覧権限がない可能性があります）。",
+        });
+        clearToBlank();
+        navigate({ name: "editor" }, { pushHistory: false });
+        return;
+      }
+      replaceNodes(loaded.nodes, {
+        versionId: wanted,
+        versionLabel: meta?.name,
+        rev: loaded.rev,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    route,
+    viewOnly,
+    session,
+    bootRestored,
+    getSnapshot,
+    replaceNodes,
+    clearToBlank,
+    navigate,
+  ]);
+
+  // ── P2: #/org は「公式デフォルト組織図」を閲覧モードで即表示 ────────
+  // 管理者が is_default を指定したファイルがあれば、ブランクではなくそれを
+  // ロック無しの閲覧モードでロードする（編集は TopBar の「編集する」から）。
+  const versionsList = useVersionsStore((s) => s.versions);
+  useEffect(() => {
+    if (viewOnly || !session || !bootRestored) return;
+    if (route.name !== "editor" || route.versionId) return;
+    const st = useOrgStore.getState();
+    if (st.currentVersionId || st.dirty || st.nodes.length > 0) return;
+    const def = versionsList.find((v) => v.is_default);
+    if (!def) return;
+    let cancelled = false;
+    void (async () => {
+      const loaded = await getSnapshot(def.id);
+      if (cancelled || !loaded) return;
+      const cur = useOrgStore.getState();
+      if (cur.currentVersionId || cur.dirty) return;
+      useOrgLock.getState().setMode("view");
+      replaceNodes(loaded.nodes, {
+        versionId: def.id,
+        versionLabel: def.name,
+        rev: loaded.rev,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    route,
+    versionsList,
+    viewOnly,
+    session,
+    bootRestored,
+    getSnapshot,
+    replaceNodes,
+  ]);
+
+  // Auto-open the file picker when landing on the blank org page so the user
+  // can immediately choose a file (the canvas is intentionally empty until
+  // then). Only fires when truly blank — not while a file is open, and not
+  // when a default chart exists (それが即表示されるため).
+  useEffect(() => {
+    if (viewOnly || !session || !bootRestored) return;
+    if (route.name !== "editor" || route.versionId) return;
+    if (useOrgStore.getState().currentVersionId) return;
+    if (useOrgStore.getState().nodes.length > 0) return;
+    if (useVersionsStore.getState().loading) return;
+    if (versionsList.some((v) => v.is_default)) return;
+    setFilesDrawerOpen(true);
+  }, [route, viewOnly, session, bootRestored, versionsList, setFilesDrawerOpen]);
+
   useEffect(() => {
     if (viewOnly) return;
     if (!bootReady) return;
     if (!bootRestored) return;
     const st = useOrgStore.getState();
-    // Remember the open file so a no-draft reload reopens it (instead of
-    // jumping to the most-recently-created file).
-    if (st.currentVersionId) {
-      writeStorage(STORAGE_KEYS.lastVersionId, st.currentVersionId);
-    }
+    // (The open file is no longer remembered via localStorage — the URL
+    // (#/org/<id>) is now the source of truth for what reopens on reload.)
     // Only persist a draft while there are genuine unsaved edits. Once the
     // state is clean (saved, or freshly loaded from the server) we clear
     // the draft so it can never shadow the shared server file again — this
@@ -320,6 +534,7 @@ export default function App() {
       versionId: st.currentVersionId,
       versionLabel: st.currentVersionLabel,
       savedAt: new Date().toISOString(),
+      rev: st.baseRev,
       nodes,
     });
   }, [nodes, dirty, bootReady, viewOnly, bootRestored]);
@@ -357,6 +572,22 @@ export default function App() {
     presenceUpdateVersionId(currentVersionId);
   }, [currentVersionId, currentUserEmail, viewOnly, presenceUpdateVersionId]);
 
+  // ── P2: 編集ロックのライフサイクル ──────────────────────────────────
+  // 編集モードでファイルを開いている間だけロックを保持（heartbeat 30秒）。
+  // ファイル切替・ブランク化・サインアウト・アンマウントで解放。デフォルト
+  // 表示（mode=view）はロックを取らない。
+  const lockMode = useOrgLock((s) => s.mode);
+  useEffect(() => {
+    if (viewOnly || !session || !currentVersionId || lockMode !== "edit") {
+      void useOrgLock.getState().detach();
+      return;
+    }
+    void useOrgLock.getState().attach(currentVersionId);
+    return () => {
+      void useOrgLock.getState().detach();
+    };
+  }, [currentVersionId, lockMode, viewOnly, session]);
+
   // (Removed) The browser address bar used to auto-mirror the currently-
   // open file as `?v=<id>`. That clashed with the `?v=` share-link
   // semantics: on the next visit the boot effect read its own previously-
@@ -377,6 +608,16 @@ export default function App() {
     };
   }, [bootReady, viewOnly, realtimeSubscribe, realtimeUnsubscribe]);
 
+  // Anonymous / portable share view for an HR announcement (?a=<token>).
+  // Works with or without a session and never touches the auth-gated app.
+  if (annShareToken) {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <SharedAnnouncementPage token={annShareToken} />
+      </Suspense>
+    );
+  }
+
   if (viewOnly) {
     return (
       <Suspense fallback={<BootSplash />}>
@@ -390,9 +631,28 @@ export default function App() {
   if (!authInitialized) return <BootSplash />;
   if (!session) return <SignInPage />;
 
+  // パルスサーベイ 回答画面: ログイン後だが app シェルを持たない専用ルート。
+  // 社員がリマインドリンク（Slack/メール）から直接開く軽量画面。
+  if (route.name === "survey") {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <SurveyPage />
+      </Suspense>
+    );
+  }
+
+  // 人件費管理: chrome 無しスタンドアロン。ナビには一切出さない。
+  if (route.name === "labor") {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <LaborPage />
+      </Suspense>
+    );
+  }
+
   // Render the editor shell or a dedicated section page based on the route.
-  // SystemSwitcher (Talenthub vs Payroll) sits at the very top; GlobalHeader
-  // adapts its tabs to the active system; the content area swaps below.
+  // P1: ヘッダーは GlobalHeader 1本（旧 SystemSwitcher 行は廃止。Payroll への
+  // 切替はヘッダー右上のユーザーメニューから）。content area swaps below.
   const system = systemOfRoute(route);
   return (
     <div
@@ -406,7 +666,6 @@ export default function App() {
         .filter(Boolean)
         .join(" ")}
     >
-      <SystemSwitcher />
       <GlobalHeader />
       <SectionContent route={route} />
       <Toast />
@@ -457,6 +716,110 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     return (
       <Suspense fallback={<PageLoading />}>
         <MissionsPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseDashboardPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse_members") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseMembersPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse_member") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseMemberDetailPage employeeNumber={route.num} />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse_alerts") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseAlertsPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse_comments") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseCommentsPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "pulse_admin") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <PulseAdminPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsOverviewPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews_rank") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsRankPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews_grade") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsGradePage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews_flow") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsFlowPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "reviews_rules") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <ReviewsRulesPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "ailevel") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <AiLevelDashboardPage />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "ailevel_admin") {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <AiLevelAdminPage />
       </Suspense>
     );
   }
@@ -520,7 +883,13 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
   if (route.name === "grades") return <GradesPage />;
   if (route.name === "audit_log") return <AuditLogPage />;
 
-  // Default: org → editor (lazy — pulls in reactflow on demand)
+  // Default: org → editor. When no file is selected (bare #/org, blank
+  // canvas) show a picker prompt instead of the empty editor. A deep-link
+  // (#/org/<id>) keeps route.versionId set while loading, so it renders the
+  // editor (which shows its own loading state), not this blank prompt.
+  if (route.name === "editor" && !route.versionId) {
+    return <OrgEditorOrBlank />;
+  }
   return (
     <Suspense
       fallback={
@@ -532,5 +901,53 @@ function SectionContent({ route }: { route: ReturnType<typeof useUiStore.getStat
     >
       <EditorShell />
     </Suspense>
+  );
+}
+
+/**
+ * Editor for the org section, or a blank "pick a file" prompt when nothing
+ * is loaded yet. Splitting this out keeps the hook (useOrgStore) legal —
+ * SectionContent returns early for other routes.
+ */
+function OrgEditorOrBlank() {
+  const currentVersionId = useOrgStore((s) => s.currentVersionId);
+  const nodeCount = useOrgStore((s) => s.nodes.length);
+  const setFilesDrawerOpen = useUiStore((s) => s.setFilesDrawerOpen);
+
+  // A restored unsaved draft has nodes but no versionId — still a real file
+  // in progress, so show the editor. Blank = no file AND no nodes.
+  const isBlank = !currentVersionId && nodeCount === 0;
+  if (!isBlank) {
+    return (
+      <Suspense
+        fallback={
+          <div className="orgshell">
+            <OrgSubNav />
+            <p style={{ padding: 24, color: "var(--text-muted)" }}>エディタを読み込み中…</p>
+          </div>
+        }
+      >
+        <EditorShell />
+      </Suspense>
+    );
+  }
+
+  return (
+    <div className="orgshell">
+      <OrgSubNav />
+      <div className="orgblank">
+        <div className="orgblank__card">
+          <div className="orgblank__icon" aria-hidden>🗂</div>
+          <h2 className="orgblank__title">組織図ファイルを選択してください</h2>
+          <p className="orgblank__lead">
+            表示するファイルを選ぶと、そのファイル専用のURL（#/org/&lt;ID&gt;）に切り替わります。
+            アドレスバーをコピーすれば、その組織図をそのまま他のメンバーへ共有できます。
+          </p>
+          <button className="btn btn--primary" onClick={() => setFilesDrawerOpen(true)}>
+            📁 ファイルを選択
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -13,6 +13,10 @@ export type AnnouncementRow = {
   is_published: boolean;
   created_at: string;
   updated_at: string;
+  /** Anonymous share-link token (null = no public link issued). Only present
+   *  on rows fetched by an authenticated user; the anonymous RPC never
+   *  returns it. */
+  share_token?: string | null;
 };
 
 type AnnouncementsState = {
@@ -41,6 +45,15 @@ type AnnouncementsState = {
   /** Fetch a single announcement by id (used by the detail page so anyone with
    *  the share URL can land on it without first listing). */
   getById: (id: string) => Promise<AnnouncementRow | null>;
+  /** Issue (or rotate) the anonymous share token for an announcement. Returns
+   *  the new token, or null on failure. Authenticated + power-user/author only
+   *  (RLS-gated). Only meaningful for published announcements. */
+  issueShareToken: (id: string) => Promise<string | null>;
+  /** Revoke the anonymous share token (existing share links stop working). */
+  revokeShareToken: (id: string) => Promise<boolean>;
+  /** Anonymous read of a published announcement via its share token, through
+   *  the SECURITY DEFINER RPC. Used by the no-login share view. */
+  getBySharedToken: (token: string) => Promise<AnnouncementRow | null>;
 };
 
 export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
@@ -179,5 +192,74 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
       return null;
     }
     return data as AnnouncementRow;
+  },
+
+  issueShareToken: async (id) => {
+    if (!supabase) return null;
+    // crypto.randomUUID is available in all supported browsers; the DB also
+    // enforces uniqueness (partial unique index) as a backstop.
+    const token = crypto.randomUUID();
+    const { data, error } = await supabase
+      .from("hr_announcements")
+      .update({ share_token: token })
+      .eq("id", id)
+      .select("id, share_token")
+      .maybeSingle();
+    if (error) {
+      set({ error: `共有リンクの発行に失敗しました: ${error.message}` });
+      return null;
+    }
+    if (!data) {
+      set({
+        error:
+          "共有リンクの発行がDBに反映されませんでした（権限をご確認ください）。",
+      });
+      return null;
+    }
+    set({
+      list: get().list.map((r) => (r.id === id ? { ...r, share_token: token } : r)),
+      error: null,
+    });
+    return token;
+  },
+
+  revokeShareToken: async (id) => {
+    if (!supabase) return false;
+    const { data, error } = await supabase
+      .from("hr_announcements")
+      .update({ share_token: null })
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      set({ error: `共有リンクの無効化に失敗しました: ${error.message}` });
+      return false;
+    }
+    if (!data) {
+      set({ error: "共有リンクの無効化がDBに反映されませんでした。" });
+      return false;
+    }
+    set({
+      list: get().list.map((r) => (r.id === id ? { ...r, share_token: null } : r)),
+      error: null,
+    });
+    return true;
+  },
+
+  getBySharedToken: async (token) => {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc("announcement_by_share_token", {
+      p_token: token,
+    });
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      set({ error: "共有リンクの発令が見つかりません" });
+      return null;
+    }
+    return row as AnnouncementRow;
   },
 }));

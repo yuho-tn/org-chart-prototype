@@ -19,8 +19,31 @@ export function parseShareParams(): ShareParams {
 export function buildShareUrl(versionId: string, view: OrgView = "tree"): string {
   const url = new URL(window.location.href);
   url.search = "";
+  // Clear the hash too: since files are now routed as #/org/<id>, a share
+  // link generated while a file is open would otherwise carry a stale
+  // "#/org/<id>" tail (harmless for the read-only viewer, but confusing).
+  url.hash = "";
   url.searchParams.set("v", versionId);
   if (view !== "tree") url.searchParams.set("view", view);
+  return url.toString();
+}
+
+/**
+ * Anonymous, no-login share link for an HR announcement. Uses `?a=<token>`
+ * (distinct from the org-chart `?v=`) so the boot logic can route it to the
+ * read-only announcement viewer. The token gates access via a SECURITY
+ * DEFINER RPC — the hr_announcements table itself stays anon-locked.
+ */
+export function parseAnnouncementShareToken(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("a");
+}
+
+export function buildAnnouncementShareUrl(token: string): string {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("a", token);
   return url.toString();
 }
 

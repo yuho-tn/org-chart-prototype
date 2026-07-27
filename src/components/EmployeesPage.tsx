@@ -3,9 +3,14 @@ import { useEmployeesStore, isCasualEmployment } from "../store/useEmployeesStor
 import { useAuthStore, isOrgPowerUser } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import { useProfilesStore } from "../store/useProfilesStore";
+import { useAiLevelsStore } from "../store/useAiLevelsStore";
+import { AiLevelBadge } from "./ailevel/AiLevelBadge";
 import { useUiStore } from "../store/useUiStore";
 import { employeeName, type EmployeeRow } from "../lib/supabase";
 import { avatarPathOf } from "../lib/profile";
+import { normalizeMbti, MBTI_BY_CODE, MBTI_GROUP_COLOR } from "../lib/mbti";
+import { STRENGTH_BY_ID, STRENGTH_DOMAIN_COLOR, normalizeStrengthIds } from "../lib/strengths";
+import { useRevalidateOnFocus } from "../lib/useRevalidateOnFocus";
 import type { ImportSummary } from "../store/useEmployeesStore";
 
 const PAGE_SIZE = 50;
@@ -47,6 +52,9 @@ export function EmployeesPage() {
   const importFromSheetUrl = useEmployeesStore((s) => s.importFromSheetUrl);
   const sheetCsvUrl = useEmployeesStore((s) => s.sheetCsvUrl);
   const setSheetCsvUrl = useEmployeesStore((s) => s.setSheetCsvUrl);
+  const syncFromSmartHr = useEmployeesStore((s) => s.syncFromSmartHr);
+  const smartHrState = useEmployeesStore((s) => s.smartHrState);
+  const loadSmartHrState = useEmployeesStore((s) => s.loadSmartHrState);
   const currentUser = useAuthStore((s) => s.currentUser);
   const setToast = useOrgStore((s) => s.setToast);
   const navigate = useUiStore((s) => s.navigate);
@@ -56,6 +64,10 @@ export function EmployeesPage() {
   const refreshProfiles = useProfilesStore((s) => s.refresh);
   const ensurePhotoUrls = useProfilesStore((s) => s.ensurePhotoUrls);
   const photoUrls = useProfilesStore((s) => s.photoUrls);
+
+  // AI活用レベル — ギャラリーの称号小バッジ用（未認定は非表示）
+  const aiLevelOf = useAiLevelsStore((s) => s.levelByEmployee);
+  const refreshAiLevels = useAiLevelsStore((s) => s.refresh);
 
   // Full editors (master / privileged_admin / admin) can manage the
   // employees master incl. CSV import / add / edit / delete. Regular
@@ -78,11 +90,23 @@ export function EmployeesPage() {
   const [importResult, setImportResult] = useState<ImportSummary | null>(null);
   const [urlDraft, setUrlDraft] = useState(sheetCsvUrl);
   const [showImporter, setShowImporter] = useState(false);
+  // SmartHR 同期（正＝SmartHR）。CSVとは別系統の状態。
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     refresh();
     refreshProfiles();
-  }, [refresh, refreshProfiles]);
+    refreshAiLevels();
+    loadSmartHrState();
+  }, [refresh, refreshProfiles, refreshAiLevels, loadSmartHrState]);
+
+  // P0-1: タブ復帰・フォーカス時に裏で再検証（初回ロードのスタックや
+  // 長時間放置後の古いデータを自動回復。silent なのでスピナーは出ない）
+  useRevalidateOnFocus(() => {
+    refresh({ silent: true });
+    refreshProfiles({ silent: true });
+    refreshAiLevels({ silent: true });
+  });
 
   useEffect(() => {
     setUrlDraft(sheetCsvUrl);
@@ -270,6 +294,37 @@ export function EmployeesPage() {
     }
   }
 
+  /** SmartHR API から従業員マスターを同期（正＝SmartHR）。 */
+  async function handleSmartHrSync() {
+    setSyncing(true);
+    try {
+      const res = await syncFromSmartHr();
+      if (!res.ok) {
+        setToast({ kind: "error", message: `SmartHR同期に失敗：${res.error ?? "不明なエラー"}` });
+        return;
+      }
+      const s = res.summary;
+      const errs = s?.errors?.length ?? 0;
+      setToast({
+        kind: errs ? "error" : "info",
+        message: errs
+          ? `SmartHR同期：${s?.fetched ?? 0}名取得・${errs}件エラー`
+          : `SmartHR同期完了：${s?.fetched ?? 0}名（在籍${(s?.employed ?? 0) + (s?.absent ?? 0)}／退職${s?.retired ?? 0}）`,
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  /** 最終同期の相対表示（例: "3分前 / 2026-07-15 06:00"）。 */
+  function lastSyncLabel(): string | null {
+    const at = smartHrState?.last_run_at;
+    if (!at) return null;
+    const d = new Date(at);
+    const badge = smartHrState?.last_status === "error" ? "⚠ " : "";
+    return `${badge}最終同期 ${d.toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
+  }
+
   return (
     <main className="page">
       <div className="page__header">
@@ -284,14 +339,27 @@ export function EmployeesPage() {
           </p>
         </div>
         <div className="page__actions">
-          {isMaster && sheetCsvUrl && (
-            <button
-              className="btn"
-              onClick={handleQuickReimport}
-              disabled={importing}
-              title="保存済みの「ウェブに公開」URL（SmartHR自動連携タブ）から最新の名簿を再取込します"
+          {isMaster && lastSyncLabel() && (
+            <span
+              className="emppage__chip"
+              title={
+                smartHrState?.summary
+                  ? `取得${smartHrState.summary.fetched ?? "-"}名 ／ 在籍${(smartHrState.summary.employed ?? 0) + (smartHrState.summary.absent ?? 0)} ／ 退職${smartHrState.summary.retired ?? 0}`
+                  : "SmartHRからの最終同期"
+              }
+              style={{ alignSelf: "center" }}
             >
-              {importing ? "取り込み中…" : "⟳ シートから再取込"}
+              {lastSyncLabel()}
+            </span>
+          )}
+          {isMaster && (
+            <button
+              className="btn btn--primary"
+              onClick={handleSmartHrSync}
+              disabled={syncing || importing}
+              title="SmartHR API から従業員マスターを取り込みます（SmartHRが正・社員番号で突合・削除なし）"
+            >
+              {syncing ? "SmartHR同期中…" : "⟳ SmartHR同期"}
             </button>
           )}
           {isMaster && (
@@ -299,24 +367,38 @@ export function EmployeesPage() {
               className="btn btn--ghost"
               onClick={() => setShowImporter((v) => !v)}
             >
-              {showImporter ? "▲ インポートを閉じる" : "▾ CSVインポート"}
+              {showImporter ? "▲ 予備(CSV)を閉じる" : "▾ 予備：CSV取込"}
             </button>
           )}
           {isMaster && (
-            <button className="btn btn--primary" onClick={startNew}>
+            <button className="btn" onClick={startNew}>
               ＋新規追加
             </button>
           )}
         </div>
       </div>
 
-      {error && <p className="versions__error">{error}</p>}
+      {error && (
+        <div className="loaderr" role="alert">
+          <span className="loaderr__msg">⚠ {error}</span>
+          <button
+            className="btn btn--xs"
+            onClick={() => {
+              refresh();
+              refreshProfiles();
+            }}
+          >
+            再読み込み
+          </button>
+        </div>
+      )}
 
       {showImporter && isMaster && (
         <fieldset className="empmgr__import">
-          <legend className="field__label">CSVインポート（社員番号で突合・上書き）</legend>
+          <legend className="field__label">予備：CSV取込（社員番号で突合・上書き）</legend>
           <p className="modal__body" style={{ fontSize: 12, marginBottom: 8 }}>
-            連携元は従業員名簿スプレッドシートの「SmartHR自動連携」タブです。取込方法は2つ：
+            <strong>通常は上の「⟳ SmartHR同期」を使ってください</strong>（SmartHRが正）。
+            こちらはSmartHR障害時やスポット補正用の予備手段です。取込方法は2つ：
             ①Google Sheetsの「ファイル ＞ 共有 ＞ ウェブに公開」で対象タブを
             <strong>CSV形式で公開</strong>したURLを貼り付けて「URLから取込」／
             ②シートをCSVでダウンロードしてファイルアップロード。
@@ -324,6 +406,13 @@ export function EmployeesPage() {
             <strong>社員番号が空の行はスキップ</strong>されます。
             「使用ネーム」は取込では変更されません（手動管理）。
           </p>
+          {sheetCsvUrl && (
+            <div className="empmgr__importRow" style={{ marginBottom: 8 }}>
+              <button className="btn" onClick={handleQuickReimport} disabled={importing || syncing}>
+                {importing ? "取り込み中…" : "⟳ 保存済みシートURLから再取込"}
+              </button>
+            </div>
+          )}
           <div className="empmgr__importRow">
             <input
               className="field__input"
@@ -482,7 +571,20 @@ export function EmployeesPage() {
 
       {viewMode === "gallery" && (
         <div className="emppage__galleryWrap">
-          {loading && <p className="usermgr__empty">読み込み中…</p>}
+          {loading && (
+            <div className="emppage__gallery" aria-hidden>
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={i} className="empcard">
+                  <span className="empcard__photo skl" />
+                  <span className="empcard__body">
+                    <span className="skl skl--text" style={{ width: "60%" }} />
+                    <span className="skl skl--text" style={{ width: "85%" }} />
+                    <span className="skl skl--text" style={{ width: "45%" }} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           {!loading && filtered.length === 0 && (
             <p className="usermgr__empty">
               {employees.length === 0
@@ -521,6 +623,34 @@ export function EmployeesPage() {
                       )}
                       <span className="empcard__sub">{emp.department ?? "—"}</span>
                       <span className="empcard__sub">{emp.position_title ?? "—"}</span>
+                      {(() => {
+                        const mbti = normalizeMbti(prof?.mbti ?? null);
+                        const top = normalizeStrengthIds(prof?.strengths ?? [])[0];
+                        const topQ = top ? STRENGTH_BY_ID[top] : undefined;
+                        const aiLevel = aiLevelOf.get(emp.employee_number);
+                        if (!mbti && !topQ && !aiLevel) return null;
+                        return (
+                          <span className="empcard__tags">
+                            {aiLevel && <AiLevelBadge level={aiLevel.level} size="sm" />}
+                            {mbti && (
+                              <span
+                                className="empcard__mbti"
+                                style={{ borderColor: MBTI_GROUP_COLOR[MBTI_BY_CODE[mbti].group] }}
+                              >
+                                {mbti}
+                              </span>
+                            )}
+                            {topQ && (
+                              <span
+                                className="empcard__strength"
+                                style={{ background: STRENGTH_DOMAIN_COLOR[topQ.domain] }}
+                              >
+                                {topQ.name_ja}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </span>
                   </button>
                 );
@@ -555,11 +685,16 @@ export function EmployeesPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={10} className="usermgr__empty">読み込み中…</td>
-              </tr>
-            )}
+            {loading &&
+              Array.from({ length: 8 }, (_, i) => (
+                <tr key={`skl-${i}`} aria-hidden>
+                  {Array.from({ length: 10 }, (_, j) => (
+                    <td key={j}>
+                      <span className="skl skl--text" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
             {!loading && editing === "__new__" && (
               <EditableRow
                 draft={draft}
