@@ -73,7 +73,8 @@ export function LaborRawTab({ term }: { term: TermCode }) {
         >
           <option value="all">すべての種別</option>
           <option value="プロダクト">プロダクトのみ</option>
-          <option value="フロント">フロントのみ</option>
+          <option value="フロント">フロント按分のみ</option>
+          <option value="間接費">間接費按分のみ</option>
           <option value="総額">総額のみ</option>
           <option value="コーポレート">コーポレートのみ</option>
         </select>

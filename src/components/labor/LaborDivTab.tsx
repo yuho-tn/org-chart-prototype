@@ -8,8 +8,9 @@ import { computeHalf, fmtMan } from "../../lib/laborCost";
  * - メンバー月次給与（兼務率で分割計上）
  * - ボーナス按分値（半期ボーナス ÷ 6）
  * - 社会保険料（(給与+ボーナス按分) × 率）
- * - フロント人件費: DIV別売上目標比率（半期固定）で按分
- * - コーポレート: 按分対象外・独立表示
+ * - 按分原資プールを売上目標比で各DIVへ配賦。表示は2グループ:
+ *     フロント按分（フロントDIV原資）
+ *     HR/開発/コーポ・その他按分（HR TM/開発TM/コーポレートTM/他の原資）
  */
 
 export function LaborDivTab({ term }: { term: TermCode }) {
@@ -54,6 +55,11 @@ export function LaborDivTab({ term }: { term: TermCode }) {
     </>
   );
 
+  const corpTotal = sum(comp.corporateByMonth);
+
+  const groupLabel = (g: "front" | "overhead") =>
+    g === "front" ? "フロントDIV" : "HR/開発/コーポ・その他";
+
   return (
     <div className="labor-div">
       <div className="labor-toolbar">
@@ -73,9 +79,9 @@ export function LaborDivTab({ term }: { term: TermCode }) {
         </div>
         <span className="labor-note">
           社保 {Math.round(store.insuranceRate * 1000) / 10}% ／ ボーナスは半期6ヶ月按分 ／
-          フロントは売上目標比按分（
+          按分（フロント・間接費）は売上目標比（
           {Object.entries(comp.frontRatios)
-            .map(([d, r]) => `${d.replace(/_?DIv|_?Div/g, "")} ${Math.round(r * 1000) / 10}%`)
+            .map(([d, r]) => `${d} ${Math.round(r * 1000) / 10}%`)
             .join("・")}
           ）
         </span>
@@ -88,10 +94,10 @@ export function LaborDivTab({ term }: { term: TermCode }) {
         </div>
       )}
 
-      {comp.frontUnallocated && (
+      {comp.unallocated && (
         <div className="labor-warn">
-          ⚠ フロント人件費を各DIVへ按分し切れていません（売上目標が未登録/0、または目標DIVがTM一覧に無い可能性）。
-          残差 {fmtMan(months.reduce((s, m) => s + (comp.frontUnallocatedByMonth[m] ?? 0), 0))}万円/半期は
+          ⚠ 按分原資を各DIVへ配分し切れていません（売上目標が未登録/0の可能性）。
+          残差 {fmtMan(sum(comp.unallocatedByMonth))}万円/半期は
           全社総計には加算していますが、DIV別には配分されていません。設定タブの売上目標を確認してください。
         </div>
       )}
@@ -113,41 +119,32 @@ export function LaborDivTab({ term }: { term: TermCode }) {
             <DivBlock key={d.div} d={d} MonthCells={MonthCells} />
           ))}
 
-          {/* フロント原資（各DIVへ売上目標比で按分・下の按分行が各DIVの受け分） */}
-          <tr className="labor-divhead">
-            <td>フロントDIV（按分原資）</td>
-            <MonthCells rec={comp.frontPoolByMonth} strong />
-          </tr>
-          <tr className="labor-sub">
-            <td className="labor-indent">給与計</td>
-            <MonthCells rec={comp.frontSalaryByMonth} />
-          </tr>
-          <tr className="labor-sub">
-            <td className="labor-indent">ボーナス按分値</td>
-            <MonthCells rec={comp.frontBonusByMonth} />
-          </tr>
-          <tr className="labor-sub">
-            <td className="labor-indent">社会保険料</td>
-            <MonthCells rec={comp.frontInsuranceByMonth} />
-          </tr>
+          {/* 按分原資プール（フロント → 間接の順・group付き） */}
+          {comp.pools.map((p) => (
+            <PoolBlock key={p.name} p={p} groupLabel={groupLabel} MonthCells={MonthCells} />
+          ))}
 
-          {/* コーポレート */}
-          <tr className="labor-divhead">
-            <td>コーポレート（按分対象外）</td>
-            <MonthCells rec={comp.corporateByMonth} strong />
-          </tr>
-          <tr className="labor-sub">
-            <td className="labor-indent">給与計</td>
-            <MonthCells rec={comp.corporateSalaryByMonth} />
-          </tr>
-          <tr className="labor-sub">
-            <td className="labor-indent">ボーナス按分値</td>
-            <MonthCells rec={comp.corporateBonusByMonth} />
-          </tr>
-          <tr className="labor-sub">
-            <td className="labor-indent">社会保険料</td>
-            <MonthCells rec={comp.corporateInsuranceByMonth} />
-          </tr>
+          {/* コーポレート treatment（5期は無し・後方互換で非0時のみ表示） */}
+          {corpTotal !== 0 && (
+            <>
+              <tr className="labor-divhead">
+                <td>コーポレート（按分対象外）</td>
+                <MonthCells rec={comp.corporateByMonth} strong />
+              </tr>
+              <tr className="labor-sub">
+                <td className="labor-indent">給与計</td>
+                <MonthCells rec={comp.corporateSalaryByMonth} />
+              </tr>
+              <tr className="labor-sub">
+                <td className="labor-indent">ボーナス按分値</td>
+                <MonthCells rec={comp.corporateBonusByMonth} />
+              </tr>
+              <tr className="labor-sub">
+                <td className="labor-indent">社会保険料</td>
+                <MonthCells rec={comp.corporateInsuranceByMonth} />
+              </tr>
+            </>
+          )}
 
           <tr className="labor-grand">
             <td>全社人件費 総計（社保込み）</td>
@@ -187,6 +184,49 @@ function DivBlock({
           <tr className="labor-sub">
             <td className="labor-indent">フロント按分</td>
             <MonthCells rec={d.frontAllocByMonth} />
+          </tr>
+          <tr className="labor-sub">
+            <td className="labor-indent">HR/開発/コーポ・その他按分</td>
+            <MonthCells rec={d.overheadAllocByMonth} />
+          </tr>
+        </>
+      )}
+    </>
+  );
+}
+
+function PoolBlock({
+  p,
+  groupLabel,
+  MonthCells,
+}: {
+  p: HalfComputation["pools"][number];
+  groupLabel: (g: "front" | "overhead") => string;
+  MonthCells: (q: { rec: Record<string, number>; strong?: boolean }) => ReactElement;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <tr className="labor-divhead labor-clickable" onClick={() => setOpen(!open)}>
+        <td>
+          <span className="labor-caret">{open ? "▾" : "▸"}</span> {p.name}（按分原資・
+          {groupLabel(p.group)}）
+        </td>
+        <MonthCells rec={p.totalByMonth} strong />
+      </tr>
+      {open && (
+        <>
+          <tr className="labor-sub">
+            <td className="labor-indent">給与計</td>
+            <MonthCells rec={p.salaryByMonth} />
+          </tr>
+          <tr className="labor-sub">
+            <td className="labor-indent">ボーナス按分値</td>
+            <MonthCells rec={p.bonusByMonth} />
+          </tr>
+          <tr className="labor-sub">
+            <td className="labor-indent">社会保険料</td>
+            <MonthCells rec={p.insuranceByMonth} />
           </tr>
         </>
       )}
