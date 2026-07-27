@@ -2,7 +2,8 @@
 
 対象: 5期のDIV/TM再編（0039）＋間接費按分2グループ化（0040）。
 実行者: 裕鵬さん（`labor_*` は laborcost_admins 専用RLS）。
-実行先: talent-hub 側 Supabase（ref `ubdrcmydhcuifqmieqmk`）SQLエディタ。
+実行先: このリポ（talent-hub / org-chart-prototype）の Supabase
+（ref `kgofrmfsfnxbzqkfrkqo` = `.env.local` の VITE_SUPABASE_URL）SQLエディタ。
 
 金額データ（`labor_amounts`）は不変。migrationは `labor_dept_map` / `labor_tms` /
 `labor_front_targets` と、5期 `labor_assignments` の所属/TMの1:1リネームのみ変更する。
