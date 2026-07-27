@@ -8865,17 +8865,43 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   padding: 0;
   background: #fff;
 }
-.lg-edit-select {
+/* 常時表示のセル内プルダウン（所属/兼務先） */
+.lg-cellselect {
   width: 100%;
   height: 100%;
-  border: 2px solid #4a90d9;
+  min-height: 26px;
+  border: 1px solid #cdd6df;
+  border-radius: 3px;
   outline: none;
   font: inherit;
   padding: 0 2px;
   background: #fff;
   cursor: pointer;
   box-sizing: border-box;
+  color: inherit;
 }
+.lg-cellselect:hover { border-color: #4a90d9; }
+.lg-cellselect:focus { border-color: #4a90d9; box-shadow: 0 0 0 1px #4a90d9; }
+/* 合計行にはプルダウンを出さない */
+.lg-total-row .lg-cellselect { display: none; }
+
+/* 見立て（手動）行の管理バー */
+.labor-manualbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 6px 4px; margin: 4px 0;
+}
+.labor-manualbar-label { font-size: 12px; color: #6b7683; font-weight: 600; }
+.labor-manualchip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #fef6e0; color: #8a6100; border: 1px solid #e6d5a8;
+  border-radius: 12px; padding: 2px 4px 2px 10px; font-size: 12px;
+}
+.labor-manualdel {
+  border: none; background: #e6d5a8; color: #6b4e00;
+  width: 16px; height: 16px; border-radius: 50%; cursor: pointer;
+  line-height: 14px; font-size: 12px; padding: 0;
+}
+.labor-manualdel:hover { background: #d94a4a; color: #fff; }
 .lg-departed td { color: #9aa4ae; }
 .lg-departed td.lg-sticky { color: #9aa4ae; font-style: italic; }
 .lg-forecast { background: #fef6e0; color: #8a6100; }
