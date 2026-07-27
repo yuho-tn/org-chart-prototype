@@ -50,6 +50,8 @@ export type LaborPersonRow = {
   sort_order: number;
   /** インセンティブの売上に対する掛け率（0.05=5%）。フロント陣のみ・null=対象外 */
   incentive_rate?: number | null;
+  /** 手動追加の見立て行（マスター未登録・削除可）。0041で追加。 */
+  is_manual?: boolean;
 };
 
 export type LaborAssignmentRow = {

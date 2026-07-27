@@ -55,6 +55,7 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
   const undo = useLaborCostStore((s) => s.undo);
   const redo = useLaborCostStore((s) => s.redo);
   const addPerson = useLaborCostStore((s) => s.addPerson);
+  const deletePerson = useLaborCostStore((s) => s.deletePerson);
   const setForecastFlag = useLaborCostStore((s) => s.setForecastFlag);
   const employees = useEmployeesStore((s) => s.employees);
 
@@ -96,7 +97,8 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
       { key: "name", title: "名前", width: 150, type: "readonly", sticky: true },
       { key: "emp_no", title: "社員番号", width: 84, type: "readonly" },
       { key: "hired", title: "入社日", width: 96, type: "text" },
-      { key: "master_dept", title: "マスター所属", width: 132, type: "readonly" },
+      { key: "master_dept", title: "マスター部署", width: 132, type: "readonly" },
+      { key: "master_pos", title: "マスター役職", width: 120, type: "readonly" },
       ...half("H1", "上期（7〜12月）", H1_AMOUNT_COLS),
       ...half("H2", "下期（1〜6月）", H2_AMOUNT_COLS),
       { key: "y_total", title: "年計", width: 92, type: "readonly", align: "right" },
@@ -108,6 +110,8 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
     const out: GridRow[] = [];
     const colTotals: Record<string, number> = {};
     for (const p of sorted) {
+      // 未連携かつ手動でない行（旧退職者等のノイズ）は非表示（req: 社員でないため除く）
+      if (!p.employee_number && !p.is_manual) continue;
       const a1 = assignments[assignKey(p.id, term, "H1")];
       const a2 = assignments[assignKey(p.id, term, "H2")];
       const emp = p.employee_number ? empByNum.get(p.employee_number) : null;
@@ -122,10 +126,11 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         name:
           baseName +
           (p.departed ? "（退職）" : "") +
-          (!p.employee_number ? "（未連携）" : ""),
-        emp_no: p.employee_number ?? "—",
+          (p.is_manual ? "（見立て）" : !p.employee_number ? "（未連携）" : ""),
+        emp_no: p.employee_number ?? (p.is_manual ? "手動" : "—"),
         hired: p.hired_at,
         master_dept: emp?.department ?? (p.employee_number ? "—" : ""),
+        master_pos: emp?.position_title ?? (p.employee_number ? "—" : ""),
         "H1:dept": a1?.dept ?? null,
         "H1:kenmu": a1?.kenmu_dept ?? null,
         "H1:rate": a1?.kenmu_rate ? a1.kenmu_rate : null,
@@ -230,6 +235,18 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
     );
   };
 
+  // 手動（見立て）行＝マスター未登録・削除可
+  const manualRows = useMemo(
+    () => people.filter((p) => p.is_manual && !p.employee_number),
+    [people],
+  );
+  const onDeleteManual = (id: string, name: string) => {
+    if (!window.confirm(`見立て行「${name}」を削除します。金額・所属も一緒に削除されます。よろしいですか？`)) return;
+    void deletePerson(id).then((r) => {
+      if (!r.ok) alert(`削除できませんでした: ${r.reason ?? "不明なエラー"}`);
+    });
+  };
+
   const departedHiddenCount = useMemo(() => {
     if (!hideDeparted) return 0;
     let n = 0;
@@ -292,7 +309,7 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         )}
         <div className="labor-addperson">
           <input
-            placeholder="新規メンバー名"
+            placeholder="見立て行の名前（手動追加）"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
@@ -306,10 +323,27 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
             disabled={!newName.trim()}
             onClick={() => void addPerson(newName).then(() => setNewName(""))}
           >
-            ＋ 追加
+            ＋ 見立て行を追加
           </button>
         </div>
       </div>
+      {manualRows.length > 0 && (
+        <div className="labor-manualbar">
+          <span className="labor-manualbar-label">見立て行（手動・削除可）:</span>
+          {manualRows.map((p) => (
+            <span key={p.id} className="labor-manualchip">
+              {p.name}
+              <button
+                className="labor-manualdel"
+                title="この見立て行を削除"
+                onClick={() => onDeleteManual(p.id, p.name)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <LaborGrid
         columns={columns}
         rows={rows}

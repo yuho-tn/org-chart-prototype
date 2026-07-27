@@ -115,7 +115,6 @@ export function LaborGrid({
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
-  const editSelectRef = useRef<HTMLSelectElement>(null);
   const [focus, setFocus] = useState<CellPos | null>(null);
   const [anchor, setAnchor] = useState<CellPos | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -195,7 +194,8 @@ export function LaborGrid({
   const startEdit = useCallback(
     (pos: CellPos, initial?: string) => {
       const col = columns[pos.c];
-      if (!col || col.type === "readonly") return;
+      // readonly と select（常時プルダウン描画）は編集モードに入らない
+      if (!col || col.type === "readonly" || col.type === "select") return;
       const row = rows[pos.r];
       if (!row) return;
       const current = row.cells[col.key];
@@ -214,15 +214,11 @@ export function LaborGrid({
 
   useEffect(() => {
     if (editing) {
-      if (editSelectRef.current) {
-        editSelectRef.current.focus();
-      } else {
-        editInputRef.current?.focus();
-        editInputRef.current?.setSelectionRange(
-          editing.value.length,
-          editing.value.length,
-        );
-      }
+      editInputRef.current?.focus();
+      editInputRef.current?.setSelectionRange(
+        editing.value.length,
+        editing.value.length,
+      );
     }
   }, [editing?.pos.r, editing?.pos.c]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -546,24 +542,20 @@ export function LaborGrid({
                     onMouseEnter={() => onCellMouseEnter(r, c)}
                     onDoubleClick={() => startEdit({ r, c })}
                   >
-                    {isEditingCell && editCol?.type === "select" ? (
+                    {col.type === "select" ? (
                       <select
-                        ref={editSelectRef}
-                        className="lg-edit lg-edit-select"
-                        value={editing.value}
-                        onChange={(e) => commitEdit(undefined, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            e.preventDefault();
-                            setEditing(null);
-                            wrapRef.current?.focus();
-                          }
-                          e.stopPropagation();
-                        }}
-                        onBlur={() => commitEdit()}
+                        className="lg-cellselect"
+                        value={(typeof v === "string" ? v : "") || ""}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onChange={(e) =>
+                          onEdits(
+                            [{ rowId: row.id, colKey: col.key, value: e.target.value || null }],
+                            "所属選択",
+                          )
+                        }
                       >
                         <option value="">（未設定）</option>
-                        {(editCol.options ?? []).map((o) => (
+                        {(col.options ?? []).map((o) => (
                           <option key={o} value={o}>{o}</option>
                         ))}
                       </select>

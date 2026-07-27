@@ -74,6 +74,8 @@ type State = {
 
   addPerson: (name: string) => Promise<LaborPersonRow | null>;
   updatePerson: (id: string, patch: Partial<Pick<LaborPersonRow, "name" | "departed" | "employee_number" | "hired_at" | "incentive_rate">>) => Promise<void>;
+  /** 手動行の削除（マスター連携行=employee_number有は削除不可）。金額/割当はCASCADEで削除。 */
+  deletePerson: (id: string) => Promise<{ ok: boolean; reason?: string }>;
 
   setForecastFlag: (term: TermCode, half: Half, isForecast: boolean) => Promise<void>;
   updateFrontTarget: (term: TermCode, half: Half, div: string, value: number) => Promise<void>;
@@ -387,7 +389,7 @@ export const useLaborCostStore = create<State>((set, get) => ({
     const maxSort = Math.max(0, ...get().people.map((p) => p.sort_order));
     const { data, error } = await supabase
       .from("labor_people")
-      .insert({ name: trimmed, sort_order: maxSort + 10 })
+      .insert({ name: trimmed, sort_order: maxSort + 10, is_manual: true })
       .select()
       .single();
     if (error || !data) {
@@ -397,6 +399,32 @@ export const useLaborCostStore = create<State>((set, get) => ({
     const row = data as LaborPersonRow;
     set((s) => ({ people: [...s.people, row] }));
     return row;
+  },
+
+  deletePerson: async (id) => {
+    if (!supabase) return { ok: false, reason: "未接続" };
+    const p = get().people.find((x) => x.id === id);
+    if (!p) return { ok: false, reason: "対象が見つかりません" };
+    // マスター連携行は削除不可（社員は消さない）
+    if (p.employee_number) return { ok: false, reason: "マスター連携行は削除できません" };
+    const { error } = await supabase.from("labor_people").delete().eq("id", id);
+    if (error) {
+      set({ saveState: "error", saveError: error.message });
+      return { ok: false, reason: error.message };
+    }
+    // ローカル状態からも当該人物の people/assignments/amounts を除去
+    set((s) => {
+      const assignments = { ...s.assignments };
+      for (const k of Object.keys(assignments) as AssignKey[]) {
+        if (assignments[k].person_id === id) delete assignments[k];
+      }
+      const amounts = { ...s.amounts };
+      for (const k of Object.keys(amounts) as AmountKey[]) {
+        if (amounts[k].person_id === id) delete amounts[k];
+      }
+      return { people: s.people.filter((x) => x.id !== id), assignments, amounts };
+    });
+    return { ok: true };
   },
 
   updatePerson: async (id, patch) => {
