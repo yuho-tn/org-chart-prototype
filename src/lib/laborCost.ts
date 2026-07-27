@@ -72,11 +72,18 @@ export type LaborAmountRow = {
 
 export type DeptTreatment = "product" | "front" | "corporate";
 
+/** 按分プールの表示グループ（0040）。front=フロント按分 / overhead=HR/開発/コーポ・その他按分 */
+export type AllocGroup = "front" | "overhead";
+
 export type LaborDeptMapRow = {
   term: TermCode;
   dept: string;
   div: string | null;
   treatment: DeptTreatment;
+  /** DIVの表示順（0037→0039で追加）。未設定は末尾扱い。 */
+  sort_order?: number;
+  /** treatment='front' の按分グループ（0040）。未設定は 'overhead' 扱い。 */
+  alloc_group?: AllocGroup | null;
 };
 
 export type LaborTmRow = { tm: string; div: string; sort_order: number };
@@ -158,7 +165,20 @@ export type DivBreakdown = {
   div: string;
   tms: TmBreakdown[];
   productByMonth: Record<string, number>;
+  /** フロント按分（group='front' プールの受け分） */
   frontAllocByMonth: Record<string, number>;
+  /** HR/開発/コーポ・その他按分（group='overhead' プールの受け分） */
+  overheadAllocByMonth: Record<string, number>;
+  totalByMonth: Record<string, number>;
+};
+
+/** 按分原資プール（フロント/HR/開発/コーポ 等）。売上目標比で各DIVへ配賦。 */
+export type AllocPoolBreakdown = {
+  name: string;
+  group: AllocGroup;
+  salaryByMonth: Record<string, number>;
+  bonusByMonth: Record<string, number>;
+  insuranceByMonth: Record<string, number>;
   totalByMonth: Record<string, number>;
 };
 
@@ -167,30 +187,29 @@ export type HalfComputation = {
   half: Half;
   months: readonly string[];
   divs: DivBreakdown[];
-  /** フロント原資（給与/ボーナス按分/社保 込み）月次 */
-  frontPoolByMonth: Record<string, number>;
-  /** フロント按分比率（div→ratio） */
+  /** 按分原資プール（フロント/HR/開発/コーポ 等・group付き） */
+  pools: AllocPoolBreakdown[];
+  /** 按分比率（div→ratio・売上目標比） */
   frontRatios: Record<string, number>;
-  /** コーポレート費（社保込み）月次 */
+  /** コーポレート費（社保込み）月次。treatment='corporate' 用（5期は0・後方互換） */
   corporateByMonth: Record<string, number>;
   corporateSalaryByMonth: Record<string, number>;
   corporateBonusByMonth: Record<string, number>;
   corporateInsuranceByMonth: Record<string, number>;
-  /** フロント原資の内訳 */
-  frontSalaryByMonth: Record<string, number>;
-  frontBonusByMonth: Record<string, number>;
-  frontInsuranceByMonth: Record<string, number>;
-  /** 全社総計（プロダクト+フロント+コーポレート・按分残差込み） */
+  /** 全社総計（プロダクト+全按分プール+コーポレート・按分残差込み） */
   grandTotalByMonth: Record<string, number>;
-  /** フロント原資のうちDIVへ配分し切れなかった残差（総計には加算済み） */
-  frontUnallocatedByMonth: Record<string, number>;
-  /** フロント按分の残差が有意にある（売上目標未登録/0など）＝要確認 */
-  frontUnallocated: boolean;
+  /** 原資プールのうちDIVへ配分し切れなかった残差（総計には加算済み） */
+  unallocatedByMonth: Record<string, number>;
+  /** 按分残差が有意にある（売上目標未登録/0など）＝要確認 */
+  unallocated: boolean;
   /** マッピング不明の所属（データ健全性アラート用） */
   unmappedDepts: string[];
 };
 
 const UNASSIGNED_TM = "（TM未割当）";
+/** TMを持たない設計のDIV（SNS/制作/HR等）でメンバーを直計上する際のラベル。
+ *  TMを持つDIVでの UNASSIGNED_TM（＝要割当の警告対象）と区別する。 */
+const DIV_DIRECT_TM = "（DIV直計上）";
 
 type Inputs = {
   term: LaborTermRow;
@@ -212,6 +231,11 @@ export function computeHalf(inp: Inputs): HalfComputation {
   const mapByDept = new Map(
     inp.deptMap.filter((m) => m.term === term.code).map((m) => [m.dept, m]),
   );
+  // DIV表示順の正 = labor_dept_map.sort_order（0039で追加）。
+  const divSort = new Map<string, number>();
+  for (const m of inp.deptMap) {
+    if (m.term === term.code && m.div) divSort.set(m.div, m.sort_order ?? 999);
+  }
   const divOrder: string[] = [];
   for (const t of [...inp.tms].sort((a, b) => a.sort_order - b.sort_order)) {
     if (!divOrder.includes(t.div)) divOrder.push(t.div);
@@ -228,6 +252,12 @@ export function computeHalf(inp: Inputs): HalfComputation {
       divOrder.push(f.div);
     }
   }
+  // dept_map の sort_order で並べ替え（未定義DIVは末尾・名前順）。
+  divOrder.sort(
+    (a, b) => (divSort.get(a) ?? 999) - (divSort.get(b) ?? 999) || a.localeCompare(b),
+  );
+  // TMを設計上持つDIVの集合（＝未割当を警告対象にするか、DIV直計上にするかの判定）。
+  const divsWithTms = new Set(inp.tms.map((t) => t.div));
 
   const zero = () => Object.fromEntries(months.map((m) => [m, 0])) as Record<string, number>;
 
@@ -248,7 +278,14 @@ export function computeHalf(inp: Inputs): HalfComputation {
     return b;
   };
 
-  const frontSalary = zero(); const frontBonus = zero();
+  // 按分原資プール: プール名 → {group, 給与, ボーナス按分}
+  type PoolAcc = { group: AllocGroup; salary: Record<string, number>; bonus: Record<string, number> };
+  const poolAcc = new Map<string, PoolAcc>();
+  const ensurePool = (name: string, group: AllocGroup): PoolAcc => {
+    let p = poolAcc.get(name);
+    if (!p) { p = { group, salary: zero(), bonus: zero() }; poolAcc.set(name, p); }
+    return p;
+  };
   const corpSalary = zero(); const corpBonus = zero();
   const unmapped = new Set<string>();
 
@@ -274,8 +311,11 @@ export function computeHalf(inp: Inputs): HalfComputation {
       const map = mapByDept.get(t.dept);
       if (!map) { unmapped.add(t.dept); continue; }
       if (map.treatment === "front") {
-        for (const m of months) frontSalary[m] += monthAmt(m) * t.share;
-        for (const m of months) frontBonus[m] += (bonus * t.share) / 6;
+        const poolName = map.div ?? t.dept;
+        const group: AllocGroup = map.alloc_group ?? "overhead";
+        const pool = ensurePool(poolName, group);
+        for (const m of months) pool.salary[m] += monthAmt(m) * t.share;
+        for (const m of months) pool.bonus[m] += (bonus * t.share) / 6;
         continue;
       }
       if (map.treatment === "corporate") {
@@ -286,13 +326,14 @@ export function computeHalf(inp: Inputs): HalfComputation {
       // product
       const div = map.div ?? t.dept;
       // TM: 兼務先計上でも本人のTM割当を使う（同一人物のTMは1つ）
-      let tm = a.tm ?? UNASSIGNED_TM;
+      const assignedTm = a.tm ?? null;
       // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）
-      const tmDiv = tm !== UNASSIGNED_TM ? tmDivOf.get(tm) : undefined;
+      const tmDiv = assignedTm ? tmDivOf.get(assignedTm) : undefined;
       const targetDiv = tmDiv ?? div;
-      if (tm !== UNASSIGNED_TM && tmDiv && tmDiv !== div && map.div) {
-        // 所属deptのdivとTMのdivが食い違う場合はTM側を正とする
-      }
+      // TM未割当時: そのDIVが設計上TMを持つなら「（TM未割当）」＝要割当、
+      // 持たない設計（SNS/制作/HR）なら「（DIV直計上）」でメンバー直計上。
+      const tm =
+        assignedTm ?? (divsWithTms.has(targetDiv) ? UNASSIGNED_TM : DIV_DIRECT_TM);
       const b = ensureTm(targetDiv, tm);
       const monthsRec: Record<string, number> = {};
       for (const m of months) {
@@ -316,12 +357,36 @@ export function computeHalf(inp: Inputs): HalfComputation {
     }
   }
 
-  // フロント原資（社保込み）と按分比率
-  const frontIns = zero(); const frontPool = zero();
-  for (const m of months) {
-    frontIns[m] = (frontSalary[m] + frontBonus[m]) * rate;
-    frontPool[m] = frontSalary[m] + frontBonus[m] + frontIns[m];
+  // 各按分プールを社保込みで確定（給与＋ボーナス按分）×率。
+  const pools: AllocPoolBreakdown[] = [];
+  // プール表示順: front グループ → overhead グループ、各グループ内は名前順。
+  const poolNames = [...poolAcc.keys()].sort((a, b) => {
+    const ga = poolAcc.get(a)!.group, gb = poolAcc.get(b)!.group;
+    if (ga !== gb) return ga === "front" ? -1 : 1;
+    return a.localeCompare(b);
+  });
+  for (const name of poolNames) {
+    const acc = poolAcc.get(name)!;
+    const ins = zero(); const total = zero();
+    for (const m of months) {
+      ins[m] = (acc.salary[m] + acc.bonus[m]) * rate;
+      total[m] = acc.salary[m] + acc.bonus[m] + ins[m];
+    }
+    pools.push({
+      name, group: acc.group,
+      salaryByMonth: acc.salary, bonusByMonth: acc.bonus,
+      insuranceByMonth: ins, totalByMonth: total,
+    });
   }
+  // グループ別の原資合計（按分の分子）
+  const groupPool = (g: AllocGroup) => {
+    const rec = zero();
+    for (const p of pools) if (p.group === g) for (const m of months) rec[m] += p.totalByMonth[m];
+    return rec;
+  };
+  const frontPool = groupPool("front");
+  const overheadPool = groupPool("overhead");
+
   const corpIns = zero(); const corpTotal = zero();
   for (const m of months) {
     corpIns[m] = (corpSalary[m] + corpBonus[m]) * rate;
@@ -337,7 +402,7 @@ export function computeHalf(inp: Inputs): HalfComputation {
     frontRatios[f.div] = targetSum > 0 ? f.sales_target / targetSum : 0;
   }
 
-  // DIV集計
+  // DIV集計。各DIVは自プロダクト＋フロント按分＋間接(overhead)按分。
   const tmSort = new Map(inp.tms.map((t) => [t.tm, t.sort_order]));
   const divs: DivBreakdown[] = [];
   for (const div of divOrder) {
@@ -348,44 +413,48 @@ export function computeHalf(inp: Inputs): HalfComputation {
       );
     const productByMonth = zero();
     for (const b of tms) for (const m of months) productByMonth[m] += b.totalByMonth[m];
+    const ratio = frontRatios[div] ?? 0;
     const frontAllocByMonth = zero();
-    for (const m of months) frontAllocByMonth[m] = frontPool[m] * (frontRatios[div] ?? 0);
+    const overheadAllocByMonth = zero();
     const totalByMonth = zero();
-    for (const m of months) totalByMonth[m] = productByMonth[m] + frontAllocByMonth[m];
-    divs.push({ div, tms, productByMonth, frontAllocByMonth, totalByMonth });
+    for (const m of months) {
+      frontAllocByMonth[m] = frontPool[m] * ratio;
+      overheadAllocByMonth[m] = overheadPool[m] * ratio;
+      totalByMonth[m] = productByMonth[m] + frontAllocByMonth[m] + overheadAllocByMonth[m];
+    }
+    divs.push({ div, tms, productByMonth, frontAllocByMonth, overheadAllocByMonth, totalByMonth });
   }
 
-  // フロント原資が実際にDIVへ配分された合計と、配分し切れなかった残差。
-  // 売上目標が未登録/全0、または目標DIVがdivOrderに無いと残差が生じる。
-  // 残差は総計に必ず加算し（金額の欠落を防ぐ）、警告フラグで可視化する。
-  const frontAllocated = zero();
-  for (const d of divs) for (const m of months) frontAllocated[m] += d.frontAllocByMonth[m];
-  const frontUnalloc = zero();
-  let frontUnallocated = false;
+  // 各原資グループが実際にDIVへ配分された合計と、配分し切れなかった残差。
+  // 売上目標が未登録/全0だと残差が生じる。残差は総計に必ず加算し（金額の
+  // 欠落を防ぐ）、警告フラグで可視化する。
+  const allocated = zero();
+  for (const d of divs) for (const m of months) allocated[m] += d.frontAllocByMonth[m] + d.overheadAllocByMonth[m];
+  const poolTotal = zero();
+  for (const m of months) poolTotal[m] = frontPool[m] + overheadPool[m];
+  const unalloc = zero();
+  let unallocated = false;
   for (const m of months) {
-    frontUnalloc[m] = frontPool[m] - frontAllocated[m];
-    if (Math.abs(frontUnalloc[m]) > 0.05) frontUnallocated = true;
+    unalloc[m] = poolTotal[m] - allocated[m];
+    if (Math.abs(unalloc[m]) > 0.05) unallocated = true;
   }
 
   const grand = zero();
   for (const m of months) {
     grand[m] =
-      divs.reduce((s, d) => s + d.totalByMonth[m], 0) + corpTotal[m] + frontUnalloc[m];
+      divs.reduce((s, d) => s + d.totalByMonth[m], 0) + corpTotal[m] + unalloc[m];
   }
 
   return {
     term: term.code, half, months, divs,
-    frontPoolByMonth: frontPool, frontRatios,
+    pools, frontRatios,
     corporateByMonth: corpTotal,
     corporateSalaryByMonth: corpSalary,
     corporateBonusByMonth: corpBonus,
     corporateInsuranceByMonth: corpIns,
-    frontSalaryByMonth: frontSalary,
-    frontBonusByMonth: frontBonus,
-    frontInsuranceByMonth: frontIns,
     grandTotalByMonth: grand,
-    frontUnallocatedByMonth: frontUnalloc,
-    frontUnallocated,
+    unallocatedByMonth: unalloc,
+    unallocated,
     unmappedDepts: [...unmapped],
   };
 }
@@ -394,9 +463,9 @@ export function computeHalf(inp: Inputs): HalfComputation {
 
 export type RawRow = {
   ym: string;        // '2026年7月'
-  tm: string;        // TM名 / 'フロント按分' / 'コーポレート' / '—'
+  tm: string;        // TM名 / 'フロント按分' / '間接費按分' / 'コーポレート' / '—'
   div: string;
-  kind: "プロダクト" | "フロント" | "総額" | "コーポレート";
+  kind: "プロダクト" | "フロント" | "間接費" | "総額" | "コーポレート";
   amount: number;    // 万円（小数1桁丸め）
 };
 
@@ -415,9 +484,14 @@ export function buildRawRows(
           rows.push({ ym, tm: t.tm, div: d.div, kind: "プロダクト", amount: round1(t.totalByMonth[m]) });
         }
         rows.push({ ym, tm: "フロント按分", div: d.div, kind: "フロント", amount: round1(d.frontAllocByMonth[m]) });
+        rows.push({ ym, tm: "HR/開発/コーポ・その他按分", div: d.div, kind: "間接費", amount: round1(d.overheadAllocByMonth[m]) });
         rows.push({ ym, tm: "—", div: d.div, kind: "総額", amount: round1(d.totalByMonth[m]) });
       }
-      rows.push({ ym, tm: "コーポレート", div: "コーポレート", kind: "コーポレート", amount: round1(c.corporateByMonth[m]) });
+      // treatment='corporate'（5期は0・後方互換）。非0のときのみ出力。
+      const corp = round1(c.corporateByMonth[m]);
+      if (corp !== 0) {
+        rows.push({ ym, tm: "コーポレート", div: "コーポレート", kind: "コーポレート", amount: corp });
+      }
     }
   }
   return rows;

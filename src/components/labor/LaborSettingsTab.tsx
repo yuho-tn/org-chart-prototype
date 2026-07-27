@@ -27,12 +27,24 @@ export function LaborSettingsTab({ term }: { term: TermCode }) {
     [store.deptMap, term],
   );
 
+  // dept → 出力DIV、および DIV が設計上TMを持つか（TMなしDIVはDIV直計上で割当不要）
+  const divByDept = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of store.deptMap) if (d.term === term && d.div) m.set(d.dept, d.div);
+    return m;
+  }, [store.deptMap, term]);
+  const divsWithTms = useMemo(
+    () => new Set(store.tms.map((t) => t.div)),
+    [store.tms],
+  );
+
   const tmTargets = useMemo(() => {
     const rows: {
       personId: string;
       name: string;
       departed: boolean;
       dept: string;
+      div: string;
       tm: string | null;
     }[] = [];
     for (const p of [...store.people].sort((a, b) => a.sort_order - b.sort_order)) {
@@ -45,16 +57,20 @@ export function LaborSettingsTab({ term }: { term: TermCode }) {
         (a2?.kenmu_dept && productDepts.has(a2.kenmu_dept) && a2.kenmu_dept) ||
         null;
       if (!dept) continue;
+      const div = divByDept.get(dept) ?? dept;
+      // TMを持たない設計のDIV（SNS/制作等）はDIV直計上＝TM割当対象外。
+      if (!divsWithTms.has(div)) continue;
       rows.push({
         personId: p.id,
         name: p.name,
         departed: p.departed,
         dept,
+        div,
         tm: a1?.tm ?? a2?.tm ?? null,
       });
     }
     return rows;
-  }, [store.people, store.assignments, term, productDepts]);
+  }, [store.people, store.assignments, term, productDepts, divByDept, divsWithTms]);
 
   const setTm = (personId: string, tm: string | null) => {
     const edits = (["H1", "H2"] as Half[])
@@ -122,30 +138,34 @@ export function LaborSettingsTab({ term }: { term: TermCode }) {
       <section>
         <h3>TM割当（{term}期・DIV按分出力用）</h3>
         <p className="labor-note">
-          個人別シートの所属はDIV粒度のため、按分出力のTM粒度はここで割り当てます。
+          TMを持つDIV（マーケ・AI・役員）のメンバーのみ、TMをここで割り当てます。
+          TMなし設計のDIV（SNS・制作等）はDIV直計上のため対象外です。
           {unassigned > 0 && (
             <strong className="labor-warn-inline">　未割当 {unassigned}名（（TM未割当）として出力されます）</strong>
           )}
         </p>
         <div className="labor-tmassign">
-          {tmTargets.map((t) => (
-            <div key={t.personId} className={"labor-tmrow" + (t.departed ? " lg-departed" : "")}>
-              <span className="labor-tmname">{t.name}</span>
-              <span className="labor-tmdept">{t.dept}</span>
-              <select
-                className="labor-select"
-                value={t.tm ?? ""}
-                onChange={(e) => setTm(t.personId, e.target.value || null)}
-              >
-                <option value="">（TM未割当）</option>
-                {store.tms.map((tm) => (
-                  <option key={tm.tm} value={tm.tm}>
-                    {tm.tm}（{tm.div}）
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
+          {tmTargets.map((t) => {
+            const divTms = store.tms.filter((tm) => tm.div === t.div);
+            return (
+              <div key={t.personId} className={"labor-tmrow" + (t.departed ? " lg-departed" : "")}>
+                <span className="labor-tmname">{t.name}</span>
+                <span className="labor-tmdept">{t.div}</span>
+                <select
+                  className="labor-select"
+                  value={t.tm ?? ""}
+                  onChange={(e) => setTm(t.personId, e.target.value || null)}
+                >
+                  <option value="">（TM未割当）</option>
+                  {divTms.map((tm) => (
+                    <option key={tm.tm} value={tm.tm}>
+                      {tm.tm}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
         </div>
       </section>
 

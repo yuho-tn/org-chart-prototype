@@ -25,13 +25,13 @@ export type GridColumn = {
   key: string;
   title: string;
   width: number;
-  type: "text" | "number" | "percent" | "readonly";
+  type: "text" | "number" | "percent" | "readonly" | "select";
   /** 2段ヘッダーの上段ラベル。連続する同名列は結合表示。 */
   group?: string;
   /** 左端固定列 */
   sticky?: boolean;
   align?: "left" | "right";
-  /** text セルの入力候補（datalist） */
+  /** text セルの入力候補（datalist）／select の選択肢 */
   options?: string[];
 };
 
@@ -115,6 +115,7 @@ export function LaborGrid({
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const editSelectRef = useRef<HTMLSelectElement>(null);
   const [focus, setFocus] = useState<CellPos | null>(null);
   const [anchor, setAnchor] = useState<CellPos | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -168,12 +169,13 @@ export function LaborGrid({
   );
 
   const commitEdit = useCallback(
-    (move?: { dr: number; dc: number }) => {
+    (move?: { dr: number; dc: number }, rawOverride?: string) => {
       if (!editing) return;
       const col = columns[editing.pos.c];
       const row = rows[editing.pos.r];
       if (col && row && col.type !== "readonly") {
-        const value = parseCellInput(editing.value, col);
+        const raw = rawOverride !== undefined ? rawOverride : editing.value;
+        const value = parseCellInput(raw, col);
         const prev = row.cells[col.key] ?? null;
         if (value !== prev) {
           onEdits([{ rowId: row.id, colKey: col.key, value }], "セル編集");
@@ -212,11 +214,15 @@ export function LaborGrid({
 
   useEffect(() => {
     if (editing) {
-      editInputRef.current?.focus();
-      editInputRef.current?.setSelectionRange(
-        editing.value.length,
-        editing.value.length,
-      );
+      if (editSelectRef.current) {
+        editSelectRef.current.focus();
+      } else {
+        editInputRef.current?.focus();
+        editInputRef.current?.setSelectionRange(
+          editing.value.length,
+          editing.value.length,
+        );
+      }
     }
   }, [editing?.pos.r, editing?.pos.c]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -540,7 +546,28 @@ export function LaborGrid({
                     onMouseEnter={() => onCellMouseEnter(r, c)}
                     onDoubleClick={() => startEdit({ r, c })}
                   >
-                    {isEditingCell ? (
+                    {isEditingCell && editCol?.type === "select" ? (
+                      <select
+                        ref={editSelectRef}
+                        className="lg-edit lg-edit-select"
+                        value={editing.value}
+                        onChange={(e) => commitEdit(undefined, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setEditing(null);
+                            wrapRef.current?.focus();
+                          }
+                          e.stopPropagation();
+                        }}
+                        onBlur={() => commitEdit()}
+                      >
+                        <option value="">（未設定）</option>
+                        {(editCol.options ?? []).map((o) => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    ) : isEditingCell ? (
                       <input
                         ref={editInputRef}
                         className="lg-edit"
