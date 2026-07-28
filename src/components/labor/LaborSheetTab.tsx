@@ -4,7 +4,7 @@ import { useEmployeesStore } from "../../store/useEmployeesStore";
 import { LaborGrid } from "./LaborGrid";
 import type { GridColumn, GridEdit, GridRow } from "./LaborGrid";
 import type { Half, Slot, TermCode } from "../../lib/laborCost";
-import { amountKey, assignKey } from "../../lib/laborCost";
+import { amountKey, assignKey, ALLOC_TM } from "../../lib/laborCost";
 
 /**
  * 個人別シート: 元スプレッドシート「人件費ローデータ」と同じ列構成を
@@ -82,6 +82,8 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
   const addPerson = useLaborCostStore((s) => s.addPerson);
   const deletePerson = useLaborCostStore((s) => s.deletePerson);
   const setForecastFlag = useLaborCostStore((s) => s.setForecastFlag);
+  const saveState = useLaborCostStore((s) => s.saveState);
+  const flushNow = useLaborCostStore((s) => s.flushNow);
   const employees = useEmployeesStore((s) => s.employees);
 
   const [newName, setNewName] = useState("");
@@ -130,7 +132,9 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
     const dept = row.cells[`${h}:dept`];
     if (typeof dept !== "string" || !dept) return [];
     const div = divByDept.get(dept) ?? dept;
-    return tmNamesByDiv.get(div) ?? [];
+    const list = tmNamesByDiv.get(div) ?? [];
+    // 複数TMを持つDIVは「（売上目標比で按分）」を選べる（DIV直下＝どのTMにも属さない人向け）。
+    return list.length >= 2 ? [...list, ALLOC_TM] : list;
   };
   // 兼務先TMは兼務先DIVのTMだけに絞る（所属側と同じ考え方）。
   const kenmuTmOptionsFor = (h: Half) => (row: GridRow): string[] => {
@@ -271,7 +275,10 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         if (curTm) {
           const newDiv = newDept ? (divByDept.get(newDept) ?? newDept) : null;
           const allowed = newDiv ? tmNamesByDiv.get(newDiv) ?? [] : [];
-          if (!allowed.includes(curTm)) patch.tm = null;
+          // 按分(ALLOC)は複数TMのDIVなら移動後も有効なので維持。それ以外は新DIVに無いTMをクリア。
+          const stillValid =
+            allowed.includes(curTm) || (curTm === ALLOC_TM && allowed.length >= 2);
+          if (!stillValid) patch.tm = null;
         }
         assignEdits.push(patch);
       }
@@ -354,6 +361,31 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
   return (
     <div className="labor-sheet">
       <div className="labor-toolbar">
+        <div className="labor-savebar">
+          <button
+            className="labor-btn labor-btn--save"
+            onClick={() => void flushNow()}
+            disabled={saveState === "saving"}
+            title="編集は自動保存されますが、今すぐ確定保存します"
+          >
+            💾 変更を保存
+          </button>
+          <span
+            className={
+              "labor-savestate" +
+              (saveState === "error" ? " labor-savestate--error" : "") +
+              (saveState === "idle" ? " labor-savestate--ok" : "")
+            }
+          >
+            {saveState === "error"
+              ? "⚠ 保存エラー（自動再試行中）"
+              : saveState === "saving"
+                ? "保存中…"
+                : saveState === "pending"
+                  ? "● 未保存の変更があります"
+                  : "✓ すべて保存済み"}
+          </span>
+        </div>
         <label className="labor-check">
           <input
             type="checkbox"

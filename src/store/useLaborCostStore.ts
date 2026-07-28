@@ -8,6 +8,7 @@ import type {
   LaborAssignmentRow,
   LaborDeptMapRow,
   LaborFrontTargetRow,
+  LaborTmTargetRow,
   LaborPersonRow,
   LaborTermRow,
   LaborTmRow,
@@ -56,6 +57,7 @@ type State = {
   deptMap: LaborDeptMapRow[];
   tms: LaborTmRow[];
   frontTargets: LaborFrontTargetRow[];
+  tmTargets: LaborTmTargetRow[];
   insuranceRate: number;
 
   undoStack: UndoEntry[];
@@ -79,6 +81,7 @@ type State = {
 
   setForecastFlag: (term: TermCode, half: Half, isForecast: boolean) => Promise<void>;
   updateFrontTarget: (term: TermCode, half: Half, div: string, value: number) => Promise<void>;
+  updateTmTarget: (term: TermCode, half: Half, tm: string, value: number) => Promise<void>;
   updateInsuranceRate: (rate: number) => Promise<void>;
 
   flushNow: () => Promise<void>;
@@ -228,6 +231,7 @@ export const useLaborCostStore = create<State>((set, get) => ({
   deptMap: [],
   tms: [],
   frontTargets: [],
+  tmTargets: [],
   insuranceRate: 0.17,
 
   undoStack: [],
@@ -262,7 +266,7 @@ export const useLaborCostStore = create<State>((set, get) => ({
         return { data: all, error: null };
       };
 
-      const [terms, people, assigns, amounts, deptMap, tms, targets, settings] =
+      const [terms, people, assigns, amounts, deptMap, tms, targets, settings, tmTargets] =
         await Promise.all([
           supabase.from("labor_terms").select("*").order("sort_order"),
           supabase.from("labor_people").select("*").order("sort_order"),
@@ -272,10 +276,11 @@ export const useLaborCostStore = create<State>((set, get) => ({
           supabase.from("labor_tms").select("*").order("sort_order"),
           supabase.from("labor_front_targets").select("*"),
           supabase.from("labor_settings").select("*"),
+          supabase.from("labor_tm_targets").select("*"),
         ]);
       const firstErr =
         terms.error || people.error || assigns.error || amounts.error ||
-        deptMap.error || tms.error || targets.error || settings.error;
+        deptMap.error || tms.error || targets.error || settings.error || tmTargets.error;
       if (firstErr) throw firstErr;
 
       const assignments: Record<AssignKey, LaborAssignmentRow> = {};
@@ -305,6 +310,10 @@ export const useLaborCostStore = create<State>((set, get) => ({
         deptMap: (deptMap.data ?? []) as LaborDeptMapRow[],
         tms: (tms.data ?? []) as LaborTmRow[],
         frontTargets: ((targets.data ?? []) as LaborFrontTargetRow[]).map((t) => ({
+          ...t,
+          sales_target: Number(t.sales_target),
+        })),
+        tmTargets: ((tmTargets.data ?? []) as LaborTmTargetRow[]).map((t) => ({
           ...t,
           sales_target: Number(t.sales_target),
         })),
@@ -474,6 +483,31 @@ export const useLaborCostStore = create<State>((set, get) => ({
       .upsert(
         { term, half, div, sales_target: value },
         { onConflict: "term,half,div" },
+      );
+    if (error) set({ saveState: "error", saveError: error.message });
+  },
+
+  updateTmTarget: async (term, half, tm, value) => {
+    if (!supabase) return;
+    set((s) => {
+      const exists = s.tmTargets.some(
+        (t) => t.term === term && t.half === half && t.tm === tm,
+      );
+      return {
+        tmTargets: exists
+          ? s.tmTargets.map((t) =>
+              t.term === term && t.half === half && t.tm === tm
+                ? { ...t, sales_target: value }
+                : t,
+            )
+          : [...s.tmTargets, { term, half, tm, sales_target: value }],
+      };
+    });
+    const { error } = await supabase
+      .from("labor_tm_targets")
+      .upsert(
+        { term, half, tm, sales_target: value },
+        { onConflict: "term,half,tm" },
       );
     if (error) set({ saveState: "error", saveError: error.message });
   },

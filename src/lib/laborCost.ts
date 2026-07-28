@@ -214,6 +214,16 @@ const UNASSIGNED_TM = "（TM未割当）";
 /** TMを持たない設計のDIV（SNS/制作/HR等）でメンバーを直計上する際のラベル。
  *  TMを持つDIVでの UNASSIGNED_TM（＝要割当の警告対象）と区別する。 */
 const DIV_DIRECT_TM = "（DIV直計上）";
+/** 個人別シートのTM欄で選ぶと、所属DIVの各TMへ売上目標比で自動按分する特別値（0043）。
+ *  和田・高橋健・国兼のようにDIV直下（どのTMにも属さない）人に付与する。 */
+export const ALLOC_TM = "（売上目標比で按分）";
+
+export type LaborTmTargetRow = {
+  term: TermCode;
+  half: Half;
+  tm: string;
+  sales_target: number;
+};
 
 type Inputs = {
   term: LaborTermRow;
@@ -224,6 +234,8 @@ type Inputs = {
   deptMap: LaborDeptMapRow[];
   tms: LaborTmRow[];
   frontTargets: LaborFrontTargetRow[];
+  /** TM別売上目標（0043）。ALLOC_TM 按分の分母。未指定は空でよい。 */
+  tmTargets?: LaborTmTargetRow[];
   insuranceRate: number;
 };
 
@@ -231,6 +243,12 @@ export function computeHalf(inp: Inputs): HalfComputation {
   const { term, half, people, assignments, amounts } = inp;
   const months = half === "H1" ? H1_MONTHS : H2_MONTHS;
   const bonusSlot: Slot = half === "H1" ? "BS" : "BW";
+
+  // TM別売上目標（この期・この半期）。ALLOC_TM 按分の分母。
+  const tmTargetOf = new Map<string, number>();
+  for (const tt of inp.tmTargets ?? []) {
+    if (tt.term === term.code && tt.half === half) tmTargetOf.set(tt.tm, tt.sales_target);
+  }
 
   const mapByDept = new Map(
     inp.deptMap.filter((m) => m.term === term.code).map((m) => [m.dept, m]),
@@ -331,25 +349,47 @@ export function computeHalf(inp: Inputs): HalfComputation {
       const div = map.div ?? t.dept;
       // TM: 所属側は tm、兼務先側は kenmu_tm（各ターゲットが自分のTMを持つ・0042）
       const assignedTm = t.tm ?? null;
-      // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）
-      const tmDiv = assignedTm ? tmDivOf.get(assignedTm) : undefined;
+      const isAlloc = assignedTm === ALLOC_TM;
+      // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）。
+      // ALLOC_TM は実TMではないのでDIV解決には使わない（所属DIVで按分）。
+      const tmDiv = assignedTm && !isAlloc ? tmDivOf.get(assignedTm) : undefined;
       const targetDiv = tmDiv ?? div;
-      // TM未割当時: そのDIVが設計上TMを持つなら「（TM未割当）」＝要割当、
-      // 持たない設計（SNS/制作/HR）なら「（DIV直計上）」でメンバー直計上。
-      const tm =
-        assignedTm ?? (divsWithTms.has(targetDiv) ? UNASSIGNED_TM : DIV_DIRECT_TM);
-      const b = ensureTm(targetDiv, tm);
-      const monthsRec: Record<string, number> = {};
-      for (const m of months) {
-        const v = monthAmt(m) * t.share;
-        monthsRec[m] = v;
-        b.salaryByMonth[m] += v;
-        b.bonusByMonth[m] += (bonus * t.share) / 6;
+
+      // 指定 (div, tm, effShare) にメンバー給与・ボーナス按分を計上するローカル関数。
+      const pushMember = (tdiv: string, tmName: string, effShare: number) => {
+        const b = ensureTm(tdiv, tmName);
+        const monthsRec: Record<string, number> = {};
+        for (const m of months) {
+          const v = monthAmt(m) * effShare;
+          monthsRec[m] = v;
+          b.salaryByMonth[m] += v;
+          b.bonusByMonth[m] += (bonus * effShare) / 6;
+        }
+        b.members.push({
+          personId: p.id, name: p.name, share: effShare,
+          months: monthsRec, bonus: bonus * effShare,
+        });
+      };
+
+      if (isAlloc && divsWithTms.has(targetDiv)) {
+        // 売上目標比按分: 所属DIVの各TMへ、TM売上目標の比率で分割計上。
+        // 目標が全て0/未入力なら均等割り（フォールバック）。
+        const divTms = inp.tms.filter((x) => x.div === targetDiv);
+        const totalT = divTms.reduce((s, x) => s + (tmTargetOf.get(x.tm) ?? 0), 0);
+        for (const x of divTms) {
+          const ratio = totalT > 0 ? (tmTargetOf.get(x.tm) ?? 0) / totalT : 1 / divTms.length;
+          if (ratio > 0) pushMember(targetDiv, x.tm, t.share * ratio);
+        }
+      } else {
+        // 通常: 単一TM。TM未割当時は「（TM未割当）」（TMありDIV）or「（DIV直計上）」。
+        const tm =
+          assignedTm && !isAlloc
+            ? assignedTm
+            : divsWithTms.has(targetDiv)
+              ? UNASSIGNED_TM
+              : DIV_DIRECT_TM;
+        pushMember(targetDiv, tm, t.share);
       }
-      b.members.push({
-        personId: p.id, name: p.name, share: t.share,
-        months: monthsRec, bonus: bonus * t.share,
-      });
     }
   }
 

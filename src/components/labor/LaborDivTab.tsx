@@ -47,9 +47,10 @@ export function LaborDivTab({ term }: { term: TermCode }) {
       deptMap: store.deptMap,
       tms: store.tms,
       frontTargets: store.frontTargets,
+      tmTargets: store.tmTargets,
       insuranceRate: store.insuranceRate,
     });
-  }, [termRow, half, store.people, store.assignments, store.amounts, store.deptMap, store.tms, store.frontTargets, store.insuranceRate]);
+  }, [termRow, half, store.people, store.assignments, store.amounts, store.deptMap, store.tms, store.frontTargets, store.tmTargets, store.insuranceRate]);
 
   if (!termRow || !comp) return null;
 

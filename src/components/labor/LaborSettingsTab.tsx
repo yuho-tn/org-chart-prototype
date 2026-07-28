@@ -209,6 +209,48 @@ export function LaborSettingsTab({ term }: { term: TermCode }) {
       </section>
 
       <section>
+        <h3>TM別売上目標（{term}期・万円・半期固定／TM按分の分母）</h3>
+        <p className="labor-note">
+          個人別シートでTMを「（売上目標比で按分）」にした人は、所属DIVの各TMへ
+          ここの売上目標の比率で自動配分されます（例：和田＝広告TM/AIO TM の目標比）。
+          目標が全て0のDIVは均等割りになります。
+        </p>
+        <table className="labor-fronttable">
+          <thead>
+            <tr>
+              <th>DIV</th>
+              <th>TM</th>
+              <th>上期目標</th>
+              <th>下期目標</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...store.tms]
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((t) => {
+                const get = (half: Half) =>
+                  store.tmTargets.find(
+                    (x) => x.term === term && x.half === half && x.tm === t.tm,
+                  )?.sales_target ?? 0;
+                return (
+                  <tr key={t.tm}>
+                    <td>{t.div}</td>
+                    <td>{t.tm}</td>
+                    {(["H1", "H2"] as Half[]).map((half) => (
+                      <TmTargetCell
+                        key={half}
+                        value={get(half)}
+                        onChange={(v) => void store.updateTmTarget(term, half, t.tm, v)}
+                      />
+                    ))}
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+      </section>
+
+      <section>
         <h3>社会保険料率</h3>
         <label className="labor-inline">
           <input
@@ -278,6 +320,36 @@ export function LaborSettingsTab({ term }: { term: TermCode }) {
         </div>
       </section>
     </div>
+  );
+}
+
+function TmTargetCell({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <td className="labor-num">
+      <input
+        className="labor-targetinput"
+        value={draft ?? value.toLocaleString()}
+        onFocus={() => setDraft(String(value))}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft != null) {
+            const v = Number(draft.replace(/,/g, ""));
+            if (Number.isFinite(v) && v >= 0 && v !== value) onChange(v);
+          }
+          setDraft(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+      />
+    </td>
   );
 }
 

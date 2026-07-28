@@ -8767,6 +8767,19 @@ body.is-dragging .dept-card__add-child {
 .labor-btn:disabled { opacity: 0.4; cursor: default; }
 .labor-btn--on { background: #0b5cad; color: #fff; border-color: #0b5cad; }
 .labor-btn--on:hover { background: #0b5cad; }
+.labor-btn--save { background: #0b5cad; color: #fff; border-color: #0b5cad; font-weight: 600; }
+.labor-btn--save:hover { background: #0a4f96; }
+.labor-savebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 4px 6px;
+  margin-right: 4px;
+  border-right: 1px solid #e2e6ea;
+}
+.labor-savestate { font-size: 12px; color: #8a949e; white-space: nowrap; }
+.labor-savestate--ok { color: #1a7f4b; }
+.labor-savestate--error { color: #c0392b; font-weight: 600; }
 .labor-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #57606a; }
 .labor-note { font-size: 11.5px; color: #77828c; }
 .labor-hint { font-size: 11.5px; color: #8a949e; margin-top: 8px; }
