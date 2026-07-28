@@ -33,6 +33,7 @@ export function LaborRawTab({ term }: { term: TermCode }) {
         tms: store.tms,
         frontTargets: store.frontTargets,
         insuranceRate: store.insuranceRate,
+        smoothSalary: true, // ローデータ出力もDIV按分と揃えて均等ならし
       }),
     );
     return buildRawRows(termRow, comps);

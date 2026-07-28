@@ -49,6 +49,7 @@ export function LaborDivTab({ term }: { term: TermCode }) {
       frontTargets: store.frontTargets,
       tmTargets: store.tmTargets,
       insuranceRate: store.insuranceRate,
+      smoothSalary: true, // DIV按分は給与を半期内均等ならし（個人の凸凹を隠す）
     });
   }, [termRow, half, store.people, store.assignments, store.amounts, store.deptMap, store.tms, store.frontTargets, store.tmTargets, store.insuranceRate]);
 

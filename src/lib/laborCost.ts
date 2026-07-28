@@ -10,7 +10,9 @@
  *   - 社会保険料は (給与+ボーナス按分) × insurance_rate を加算
  *   - フロント所属の総コストは DIV別売上目標（半期固定）比で各DIVへ按分
  *   - コーポレートは按分せずコーポレート費として出力
- *   - 途中入社は在籍月（金額が入っている月）のみ計上＝月次データそのまま
+ *   - 途中入社/退職は smoothSalary で扱いが変わる:
+ *       OFF = 在籍月（金額が入っている月）のみ計上＝月次データそのまま
+ *       ON  = 当該半期の給与合計を半期の全月へ均等ならし（凸凹から個人給与を隠す・金額保存）
  */
 
 // ── 型 ──────────────────────────────────────────────────────────────
@@ -239,6 +241,12 @@ type Inputs = {
   /** TM別売上目標（0043）。ALLOC_TM 按分の分母。未指定は空でよい。 */
   tmTargets?: LaborTmTargetRow[];
   insuranceRate: number;
+  /**
+   * 給与の半期内均等ならし。true で各人の当該半期給与合計を半期の全月へ均等計上する
+   * （入退社の凸凹から個人給与を推測できないようにする・半期合計は不変＝金額保存）。
+   * DIV按分・ローデータ出力はON、個人別シートはこの関数を使わず実額のまま。未指定=false。
+   */
+  smoothSalary?: boolean;
 };
 
 export function computeHalf(inp: Inputs): HalfComputation {
@@ -321,11 +329,18 @@ export function computeHalf(inp: Inputs): HalfComputation {
   for (const p of people) {
     const a = assignments[assignKey(p.id, term.code, half)];
     if (!a) continue;
-    const monthAmt = (m: string) =>
+    const monthAmtRaw = (m: string) =>
       amounts[amountKey(p.id, term.code, m as Slot)]?.amount ?? 0;
     const bonus = amounts[amountKey(p.id, term.code, bonusSlot)]?.amount ?? 0;
-    const hasAny = bonus !== 0 || months.some((m) => monthAmt(m) !== 0);
+    const hasAny = bonus !== 0 || months.some((m) => monthAmtRaw(m) !== 0);
     if (!hasAny) continue;
+    // 給与の半期内均等ならし: この人の当該半期給与合計を半期の全月へ均等割り。
+    // 例: 10月退職で7〜9月しか計上のない人も、その合計を7〜12月の6ヶ月へ均等計上。
+    // 半期合計は不変（Σ=元の合計）＝金額保存。ボーナスは元々 半期÷6 で均等。
+    const salaryTotal = months.reduce((s, m) => s + monthAmtRaw(m), 0);
+    const monthAmt = inp.smoothSalary
+      ? (_m: string) => salaryTotal / months.length
+      : monthAmtRaw;
 
     // 配分先: 所属(1-rate) + 兼務先(rate)。所属側は tm、兼務先側は kenmu_tm を使う（0042）。
     // 元シート仕様: 兼務先が空欄でも兼務率>0なら所属から差し引く
