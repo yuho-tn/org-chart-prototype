@@ -139,7 +139,7 @@ export function LaborDivTab({ term }: { term: TermCode }) {
 
           {/* 按分原資プール（フロント → 間接の順・group付き） */}
           {comp.pools.map((p) => (
-            <PoolBlock key={p.name} p={p} groupLabel={groupLabel} MonthCells={MonthCells} />
+            <PoolBlock key={p.name} p={p} groupLabel={groupLabel} MonthCells={MonthCells} nameOf={nameOf} />
           ))}
 
           {/* コーポレート treatment（5期は無し・後方互換で非0時のみ表示） */}
@@ -219,24 +219,46 @@ function PoolBlock({
   p,
   groupLabel,
   MonthCells,
+  nameOf,
 }: {
   p: HalfComputation["pools"][number];
   groupLabel: (g: "front" | "overhead") => string;
   MonthCells: (q: { rec: Record<string, number>; strong?: boolean }) => ReactElement;
+  nameOf: NameResolver;
 }) {
   const [open, setOpen] = useState(false);
+  const monthKeys = Object.keys(p.salaryByMonth);
   return (
     <>
       <tr className="labor-divhead labor-clickable" onClick={() => setOpen(!open)}>
         <td>
           <span className="labor-caret">{open ? "▾" : "▸"}</span> {p.name}（按分原資・
           {groupLabel(p.group)}）
+          <span className="labor-mcount">（{p.members.length}名）</span>
         </td>
         <MonthCells rec={p.totalByMonth} strong />
       </tr>
       {open && (
         <>
-          <tr className="labor-sub">
+          {p.members.map((m, i) => (
+            <tr key={m.personId + i} className="labor-member">
+              <td className="labor-indent2">
+                {nameOf(m.personId, m.name)}
+                {m.share < 1 && (
+                  <span className="labor-share">×{Math.round(m.share * 100)}%</span>
+                )}
+              </td>
+              {monthKeys.map((mo) => (
+                <td key={mo} className="labor-num">
+                  {m.months[mo] ? m.months[mo].toLocaleString(undefined, { maximumFractionDigits: 1 }) : ""}
+                </td>
+              ))}
+              <td className="labor-num">
+                {Object.values(m.months).reduce((s, v) => s + v, 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+              </td>
+            </tr>
+          ))}
+          <tr className="labor-sub labor-line">
             <td className="labor-indent">給与計</td>
             <MonthCells rec={p.salaryByMonth} />
           </tr>

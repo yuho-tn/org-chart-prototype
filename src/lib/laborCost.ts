@@ -180,6 +180,8 @@ export type DivBreakdown = {
 export type AllocPoolBreakdown = {
   name: string;
   group: AllocGroup;
+  /** このプールに計上されているメンバー明細（誰がいくら・DIVと同様に確認用） */
+  members: TmBreakdown["members"];
   salaryByMonth: Record<string, number>;
   bonusByMonth: Record<string, number>;
   insuranceByMonth: Record<string, number>;
@@ -300,12 +302,17 @@ export function computeHalf(inp: Inputs): HalfComputation {
     return b;
   };
 
-  // 按分原資プール: プール名 → {group, 給与, ボーナス按分}
-  type PoolAcc = { group: AllocGroup; salary: Record<string, number>; bonus: Record<string, number> };
+  // 按分原資プール: プール名 → {group, 給与, ボーナス按分, メンバー明細}
+  type PoolAcc = {
+    group: AllocGroup;
+    salary: Record<string, number>;
+    bonus: Record<string, number>;
+    members: TmBreakdown["members"];
+  };
   const poolAcc = new Map<string, PoolAcc>();
   const ensurePool = (name: string, group: AllocGroup): PoolAcc => {
     let p = poolAcc.get(name);
-    if (!p) { p = { group, salary: zero(), bonus: zero() }; poolAcc.set(name, p); }
+    if (!p) { p = { group, salary: zero(), bonus: zero(), members: [] }; poolAcc.set(name, p); }
     return p;
   };
   const corpSalary = zero(); const corpBonus = zero();
@@ -336,8 +343,17 @@ export function computeHalf(inp: Inputs): HalfComputation {
         const poolName = map.div ?? t.dept;
         const group: AllocGroup = map.alloc_group ?? "overhead";
         const pool = ensurePool(poolName, group);
-        for (const m of months) pool.salary[m] += monthAmt(m) * t.share;
-        for (const m of months) pool.bonus[m] += (bonus * t.share) / 6;
+        const monthsRec: Record<string, number> = {};
+        for (const m of months) {
+          const v = monthAmt(m) * t.share;
+          monthsRec[m] = v;
+          pool.salary[m] += v;
+          pool.bonus[m] += (bonus * t.share) / 6;
+        }
+        pool.members.push({
+          personId: p.id, name: p.name, share: t.share,
+          months: monthsRec, bonus: bonus * t.share,
+        });
         continue;
       }
       if (map.treatment === "corporate") {
@@ -417,7 +433,7 @@ export function computeHalf(inp: Inputs): HalfComputation {
       total[m] = acc.salary[m] + acc.bonus[m] + ins[m];
     }
     pools.push({
-      name, group: acc.group,
+      name, group: acc.group, members: acc.members,
       salaryByMonth: acc.salary, bonusByMonth: acc.bonus,
       insuranceByMonth: ins, totalByMonth: total,
     });
