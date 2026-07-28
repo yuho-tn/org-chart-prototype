@@ -29,7 +29,7 @@ import { amountKey, assignKey } from "../lib/laborCost";
 type AmountPatch = { personId: string; term: TermCode; slot: Slot; amount: number };
 type AssignPatch = {
   personId: string; term: TermCode; half: Half;
-  dept?: string | null; kenmu_dept?: string | null; kenmu_rate?: number; tm?: string | null;
+  dept?: string | null; kenmu_dept?: string | null; kenmu_rate?: number; tm?: string | null; kenmu_tm?: string | null;
 };
 
 type UndoEntry = {
@@ -128,6 +128,7 @@ async function flushQueues(set: (p: Partial<State>) => void, get: () => State) {
         kenmu_dept: a.kenmu_dept,
         kenmu_rate: a.kenmu_rate,
         tm: a.tm,
+        kenmu_tm: a.kenmu_tm,
       }));
       const { error } = await supabase
         .from("labor_assignments")
@@ -340,7 +341,7 @@ export const useLaborCostStore = create<State>((set, get) => ({
       const prev: LaborAssignmentRow =
         assignments[key] ?? {
           person_id: e.personId, term: e.term, half: e.half,
-          dept: null, kenmu_dept: null, kenmu_rate: 0, tm: null,
+          dept: null, kenmu_dept: null, kenmu_rate: 0, tm: null, kenmu_tm: null,
         };
       beforeRows.push(prev);
       afterRows.push({
@@ -349,6 +350,7 @@ export const useLaborCostStore = create<State>((set, get) => ({
         kenmu_dept: e.kenmu_dept !== undefined ? e.kenmu_dept : prev.kenmu_dept,
         kenmu_rate: e.kenmu_rate !== undefined ? e.kenmu_rate : prev.kenmu_rate,
         tm: e.tm !== undefined ? e.tm : prev.tm,
+        kenmu_tm: e.kenmu_tm !== undefined ? e.kenmu_tm : prev.kenmu_tm,
       });
     }
     applyAssignsRaw(set as never, get, afterRows);

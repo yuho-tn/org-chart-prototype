@@ -56,8 +56,12 @@ function parseMasterTm(
   const d = dept ?? "";
   if (/広告/.test(d)) return "広告TM";
   if (/AIO/.test(d)) return "AIO TM";
-  if (/BAA/.test(d)) return "BAA Unit";
-  if (/AX/.test(d)) return "AXコンサルUnit";
+  if (/LINE/.test(d)) return "AIO TM"; // LINEはAIOに吸収（TM区分は廃止）
+  if (/Instagram/i.test(d)) return "Instagram TM";
+  if (/デザイン/.test(d)) return "デザインTM";
+  if (/エンジニア/.test(d)) return "エンジニアTM";
+  if (/BAA/.test(d)) return "BAA TM";
+  if (/AX/.test(d)) return "AXコンサルTM";
   const p = pos ?? "";
   if (/代表取締役/.test(p)) return "代表取締役";
   if (/執行役員/.test(p)) return "執行役員";
@@ -128,12 +132,20 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
     const div = divByDept.get(dept) ?? dept;
     return tmNamesByDiv.get(div) ?? [];
   };
+  // 兼務先TMは兼務先DIVのTMだけに絞る（所属側と同じ考え方）。
+  const kenmuTmOptionsFor = (h: Half) => (row: GridRow): string[] => {
+    const kdept = row.cells[`${h}:kenmu`];
+    if (typeof kdept !== "string" || !kdept) return [];
+    const div = divByDept.get(kdept) ?? kdept;
+    return tmNamesByDiv.get(div) ?? [];
+  };
 
   const columns: GridColumn[] = useMemo(() => {
     const half = (h: Half, label: string, amountCols: { key: Slot; title: string }[]): GridColumn[] => [
       { key: `${h}:dept`, title: `${h === "H1" ? "上期" : "下期"}所属`, width: 130, type: "select", group: label, options: deptOptions },
       { key: `${h}:tm`, title: "TM", width: 118, type: "select", group: label, optionsFor: tmOptionsFor(h) },
       { key: `${h}:kenmu`, title: "兼務先", width: 120, type: "select", group: label, options: deptOptions },
+      { key: `${h}:kenmu_tm`, title: "兼務先TM", width: 118, type: "select", group: label, optionsFor: kenmuTmOptionsFor(h) },
       { key: `${h}:rate`, title: "兼務率", width: 64, type: "percent", group: label },
       ...amountCols.map((c): GridColumn => ({
         key: c.key, title: c.title, width: 72, type: "number", group: label,
@@ -183,10 +195,12 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         "H1:dept": a1?.dept ?? null,
         "H1:tm": a1?.tm ?? null,
         "H1:kenmu": a1?.kenmu_dept ?? null,
+        "H1:kenmu_tm": a1?.kenmu_tm ?? null,
         "H1:rate": a1?.kenmu_rate ? a1.kenmu_rate : null,
         "H2:dept": a2?.dept ?? null,
         "H2:tm": a2?.tm ?? null,
         "H2:kenmu": a2?.kenmu_dept ?? null,
+        "H2:kenmu_tm": a2?.kenmu_tm ?? null,
         "H2:rate": a2?.kenmu_rate ? a2.kenmu_rate : null,
       };
       for (const c of H1_AMOUNT_COLS) {
@@ -262,7 +276,19 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         assignEdits.push(patch);
       }
       else if (field === "tm") assignEdits.push({ personId: e.rowId, term, half, tm: e.value == null ? null : String(e.value) });
-      else if (field === "kenmu") assignEdits.push({ personId: e.rowId, term, half, kenmu_dept: e.value == null ? null : String(e.value) });
+      else if (field === "kenmu") {
+        const newKenmu = e.value == null ? null : String(e.value);
+        const patch: Parameters<typeof applyAssignEdits>[0][number] = { personId: e.rowId, term, half, kenmu_dept: newKenmu };
+        // 兼務先変更で旧兼務先TMが新兼務先DIVに属さなくなる場合は同編集内でクリア。
+        const curKtm = assignments[assignKey(e.rowId, term, half)]?.kenmu_tm ?? null;
+        if (curKtm) {
+          const newDiv = newKenmu ? (divByDept.get(newKenmu) ?? newKenmu) : null;
+          const allowed = newDiv ? tmNamesByDiv.get(newDiv) ?? [] : [];
+          if (!allowed.includes(curKtm)) patch.kenmu_tm = null;
+        }
+        assignEdits.push(patch);
+      }
+      else if (field === "kenmu_tm") assignEdits.push({ personId: e.rowId, term, half, kenmu_tm: e.value == null ? null : String(e.value) });
       else if (field === "rate") assignEdits.push({ personId: e.rowId, term, half, kenmu_rate: e.value == null ? 0 : Number(e.value) || 0 });
     }
     if (amountEdits.length > 0) applyAmountEdits(amountEdits, label);
@@ -419,7 +445,8 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
       <p className="labor-hint">
         名前・社員番号・入社日・マスター所属・マスターTM（参考）は従業員マスター（社員番号で突合）から表示。
         所属（DIV）とTMは「マスター所属／マスターTM」を見ながらプルダウンで確定します。
-        TMの選択肢はその行の所属DIVのTMだけに絞られます（TMなし設計のDIV＝SNS/制作/HR等はTM列が空＝DIV直計上）。
+        TM・兼務先TMの選択肢は、その行の所属DIV／兼務先DIVのTMだけに絞られます
+        （TMなし設計のDIV＝HR/開発/コーポ/フロント等はTM列が空＝DIV直計上）。
         コピー/ペースト（⌘C/⌘V）・⌘Z 取り消し・⌘D フィルダウン・Delete クリア。金額は万円。
         兼務率は所属から差し引く率（50% → 所属50%/兼務先50%。兼務先が
         空欄の場合、その分はどの部署にも計上しない＝元シート仕様）。

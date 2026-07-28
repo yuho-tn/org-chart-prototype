@@ -62,6 +62,8 @@ export type LaborAssignmentRow = {
   kenmu_dept: string | null;
   kenmu_rate: number;
   tm: string | null;
+  /** 兼務先のTM（0042）。null=兼務先DIV直計上。所属側のtmとは独立。 */
+  kenmu_tm: string | null;
 };
 
 export type LaborAmountRow = {
@@ -300,13 +302,13 @@ export function computeHalf(inp: Inputs): HalfComputation {
     const hasAny = bonus !== 0 || months.some((m) => monthAmt(m) !== 0);
     if (!hasAny) continue;
 
-    // 配分先: 所属(1-rate) + 兼務先(rate)。
+    // 配分先: 所属(1-rate) + 兼務先(rate)。所属側は tm、兼務先側は kenmu_tm を使う（0042）。
     // 元シート仕様: 兼務先が空欄でも兼務率>0なら所属から差し引く
     // （その分はSHO-SAN人件費の外＝どこにも計上しない。例: 丹野30%）。
-    const targets: { dept: string; share: number }[] = [];
+    const targets: { dept: string; tm: string | null; share: number }[] = [];
     const rate = Math.min(Math.max(a.kenmu_rate ?? 0, 0), 1);
-    if (a.dept) targets.push({ dept: a.dept, share: 1 - rate });
-    if (a.kenmu_dept && rate > 0) targets.push({ dept: a.kenmu_dept, share: rate });
+    if (a.dept) targets.push({ dept: a.dept, tm: a.tm ?? null, share: 1 - rate });
+    if (a.kenmu_dept && rate > 0) targets.push({ dept: a.kenmu_dept, tm: a.kenmu_tm ?? null, share: rate });
     if (targets.length === 0) continue;
 
     for (const t of targets) {
@@ -327,8 +329,8 @@ export function computeHalf(inp: Inputs): HalfComputation {
       }
       // product
       const div = map.div ?? t.dept;
-      // TM: 兼務先計上でも本人のTM割当を使う（同一人物のTMは1つ）
-      const assignedTm = a.tm ?? null;
+      // TM: 所属側は tm、兼務先側は kenmu_tm（各ターゲットが自分のTMを持つ・0042）
+      const assignedTm = t.tm ?? null;
       // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）
       const tmDiv = assignedTm ? tmDivOf.get(assignedTm) : undefined;
       const targetDiv = tmDiv ?? div;
