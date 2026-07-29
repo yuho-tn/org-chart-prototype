@@ -7,6 +7,24 @@ import { computeHalf, fmtMan } from "../../lib/laborCost";
 /** personId → 正式名称（個人別シートと同じ規則: マスターの display_name || full_name、無ければ labor_people.name）。 */
 type NameResolver = (personId: string, fallback: string) => string;
 
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+/** メンバー行の左に出す 夏ボ/冬ボ チップ（0 は非表示）。 */
+function BonusChip({ label, value }: { label: string; value: number }) {
+  if (!value) return null;
+  return (
+    <span className="labor-bonuschip" title={`${label}（半期ボーナス）`}>
+      {label} {round1(value).toLocaleString()}
+    </span>
+  );
+}
+
+/** 「ボーナス按分値」行のラベル。各人のボーナス合計 Σ を明示し ÷6 の式を見せる。 */
+function bonusRowLabel(label: string, members: { bonus: number }[]): string {
+  const sum = round1(members.reduce((s, m) => s + m.bonus, 0));
+  return `ボーナス按分値（${label}計 Σ${sum.toLocaleString()}万 ÷6）`;
+}
+
 /**
  * DIV別 月次按分ビュー（読み取り専用・自動計算）。
  * - メンバー月次給与（兼務率で分割計上）
@@ -75,6 +93,8 @@ export function LaborDivTab({ term }: { term: TermCode }) {
   );
 
   const corpTotal = sum(comp.corporateByMonth);
+  // 上期=夏ボ / 下期=冬ボ。メンバー行のボーナス表示ラベルに使う。
+  const bonusLabel = half === "H1" ? "夏ボ" : "冬ボ";
 
   const groupLabel = (g: "front" | "overhead") =>
     g === "front" ? "フロントDIV" : "HR/開発/コーポ・その他";
@@ -135,12 +155,12 @@ export function LaborDivTab({ term }: { term: TermCode }) {
         </thead>
         <tbody>
           {comp.divs.map((d) => (
-            <DivBlock key={d.div} d={d} MonthCells={MonthCells} nameOf={nameOf} />
+            <DivBlock key={d.div} d={d} MonthCells={MonthCells} nameOf={nameOf} bonusLabel={bonusLabel} />
           ))}
 
           {/* 按分原資プール（フロント → 間接の順・group付き） */}
           {comp.pools.map((p) => (
-            <PoolBlock key={p.name} p={p} groupLabel={groupLabel} MonthCells={MonthCells} nameOf={nameOf} />
+            <PoolBlock key={p.name} p={p} groupLabel={groupLabel} MonthCells={MonthCells} nameOf={nameOf} bonusLabel={bonusLabel} />
           ))}
 
           {/* コーポレート treatment（5期は無し・後方互換で非0時のみ表示） */}
@@ -179,10 +199,12 @@ function DivBlock({
   d,
   MonthCells,
   nameOf,
+  bonusLabel,
 }: {
   d: HalfComputation["divs"][number];
   MonthCells: (p: { rec: Record<string, number>; strong?: boolean }) => ReactElement;
   nameOf: NameResolver;
+  bonusLabel: string;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -196,7 +218,7 @@ function DivBlock({
       {open && (
         <>
           {d.tms.map((t) => (
-            <TmBlock key={t.tm} t={t} MonthCells={MonthCells} nameOf={nameOf} />
+            <TmBlock key={t.tm} t={t} MonthCells={MonthCells} nameOf={nameOf} bonusLabel={bonusLabel} />
           ))}
           <tr className="labor-sub labor-line">
             <td className="labor-indent">プロダクト計（スタッフ人件費）</td>
@@ -221,11 +243,13 @@ function PoolBlock({
   groupLabel,
   MonthCells,
   nameOf,
+  bonusLabel,
 }: {
   p: HalfComputation["pools"][number];
   groupLabel: (g: "front" | "overhead") => string;
   MonthCells: (q: { rec: Record<string, number>; strong?: boolean }) => ReactElement;
   nameOf: NameResolver;
+  bonusLabel: string;
 }) {
   const [open, setOpen] = useState(false);
   const monthKeys = Object.keys(p.salaryByMonth);
@@ -244,6 +268,7 @@ function PoolBlock({
           {p.members.map((m, i) => (
             <tr key={m.personId + i} className="labor-member">
               <td className="labor-indent2">
+                <BonusChip label={bonusLabel} value={m.bonus} />
                 {nameOf(m.personId, m.name)}
                 {m.share < 1 && (
                   <span className="labor-share">×{Math.round(m.share * 100)}%</span>
@@ -264,7 +289,7 @@ function PoolBlock({
             <MonthCells rec={p.salaryByMonth} />
           </tr>
           <tr className="labor-sub">
-            <td className="labor-indent">ボーナス按分値</td>
+            <td className="labor-indent">{bonusRowLabel(bonusLabel, p.members)}</td>
             <MonthCells rec={p.bonusByMonth} />
           </tr>
           <tr className="labor-sub">
@@ -281,10 +306,12 @@ function TmBlock({
   t,
   MonthCells,
   nameOf,
+  bonusLabel,
 }: {
   t: HalfComputation["divs"][number]["tms"][number];
   MonthCells: (p: { rec: Record<string, number>; strong?: boolean }) => ReactElement;
   nameOf: NameResolver;
+  bonusLabel: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -301,6 +328,7 @@ function TmBlock({
           {t.members.map((m, i) => (
             <tr key={m.personId + i} className="labor-member">
               <td className="labor-indent2">
+                <BonusChip label={bonusLabel} value={m.bonus} />
                 {nameOf(m.personId, m.name)}
                 {m.share < 1 && (
                   <span className="labor-share">×{Math.round(m.share * 100)}%</span>
@@ -317,7 +345,7 @@ function TmBlock({
             </tr>
           ))}
           <tr className="labor-member labor-calc">
-            <td className="labor-indent2">ボーナス按分値（Σボーナス÷6）</td>
+            <td className="labor-indent2">{bonusRowLabel(bonusLabel, t.members)}</td>
             {Object.keys(t.bonusByMonth).map((mo) => (
               <td key={mo} className="labor-num">{Math.round(t.bonusByMonth[mo] * 10) / 10}</td>
             ))}

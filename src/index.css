@@ -8970,6 +8970,19 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
 .labor-clickable:hover td { filter: brightness(0.97); }
 .labor-mcount { color: #8a949e; font-weight: 400; font-size: 11px; }
 .labor-share { color: #b35900; margin-left: 4px; font-size: 11px; }
+/* メンバー行の左に出す 夏ボ/冬ボ チップ（半期ボーナス額の可視化） */
+.labor-bonuschip {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: #fbeee0;
+  color: #a85a1a;
+  border: 1px solid #f0d6b8;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .labor-halfswitch { display: flex; gap: 6px; }
 
 /* ── ローデータ ── */
