@@ -6,6 +6,8 @@ import { LaborSheetTab } from "./LaborSheetTab";
 import { LaborDivTab } from "./LaborDivTab";
 import { LaborRawTab } from "./LaborRawTab";
 import { LaborSettingsTab } from "./LaborSettingsTab";
+import { LaborAccessTab } from "./LaborAccessTab";
+import { useLaborAccessStore } from "../../store/useLaborAccessStore";
 import type { TermCode } from "../../lib/laborCost";
 
 /**
@@ -17,7 +19,7 @@ import type { TermCode } from "../../lib/laborCost";
  *   データ自体も全テーブル RLS で許可リスト外には返らない（二重防御）。
  */
 
-type TabKey = "sheet" | "div" | "raw" | "settings";
+type TabKey = "sheet" | "div" | "raw" | "settings" | "access";
 
 export function LaborPage() {
   const accessChecked = useLaborCostStore((s) => s.accessChecked);
@@ -32,6 +34,8 @@ export function LaborPage() {
   const flushNow = useLaborCostStore((s) => s.flushNow);
   const refreshEmployees = useEmployeesStore((s) => s.refresh);
   const session = useAuthStore((s) => s.session);
+  const isOwner = useLaborAccessStore((s) => s.isOwner);
+  const checkOwner = useLaborAccessStore((s) => s.checkOwner);
 
   const [tab, setTab] = useState<TabKey>("sheet");
   const [term, setTerm] = useState<TermCode>("5");
@@ -47,8 +51,9 @@ export function LaborPage() {
     if (accessChecked && canAccess) {
       void load();
       void refreshEmployees({ silent: true });
+      void checkOwner();
     }
-  }, [accessChecked, canAccess, load, refreshEmployees]);
+  }, [accessChecked, canAccess, load, refreshEmployees, checkOwner]);
 
   // 離脱前に未保存分をフラッシュ
   useEffect(() => {
@@ -90,6 +95,9 @@ export function LaborPage() {
           <button className={tab === "div" ? "labor-tab labor-tab--on" : "labor-tab"} onClick={() => setTab("div")}>DIV按分</button>
           <button className={tab === "raw" ? "labor-tab labor-tab--on" : "labor-tab"} onClick={() => setTab("raw")}>ローデータ出力</button>
           <button className={tab === "settings" ? "labor-tab labor-tab--on" : "labor-tab"} onClick={() => setTab("settings")}>設定</button>
+          {isOwner && (
+            <button className={tab === "access" ? "labor-tab labor-tab--on" : "labor-tab"} onClick={() => setTab("access")}>アクセス管理</button>
+          )}
         </nav>
         <div className="labor-terms">
           {terms.map((t) => {
@@ -122,6 +130,7 @@ export function LaborPage() {
           {tab === "div" && <LaborDivTab term="5" />}
           {tab === "raw" && <LaborRawTab term="5" />}
           {tab === "settings" && <LaborSettingsTab term="5" />}
+          {tab === "access" && isOwner && <LaborAccessTab />}
         </main>
       )}
     </div>
