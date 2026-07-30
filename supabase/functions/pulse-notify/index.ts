@@ -84,6 +84,16 @@ Deno.serve(async (req: Request) => {
     if (!canManage) return json({ error: "permission denied" }, 403);
   }
 
+  // 配信チャネルが1つも設定されていなければ、サイレントno-opにせず即エラーで
+  // 呼び出し元（管理画面）に気づかせる（設計書 §2 no_channel_configured）。
+  // ※認可チェックの後に置く＝未認可の呼び出し元へ設定状態を漏らさない。
+  if (!SLACK_BOT_TOKEN && !RESEND_API_KEY) {
+    return json(
+      { error: "no_channel_configured", detail: "SLACK_BOT_TOKEN / RESEND_API_KEY のいずれも未設定です" },
+      400,
+    );
+  }
+
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
   const { data: cycle, error: cErr } = await admin
