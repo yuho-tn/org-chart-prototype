@@ -1,0 +1,53 @@
+/* ── パルス 対応・面談ログ（P4-③） ── */
+.pcare__form { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px; align-items: start; margin-bottom: 18px; }
+.pcare__kind { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: 13px; background: var(--panel); }
+.pcare__note { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: 13px; resize: vertical; font-family: inherit; }
+.pcare__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pcare__item { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.pcare__item--alert { background: var(--bg-soft); }
+.pcare__meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pcare__badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--navy-100, #dce6f5); color: var(--primary); }
+.pcare__badge--alert { background: #fdecec; color: #c0392b; }
+.pcare__who { font-size: 12px; font-weight: 600; color: var(--text-strong); }
+.pcare__at { font-size: 11px; color: var(--text-subtle); }
+.pcare__status { font-size: 11px; font-weight: 700; color: var(--text-subtle); margin-left: auto; }
+.pcare__status.is-open { color: #c0392b; }
+.pcare__del { appearance: none; background: none; border: none; color: var(--text-subtle); font-size: 14px; cursor: pointer; margin-left: auto; padding: 0 4px; }
+.pcare__del:hover { color: #c0392b; }
+.pcare__body { margin: 6px 0 0; font-size: 13px; line-height: 1.7; color: var(--text-strong); white-space: pre-wrap; }
+.pcare__action { color: var(--text-muted); }
+@media (max-width: 720px) {
+  .pcare__form { grid-template-columns: 1fr; }
+}
+
+/* ── パルス アラート一覧＋対応管理 ── */
+.palert__summary { font-size: 13px; color: var(--text-muted); font-weight: 600; margin: 0 0 12px; }
+.palert__list { display: flex; flex-direction: column; gap: 14px; }
+.palert__card { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--primary); border-radius: var(--radius-lg); padding: 16px 18px; }
+.palert__card.is-closed { border-left-color: var(--border); opacity: 0.72; }
+.palert__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.palert__who { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.palert__name { font-size: 16px; font-weight: 700; color: var(--text-strong); }
+.palert__dept { font-size: 12px; color: var(--text-muted); }
+.palert__badges { display: flex; gap: 6px; flex-shrink: 0; }
+.palert__type, .palert__status { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.palert__type--absolute { background: #fdecec; color: #c0392b; }
+.palert__type--delta { background: #fff2e0; color: #c76a12; }
+.palert__type--custom { background: var(--bg-soft); color: var(--text-muted); }
+.palert__status--open { background: #fde8e8; color: #c0392b; }
+.palert__status--closed { background: var(--bg-soft); color: var(--text-muted); }
+.palert__reason { font-size: 13px; color: var(--text); margin: 10px 0 14px; }
+.palert__action { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.palert__field { display: flex; flex-direction: column; gap: 4px; }
+.palert__field--wide { grid-column: 1 / -1; }
+.palert__field label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.palert__field select, .palert__field input, .palert__field textarea { font: inherit; font-size: 13px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text-strong); width: 100%; }
+.palert__field textarea { resize: vertical; }
+.palert__buttons { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.palert__updated { font-size: 11px; color: var(--text-muted); }
+
+@media (max-width: 720px) {
+  .palert__action { grid-template-columns: 1fr; }
+}
+
+/* .pdash__toast--error は pulse-shared.css で定義済み（本ページも常にpulse-shared.cssを import する） */

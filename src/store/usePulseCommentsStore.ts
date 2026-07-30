@@ -1,11 +1,15 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { usePulseCyclesStore } from "./usePulseCyclesStore";
 import type { PulseCycleRow, PulseCommentRow } from "../lib/pulse";
 
 /**
  * パルスサーベイ コメント一覧（#/pulse/comments）用ストア。
  * rpc('pulse_list_comments')（admin or pulse_access 保有者・実名/匿名マスク・
  * 小集団 n<5 マスク・scope）を読む。usePulseDashStore の作法を踏襲。
+ *
+ * cycles / selectedPeriod は usePulseCyclesStore（共有・60秒キャッシュ）に委譲する
+ * （ダッシュボード/アラート等と期間選択が同期する）。
  */
 
 function missingError(message: string | undefined): boolean {
@@ -53,22 +57,20 @@ export const usePulseCommentsStore = create<PulseCommentsState>((set, get) => ({
     }
     set({ loading: true, error: null });
 
-    const cyclesRes = await supabase
-      .from("pulse_cycles")
-      .select("*")
-      .order("period", { ascending: false });
+    await usePulseCyclesStore.getState().loadCycles();
+    const cyclesState = usePulseCyclesStore.getState();
 
-    if (cyclesRes.error) {
+    if (cyclesState.error) {
       set({
         loading: false,
         loaded: true,
-        error: missingError(cyclesRes.error.message) ? MISSING_MSG : cyclesRes.error.message,
+        error: missingError(cyclesState.error) ? MISSING_MSG : cyclesState.error,
       });
       return;
     }
 
-    const cycles = (cyclesRes.data ?? []) as PulseCycleRow[];
-    const period = get().selectedPeriod ?? cycles[0]?.period ?? null;
+    const cycles = cyclesState.cycles;
+    const period = cyclesState.selectedPeriod;
     const cycleId = cycleIdOf(cycles, period);
     let comments: PulseCommentRow[] = [];
     if (cycleId) {
@@ -86,6 +88,7 @@ export const usePulseCommentsStore = create<PulseCommentsState>((set, get) => ({
 
   selectPeriod: async (period) => {
     if (!supabase) return;
+    usePulseCyclesStore.getState().selectPeriod(period);
     const cycleId = cycleIdOf(get().cycles, period);
     set({ selectedPeriod: period, loading: true, error: null });
     if (!cycleId) {

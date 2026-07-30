@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import "./pulse-shared.css";
+import "./alerts.css";
 import { usePulseAlertsStore, type ActionInput, type AssigneeOption } from "../../store/usePulseAlertsStore";
 import { PulseSubnav } from "./PulseSubnav";
+import { usePulseToast, PulseToast, type PulseToastKind } from "./usePulseToast";
 import {
   periodLabel,
   ALERT_TYPE_LABEL,
@@ -30,7 +33,7 @@ export function PulseAlertsPage() {
     selectPeriod,
     reevaluate,
   } = usePulseAlertsStore();
-  const [toast, setToast] = useState<string | null>(null);
+  const { toast, showToast, clearToast } = usePulseToast();
 
   useEffect(() => {
     load();
@@ -38,7 +41,10 @@ export function PulseAlertsPage() {
 
   const onReevaluate = async () => {
     const res = await reevaluate();
-    setToast(res.ok ? "アラートを再判定しました" : res.reason ?? "再判定に失敗しました");
+    showToast(
+      res.ok ? "success" : "error",
+      res.ok ? "アラートを再判定しました" : res.reason ?? "再判定に失敗しました",
+    );
   };
 
   const openCount = alerts.filter((a) => a.status === "open").length;
@@ -111,17 +117,22 @@ export function PulseAlertsPage() {
           </p>
           <div className="palert__list">
             {alerts.map((a) => (
-              <AlertCard key={a.alert_id} alert={a} assignees={assignees} onToast={setToast} />
+              // key に status / action.updated_at を含め、reevaluate や他画面からの
+              // 更新でサーバ側データが変わった時にローカルformを確実に再同期する
+              // （旧実装は alert_id 固定keyのため、対応済みデータが古いフォーム値のまま
+              // 表示され続けるズレが起きていた）。
+              <AlertCard
+                key={`${a.alert_id}:${a.status}:${a.action?.updated_at ?? "none"}`}
+                alert={a}
+                assignees={assignees}
+                onToast={showToast}
+              />
             ))}
           </div>
         </>
       )}
 
-      {toast && (
-        <div className="pdash__toast" onClick={() => setToast(null)}>
-          {toast}
-        </div>
-      )}
+      <PulseToast toast={toast} onDismiss={clearToast} />
     </main>
   );
 }
@@ -133,7 +144,7 @@ function AlertCard({
 }: {
   alert: PulseAlertRow;
   assignees: AssigneeOption[];
-  onToast: (m: string) => void;
+  onToast: (kind: PulseToastKind, m: string) => void;
 }) {
   const setStatus = usePulseAlertsStore((s) => s.setStatus);
   const saveAction = usePulseAlertsStore((s) => s.saveAction);
@@ -151,12 +162,15 @@ function AlertCard({
 
   const onSave = async () => {
     const res = await saveAction(alert.alert_id, form);
-    onToast(res.ok ? "対応内容を保存しました" : res.reason ?? "保存に失敗しました");
+    onToast(res.ok ? "success" : "error", res.ok ? "対応内容を保存しました" : res.reason ?? "保存に失敗しました");
   };
 
   const onToggleStatus = async () => {
     const res = await setStatus(alert.alert_id, closed ? "open" : "closed");
-    onToast(res.ok ? (closed ? "再オープンしました" : "クローズしました") : res.reason ?? "更新に失敗しました");
+    onToast(
+      res.ok ? "success" : "error",
+      res.ok ? (closed ? "再オープンしました" : "クローズしました") : res.reason ?? "更新に失敗しました",
+    );
   };
 
   return (

@@ -26,6 +26,18 @@ const MISSING_MSG =
 /** 回答対象社員の状態。null=未判定 / "not_target"=対象外 / "eligible"=対象。 */
 export type Eligibility = "unknown" | "not_target" | "eligible";
 
+/**
+ * rpc('pulse_my_history') の1点（設計書 v2 §2-5）。ログイン本人の回答履歴を
+ * period 昇順で返す。サンクス画面の「マイパルス」専用（他人のデータは入らない）。
+ */
+export type PulseMyHistoryPoint = {
+  period: string;
+  overall: number | null;
+  by_category: Record<string, number> | null;
+  nps: number | null;
+  submitted_at: string | null;
+};
+
 type PulseState = {
   loaded: boolean;
   loading: boolean;
@@ -46,7 +58,13 @@ type PulseState = {
   /** 送信完了フラグ（サンクスビュー表示用）。 */
   submitted: boolean;
 
+  /** マイパルス（本人の回答履歴・period 昇順）。未取得/履歴なしは空配列。 */
+  history: PulseMyHistoryPoint[];
+  historyLoaded: boolean;
+  historyLoading: boolean;
+
   loadSurvey: () => Promise<void>;
+  loadMyHistory: () => Promise<void>;
   setScore: (questionId: string, score: number) => void;
   setValueText: (questionId: string, value: string) => void;
   setComment: (comment: string) => void;
@@ -65,6 +83,9 @@ export const usePulseStore = create<PulseState>((set, get) => ({
   comment: "",
   submitting: false,
   submitted: false,
+  history: [],
+  historyLoaded: false,
+  historyLoading: false,
 
   loadSurvey: async () => {
     if (!isSupabaseConfigured || !supabase) {
@@ -139,6 +160,22 @@ export const usePulseStore = create<PulseState>((set, get) => ({
     });
   },
 
+  /**
+   * マイパルス取得（rpc: pulse_my_history）。本人データのみを返す RPC なので
+   * 権限ゲートは不要。migration 未適用・対象外社員（戻りが null）の場合は
+   * 空配列にして黙って非表示にする — 回答体験を邪魔しないため。
+   */
+  loadMyHistory: async () => {
+    if (!supabase || get().historyLoading) return;
+    set({ historyLoading: true });
+    const { data, error } = await supabase.rpc("pulse_my_history");
+    set({
+      historyLoading: false,
+      historyLoaded: true,
+      history: !error && Array.isArray(data) ? (data as PulseMyHistoryPoint[]) : [],
+    });
+  },
+
   setScore: (questionId, score) =>
     set((s) => ({
       answers: {
@@ -188,7 +225,8 @@ export const usePulseStore = create<PulseState>((set, get) => ({
         reason: missingTableError(error.message) ? MISSING_MSG : error.message,
       };
     }
-    set({ submitted: true, alreadyAnswered: true });
+    // historyLoaded を落として、サンクス画面のマイパルスに今回の回答を反映させる。
+    set({ submitted: true, alreadyAnswered: true, historyLoaded: false });
     return { ok: true };
   },
 }));

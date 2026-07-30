@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   CloudSun,
   Award,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { useUiStore, type Route } from "../store/useUiStore";
@@ -16,6 +17,7 @@ import { useAnnouncementsStore } from "../store/useAnnouncementsStore";
 import {
   canAccessPayroll,
   canManagePermissions,
+  canAccessPulse,
   type AppUserRole,
 } from "../lib/supabase";
 import { formatPeriodHeading } from "../lib/announcement";
@@ -100,6 +102,14 @@ const CARDS: FeatureCard[] = [
     desc: "今月のコンディションに回答（対象者）",
     Icon: CloudSun,
     route: { name: "survey" },
+  },
+  {
+    key: "pulse_admin",
+    label: "パルス管理",
+    desc: "結果ダッシュボード・サイクル管理",
+    Icon: Activity,
+    route: { name: "pulse" },
+    visible: (role) => canAccessPulse(role),
   },
 ];
 

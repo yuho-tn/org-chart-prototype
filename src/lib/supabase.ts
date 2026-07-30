@@ -38,6 +38,13 @@ export function canManagePermissions(role: AppUserRole | undefined | null): bool
   return role === "master" || role === "privileged_admin";
 }
 
+/** Roles that may access the パルス管理（#/pulse）ダッシュボード。
+ *  master / privileged_admin のみ。以前は canManagePermissions を目的外流用していたが、
+ *  権限管理とパルス管理は別概念のため分離した（v2設計書 §1）。 */
+export function canAccessPulse(role: AppUserRole | undefined | null): boolean {
+  return role === "master" || role === "privileged_admin";
+}
+
 export type AppUserRow = {
   email: string;
   display_name: string | null;

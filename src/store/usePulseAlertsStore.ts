@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { usePulseCyclesStore } from "./usePulseCyclesStore";
 import type { PulseCycleRow, PulseAlertRow, PulseActionState } from "../lib/pulse";
 
 /**
@@ -8,6 +9,9 @@ import type { PulseCycleRow, PulseAlertRow, PulseActionState } from "../lib/puls
  * 対応レコードは pulse_alert_actions への直書き（0021 の insert/update RLS）で
  * 1アラート1件 upsert。status 切替は rpc('pulse_set_alert_status')。
  * 再判定は rpc('pulse_evaluate_alerts')。usePulseDashStore の作法を踏襲。
+ *
+ * cycles / selectedPeriod は usePulseCyclesStore（共有・60秒キャッシュ）に委譲する
+ * （ダッシュボード/コメント等と期間選択が同期する）。
  */
 
 type Result = { ok: boolean; reason?: string };
@@ -74,8 +78,8 @@ export const usePulseAlertsStore = create<PulseAlertsState>((set, get) => ({
     }
     set({ loading: true, error: null });
 
-    const [cyclesRes, empRes] = await Promise.all([
-      supabase.from("pulse_cycles").select("*").order("period", { ascending: false }),
+    const [, empRes] = await Promise.all([
+      usePulseCyclesStore.getState().loadCycles(),
       supabase
         .from("employees")
         .select("employee_number, display_name, full_name")
@@ -83,16 +87,17 @@ export const usePulseAlertsStore = create<PulseAlertsState>((set, get) => ({
         .order("employee_number", { ascending: true }),
     ]);
 
-    if (cyclesRes.error) {
+    const cyclesState = usePulseCyclesStore.getState();
+    if (cyclesState.error) {
       set({
         loading: false,
         loaded: true,
-        error: missingError(cyclesRes.error.message) ? MISSING_MSG : cyclesRes.error.message,
+        error: missingError(cyclesState.error) ? MISSING_MSG : cyclesState.error,
       });
       return;
     }
 
-    const cycles = (cyclesRes.data ?? []) as PulseCycleRow[];
+    const cycles = cyclesState.cycles;
     const assignees = ((empRes.data ?? []) as {
       employee_number: string;
       display_name: string | null;
@@ -102,7 +107,7 @@ export const usePulseAlertsStore = create<PulseAlertsState>((set, get) => ({
       name: e.display_name ?? e.full_name ?? e.employee_number,
     }));
 
-    const period = get().selectedPeriod ?? cycles[0]?.period ?? null;
+    const period = cyclesState.selectedPeriod;
     const cycleId = cycleIdOf(cycles, period);
     let alerts: PulseAlertRow[] = [];
     if (cycleId) {
@@ -128,6 +133,7 @@ export const usePulseAlertsStore = create<PulseAlertsState>((set, get) => ({
 
   selectPeriod: async (period) => {
     if (!supabase) return;
+    usePulseCyclesStore.getState().selectPeriod(period);
     const cycleId = cycleIdOf(get().cycles, period);
     set({ selectedPeriod: period, loading: true, error: null });
     if (!cycleId) {

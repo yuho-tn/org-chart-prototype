@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
+import "./pulse-shared.css";
+import "./members.css";
+import "./alerts.css"; // .pcare__ （対応・面談ログ）を本ページのメンバー詳細でも再利用しているため
 import { usePulseMembersStore } from "../../store/usePulseMembersStore";
 import { useUiStore } from "../../store/useUiStore";
 import { PulseSubnav } from "./PulseSubnav";
+import { usePulseToast, PulseToast } from "./usePulseToast";
 import { supabase } from "../../lib/supabase";
 import {
   periodLabel,
@@ -100,11 +104,9 @@ export function PulseMembersPage() {
             </thead>
             <tbody>
               {rows.map((m) => (
-                <MemberRow
-                  key={m.employee_number}
-                  m={m}
-                  onOpen={() => navigate({ name: "pulse_member", num: m.employee_number })}
-                />
+                // navigate は zustand セレクタで参照が安定しているため、行ごとに新規arrow関数を
+                // 渡さず employee_number をそのまま渡す。MemberRow/MiniSpark の memo 化が効くようにする。
+                <MemberRow key={m.employee_number} m={m} navigate={navigate} />
               ))}
               {rows.length === 0 && (
                 <tr>
@@ -128,13 +130,25 @@ const TREND_GLYPH: Record<PulseTrend, { glyph: string; label: string }> = {
   none: { glyph: "—", label: "データ不足" },
 };
 
-function MemberRow({ m, onOpen }: { m: PulseMemberSummary; onOpen: () => void }) {
+type NavigateFn = (route: { name: "pulse_member"; num: string }) => void;
+
+/** 一覧行（P4-⑦: React.memo 化・行数が多いメンバー一覧の再描画コストを抑える）。 */
+const MemberRow = memo(function MemberRow({
+  m,
+  navigate,
+}: {
+  m: PulseMemberSummary;
+  navigate: NavigateFn;
+}) {
   const latest = [...m.history].reverse().find((h) => h.overall != null);
   const weather = weatherForScore(latest?.overall);
   const trend = memberTrend(m.history);
   const decline = isConsecutiveDecline(m.history);
   return (
-    <tr className="pmem__row" onClick={onOpen}>
+    <tr
+      className="pmem__row"
+      onClick={() => navigate({ name: "pulse_member", num: m.employee_number })}
+    >
       <td>
         <span className="pmem__name">{m.name}</span>
         <span className="pmem__emp">{m.employee_number}</span>
@@ -161,10 +175,10 @@ function MemberRow({ m, onOpen }: { m: PulseMemberSummary; onOpen: () => void })
       </td>
     </tr>
   );
-}
+});
 
-/** 一覧行内の小型スパークライン（履歴 overall 1..5）。 */
-function MiniSpark({ history }: { history: { overall: number | null }[] }) {
+/** 一覧行内の小型スパークライン（履歴 overall 1..5）。React.memo 化：history参照が同じなら再描画しない。 */
+const MiniSpark = memo(function MiniSpark({ history }: { history: { overall: number | null }[] }) {
   const pts = history.filter((h) => h.overall != null) as { overall: number }[];
   if (pts.length < 2) return null;
   const W = 96, H = 24, pad = 3;
@@ -176,7 +190,7 @@ function MiniSpark({ history }: { history: { overall: number | null }[] }) {
       <polyline points={line} fill="none" className="pmem__spark-line" />
     </svg>
   );
-}
+});
 
 /**
  * P4-①: 個人詳細（#/pulse/members/:emp）。時系列チャート・カテゴリ推移・
@@ -199,7 +213,7 @@ export function PulseMemberDetailPage({ employeeNumber }: { employeeNumber: stri
   } = usePulseMembersStore();
   const navigate = useUiStore((s) => s.navigate);
   const [name, setName] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const { toast, showToast, clearToast } = usePulseToast();
 
   useEffect(() => {
     loadPerson(employeeNumber);
@@ -293,24 +307,20 @@ export function PulseMemberDetailPage({ employeeNumber }: { employeeNumber: stri
               saving={careSaving}
               onAdd={async (kind, note) => {
                 const res = await addCareLog(employeeNumber, kind, note);
-                setToast(res.ok ? "対応ログを記録しました" : res.reason ?? "記録に失敗しました");
+                showToast(res.ok ? "success" : "error", res.ok ? "対応ログを記録しました" : res.reason ?? "記録に失敗しました");
                 return res.ok;
               }}
               onDelete={async (id) => {
                 if (!window.confirm("この対応ログを削除しますか？")) return;
                 const res = await deleteCareLog(employeeNumber, id);
-                if (!res.ok) setToast(res.reason ?? "削除に失敗しました");
+                if (!res.ok) showToast("error", res.reason ?? "削除に失敗しました");
               }}
             />
           )}
         </>
       )}
 
-      {toast && (
-        <div className="pdash__toast" onClick={() => setToast(null)}>
-          {toast}
-        </div>
-      )}
+      <PulseToast toast={toast} onDismiss={clearToast} />
     </main>
   );
 }

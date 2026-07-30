@@ -28,7 +28,12 @@ import {
   type SystemKey,
 } from "../store/useUiStore";
 import { useAuthStore, isUserManager } from "../store/useAuthStore";
-import { canManagePermissions, canAccessPayroll, type AppUserRole } from "../lib/supabase";
+import {
+  canManagePermissions,
+  canAccessPayroll,
+  canAccessPulse,
+  type AppUserRole,
+} from "../lib/supabase";
 
 /**
  * P1 IA再設計:
@@ -83,7 +88,7 @@ export function GlobalHeader() {
   const role = currentUser?.role;
 
   const tabs = TABS_BY_SYSTEM[currentSystem].filter(
-    (t) => t.id !== "pulse" || canManagePermissions(role),
+    (t) => t.id !== "pulse" || canAccessPulse(role),
   );
 
   const [menuOpen, setMenuOpen] = useState(false);
