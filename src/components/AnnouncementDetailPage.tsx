@@ -127,6 +127,11 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
   const [draftTitle, setDraftTitle] = useState("");
   const [pendingDelete, setPendingDelete] = useState(false);
   const [pendingRevoke, setPendingRevoke] = useState(false);
+  // 未公開のまま「共有リンクを発行」を押した時の「公開して発行しますか？」／
+  // 公開中の発令を下書きに戻す時の確認。
+  const [pendingPublishShare, setPendingPublishShare] = useState(false);
+  const [pendingUnpublish, setPendingUnpublish] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [saving, setSaving] = useState(false);
   // Live drag source (edit mode). Not in React state per-move to avoid
   // re-rendering on every dragover — only set on start/end.
@@ -246,6 +251,48 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
     await copyText(shareUrl, "社内リンクをコピーしました（閲覧にはログインが必要）");
   }
 
+  // ── 公開（is_published）トグル ────────────────────────────────────
+  // 発令は作成時 is_published=false（下書き）で入る。公開しないと
+  //   ・ホームの「最新の人事発令」に出ない
+  //   ・共有リンク（announcement_by_share_token RPC が published のみ返す）が使えない
+  // ため、この画面から公開状態を切り替えられるようにしている。
+  async function setPublished(next: boolean): Promise<boolean> {
+    if (!row) return false;
+    setPublishing(true);
+    const ok = await update(row.id, { is_published: next });
+    setPublishing(false);
+    if (!ok) {
+      const detail = useAnnouncementsStore.getState().error;
+      setToast({
+        kind: "error",
+        message: detail ?? (next ? "公開に失敗しました" : "非公開に戻せませんでした"),
+      });
+      return false;
+    }
+    // 関数形式で更新する（公開→共有リンク発行のように連続で更新する経路で、
+    // クロージャが掴んだ古い row を書き戻して公開状態を巻き戻さないため）。
+    setRow((r) => (r ? { ...r, is_published: next } : r));
+    return true;
+  }
+
+  async function publishNow() {
+    if (await setPublished(true)) {
+      setToast({ kind: "info", message: "公開しました（ホームの最新発令に表示されます）" });
+    }
+  }
+
+  async function confirmUnpublish() {
+    setPendingUnpublish(false);
+    if (await setPublished(false)) {
+      setToast({
+        kind: "info",
+        message: row?.share_token
+          ? "下書きに戻しました（共有リンクは開けなくなります）"
+          : "下書きに戻しました",
+      });
+    }
+  }
+
   // ── 非ログイン共有リンク（?a=<token>）: オプトイン発行＋失効 ──────────
   async function issueOrCopyShareLink() {
     if (!row) return;
@@ -263,11 +310,27 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
       setToast({ kind: "error", message: detail ?? "共有リンクの発行に失敗しました" });
       return;
     }
-    setRow({ ...row, share_token: token });
+    setRow((r) => (r ? { ...r, share_token: token } : r));
     await copyText(
       buildAnnouncementShareUrl(token),
       "共有リンクを発行してコピーしました（ログイン不要）",
     );
+  }
+
+  /** 共有リンクボタン。下書きのままなら「公開して発行」の確認を挟む。 */
+  function onShareLinkClick() {
+    if (!row) return;
+    if (!row.is_published) {
+      setPendingPublishShare(true);
+      return;
+    }
+    void issueOrCopyShareLink();
+  }
+
+  async function confirmPublishAndShare() {
+    setPendingPublishShare(false);
+    if (!(await setPublished(true))) return;
+    await issueOrCopyShareLink();
   }
 
   async function confirmRevokeShare() {
@@ -279,7 +342,7 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
       setToast({ kind: "error", message: detail ?? "共有リンクの無効化に失敗しました" });
       return;
     }
-    setRow({ ...row, share_token: null });
+    setRow((r) => (r ? { ...r, share_token: null } : r));
     setToast({ kind: "info", message: "共有リンクを無効化しました（旧リンクは開けなくなります）" });
   }
 
@@ -422,6 +485,16 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
         <button className="btn btn--ghost" onClick={() => navigate({ name: "announcements" })}>
           ← 一覧へ
         </button>
+        <span
+          className={`anndetail__pubBadge ${row.is_published ? "is-published" : "is-draft"}`}
+          title={
+            row.is_published
+              ? "公開中：ホームの最新発令に表示され、共有リンクを発行できます"
+              : "下書き：ホームに表示されず、共有リンクも発行できません"
+          }
+        >
+          {row.is_published ? "公開中" : "下書き"}
+        </span>
         <div style={{ flex: 1 }} />
         {canEdit && !editing && (
           <>
@@ -456,13 +529,25 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
         {canEdit && !editing && (
           <>
             <button
+              className={`btn ${row.is_published ? "" : "btn--primary"}`}
+              onClick={() => (row.is_published ? setPendingUnpublish(true) : void publishNow())}
+              disabled={publishing}
+              title={
+                row.is_published
+                  ? "下書きに戻します（ホーム非表示・共有リンクも開けなくなります）"
+                  : "公開します（ホームの最新発令に表示され、共有リンクを発行できます）"
+              }
+            >
+              {publishing ? "更新中…" : row.is_published ? "🔒 下書きに戻す" : "📣 公開する"}
+            </button>
+            <button
               className="btn"
-              onClick={issueOrCopyShareLink}
-              disabled={!row.is_published}
+              onClick={onShareLinkClick}
+              disabled={publishing}
               title={
                 row.is_published
                   ? "ログイン不要で閲覧できる共有リンク（未発行なら発行してコピー）"
-                  : "公開（is_published）にすると共有リンクを発行できます"
+                  : "下書きのため未発行です。押すと「公開して発行」を確認します"
               }
             >
               🌐 {row.share_token ? "共有リンクをコピー" : "共有リンクを発行"}
@@ -479,6 +564,20 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
           </>
         )}
       </header>
+
+      {!row.is_published && !editing && (
+        <div className="anndetail__draftBar no-print">
+          <span className="anndetail__draftBarText">
+            この発令は<strong>下書き</strong>です。公開するとホームの「最新の人事発令」に表示され、
+            ログイン不要の共有リンクを発行できます。
+          </span>
+          {canEdit && (
+            <button className="btn btn--primary btn--xs" onClick={() => void publishNow()} disabled={publishing}>
+              {publishing ? "更新中…" : "📣 公開する"}
+            </button>
+          )}
+        </div>
+      )}
 
       {editing && (
         <p className="anndetail__editHint no-print">
@@ -743,6 +842,39 @@ export function AnnouncementDetailPage({ id }: { id: string }) {
           variant="danger"
           onConfirm={confirmRevokeShare}
           onCancel={() => setPendingRevoke(false)}
+        />
+      )}
+
+      {pendingPublishShare && (
+        <ConfirmDialog
+          title="公開して共有リンクを発行"
+          message={
+            <>
+              この発令はまだ<strong>下書き</strong>のため、共有リンクを発行できません。
+              公開した上で、ログイン不要の共有リンクを発行してコピーします。よろしいですか？
+              （公開するとホームの「最新の人事発令」にも表示されます）
+            </>
+          }
+          confirmLabel="公開して発行"
+          onConfirm={confirmPublishAndShare}
+          onCancel={() => setPendingPublishShare(false)}
+        />
+      )}
+
+      {pendingUnpublish && (
+        <ConfirmDialog
+          title="下書きに戻す"
+          message={
+            <>
+              この発令を非公開（下書き）に戻します。ホームの「最新の人事発令」から外れ、
+              {row.share_token ? "配布済みの共有リンクも開けなくなります。" : "共有リンクは発行できなくなります。"}
+              よろしいですか？
+            </>
+          }
+          confirmLabel="下書きに戻す"
+          variant="danger"
+          onConfirm={confirmUnpublish}
+          onCancel={() => setPendingUnpublish(false)}
         />
       )}
     </div>

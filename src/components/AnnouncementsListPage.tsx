@@ -149,6 +149,14 @@ export function AnnouncementsListPage() {
             <div className="annlist__head">
               <div>
                 <span className="annlist__period">{formatPeriodHeading(row.period)}</span>
+                {!row.is_published && (
+                  <span
+                    className="annlist__draft"
+                    title="下書き：ホームに表示されず、共有リンクも発行できません"
+                  >
+                    下書き
+                  </span>
+                )}
                 <h3 className="annlist__title">{row.title}</h3>
               </div>
               {(isMaster || row.created_by_email === currentUser?.email) && (
