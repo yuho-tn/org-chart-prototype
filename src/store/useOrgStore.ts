@@ -193,9 +193,15 @@ function nearestDeptAncestor(nodes: OrgNode[], parentId: string | null): string 
 }
 
 export const useOrgStore = create<Store>((set, get) => ({
-  nodes: seedData(),
+  // 起動時は空キャンバス。以前はデモ用サンプル（OrgChart Inc. / 山田 太郎）を
+  // 初期値に入れていたが、それが「読み込み失敗時の見た目の正解」になってしまい、
+  // ①#/org の公式デフォルト表示 ②ファイル選択ダイアログの自動オープン が
+  // どちらも `nodes.length > 0` ガードで発火せず、サンプル組織図が本物の
+  // ように表示されていた（2026-08-03 修正）。サンプルは newFile()/reset() の
+  // 明示操作からのみ入る。
+  nodes: [],
   selectedId: null,
-  log: [makeLog("reset", "初期データを読み込み")],
+  log: [makeLog("reset", "起動")],
   toast: null,
   past: [],
   future: [],

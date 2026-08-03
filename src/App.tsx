@@ -202,7 +202,12 @@ export default function App() {
       // for 丹野 himself, not just anonymous recipients.
       const sharedVersionId = shareInit.versionId;
       clearShareParamsFromUrl();
-      setShareInit({ versionId: null, ready: true });
+      // shareInit.versionId is deliberately KEPT (not nulled): a signed-in
+      // user whose app_users role is `viewer` renders ViewerShell, and the
+      // boot loader below needs to know which file the link pointed at.
+      // Clearing it here used to strip that away, so viewer-role recipients
+      // of a share link ended up with an empty store (＝組み込みサンプルの
+      // 組織図がそのまま画面に残る) — the "共有リンクが見れない" bug.
       navigate(
         { name: "editor", versionId: sharedVersionId },
         { pushHistory: false },
@@ -248,7 +253,11 @@ export default function App() {
     if (!viewOnly && !bootReady) return;
     let cancelled = false;
     void (async () => {
-      if (viewOnly && shareInit.versionId) {
+      // 閲覧モード（匿名の共有リンク訪問者 ＋ ログイン済みの閲覧ロール）は
+      // ViewerShell を描画するだけで、下の URL 駆動ローダ／公式デフォルト
+      // ローダはどちらも viewOnly で早期 return する。したがって「何を表示
+      // するか」はこの分岐が単独で決める。
+      if (viewOnly) {
         if (!isSupabaseConfigured) return;
         await Promise.all([
           refreshVersions(),
@@ -256,8 +265,27 @@ export default function App() {
         ]);
         if (cancelled) return;
         const versions = useVersionsStore.getState().versions;
-        const meta = versions.find((v) => v.id === shareInit.versionId);
-        const loaded = await getSnapshot(shareInit.versionId);
+        // 表示対象の優先順位：共有リンク(?v=) → URL のファイル指定
+        // (#/org/<id>) → 管理者が★を付けた公式デフォルト。最後の段があるので
+        // 閲覧ロールの社員はリンク無しで開いても最新のマスターが出る。
+        const routeNow = useUiStore.getState().route;
+        const routeVersionId =
+          routeNow.name === "editor" ? (routeNow.versionId ?? null) : null;
+        const targetId =
+          shareInit.versionId ??
+          routeVersionId ??
+          versions.find((v) => v.is_default)?.id ??
+          null;
+        if (!targetId) {
+          useOrgStore.getState().setToast({
+            kind: "error",
+            message:
+              "表示できる組織図がありません（公式デフォルトが未設定の可能性があります）。",
+          });
+          return;
+        }
+        const meta = versions.find((v) => v.id === targetId);
+        const loaded = await getSnapshot(targetId);
         if (cancelled) return;
         if (!loaded) {
           useOrgStore.getState().setToast({
@@ -269,7 +297,7 @@ export default function App() {
         }
         setSharedVersionLabel(meta?.name ?? null);
         replaceNodes(loaded.nodes, {
-          versionId: shareInit.versionId,
+          versionId: targetId,
           versionLabel: meta?.name ?? "共有バージョン",
           rev: loaded.rev,
         });
