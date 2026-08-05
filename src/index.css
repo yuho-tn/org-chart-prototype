@@ -8785,3 +8785,473 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
 }
 .labor-access-del:hover:not(:disabled) { background: #d94a4a; color: #fff; border-color: #d94a4a; }
 .labor-access-del:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 組織図（権限図）＋ ML規定   ── 2026-08-05 権限組織図MTG で追加
+ * 体制図タブ群の右側2タブ。目的が「決裁を誰に上げるか」なので、
+ * 体制図（React Flow キャンバス）とは別に、素のCSS Gridで
+ * レイヤーの横軸をきっちり揃える。
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* タブのグループ区切り（体制図系 | 権限系） */
+.view-tab--groupstart {
+  margin-left: 10px;
+  border-left: 1px solid var(--border-strong);
+  padding-left: 16px;
+}
+
+/* ── 権限図：全体レイアウト ───────────────────────────────────── */
+.authview {
+  --authlayer-w: 132px;
+  height: 100%;
+  overflow: auto;
+  padding: 20px 24px 48px;
+  background: var(--bg);
+}
+.authview__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+.authview__title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.authview__lead {
+  margin: 0;
+  max-width: 76ch;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+.authview__count {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.authview__count strong { font-size: 22px; color: var(--navy-700); line-height: 1.1; }
+.authview__count span { font-size: 10.5px; color: var(--text-muted); }
+
+.authview__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.authlegend {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-muted);
+}
+.authlegend--owner { border-color: var(--navy-200); background: var(--navy-50); color: var(--navy-800); }
+.authlegend--acting { border-color: #fcd9a4; background: #fff7ea; color: #9a5b09; }
+.authlegend--challenge { border-color: #e6d5f7; background: #faf5ff; color: #7e22ce; }
+
+.authview__empty,
+.authcard__empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+.authview__foot {
+  margin: 20px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-subtle);
+}
+
+/* ── 会社ブロック ─────────────────────────────────────────────── */
+.authco { margin-bottom: 28px; }
+.authco__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.authco__tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.authco--affiliate .authgrid { opacity: 0.96; }
+
+.authco__officers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.authco__officersLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ── レイヤー帯グリッド ───────────────────────────────────────── */
+.authgrid {
+  display: grid;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.authgrid__corner { position: sticky; top: 0; z-index: 3; background: var(--navy-800); }
+.authgrid__colhead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--navy-800);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 12px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+/* レイヤー名はセルが縦に長くてもスクロール中ずっと見えるように貼り付ける。
+ * grid item 自体は行高いっぱいに伸びるので、内側の箱を sticky にする。 */
+.authgrid__layer { background: var(--navy-50); }
+.authgrid__layerInner {
+  position: sticky;
+  top: 38px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.authgrid__layerName {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+.authgrid__layerNote {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.authgrid__cell {
+  background: var(--panel);
+  padding: 10px;
+  display: grid;
+  /* min() で列幅を上限に。列が狭い時にトラックが親を超えてカードがはみ出すのを防ぐ */
+  grid-template-columns: repeat(auto-fill, minmax(min(232px, 100%), 1fr));
+  align-content: start;
+  /* カードは内容の高さに合わせる（stretch のままだと短いカードだけ間延びする） */
+  align-items: start;
+  gap: 8px;
+}
+.authgrid__cell--span { display: flex; flex-wrap: wrap; align-items: center; }
+.authgrid__none {
+  font-size: 12px;
+  color: var(--text-subtle);
+  padding: 6px 2px;
+}
+.authgrid__direct {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-soft);
+}
+.authgrid__direct span { font-weight: 400; font-size: 10.5px; color: var(--text-subtle); }
+
+/* ── 組織カード ───────────────────────────────────────────────── */
+.authcard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.authcard--ceo { border-color: var(--navy-300); background: var(--navy-50); }
+.authcard--exec { border-color: var(--navy-200); }
+.authcard__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.authcard__name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.authcard__parent {
+  font-size: 10px;
+  color: var(--text-subtle);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+}
+.authcard__acting {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #9a5b09;
+  background: #fff7ea;
+  border: 1px solid #fcd9a4;
+  border-radius: 6px;
+  padding: 3px 7px;
+}
+
+/* ── 人チップ ─────────────────────────────────────────────────── */
+.authchip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+}
+.authchip__prefix {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.authchip__name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.authchip__role {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+  cursor: help;
+}
+.authchip__flag {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+.authchip--owner {
+  background: var(--navy-50);
+  border-color: var(--navy-200);
+  color: var(--navy-900);
+}
+.authchip--challenge {
+  background: #faf5ff;
+  border-color: #e6d5f7;
+  color: #6b21a8;
+}
+.authchip--exec {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+/* ── ML規定 ───────────────────────────────────────────────────── */
+.mlview {
+  height: 100%;
+  overflow: auto;
+  padding: 20px 24px 48px;
+  background: var(--bg);
+}
+.mlview__head { margin-bottom: 12px; }
+.mlview__title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.mlview__lead {
+  margin: 0;
+  max-width: 76ch;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+.mlview__callout {
+  margin: 0 0 20px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid #e6d5f7;
+  background: #faf5ff;
+  color: #6b21a8;
+  font-size: 12px;
+  line-height: 1.7;
+  max-width: 92ch;
+}
+.mlview__foot {
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  color: var(--text-subtle);
+}
+.mlview__foot a { color: var(--primary); }
+
+.mlsec { margin-bottom: 26px; }
+.mlsec__title {
+  margin: 0 0 3px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--navy-800);
+  border-left: 3px solid var(--navy-600);
+  padding-left: 9px;
+}
+.mlsec__desc {
+  margin: 0 0 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.mltable__scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.mltable {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  font-size: 13px;
+  /* 5つの権限表で役職列の幅を揃える（表ごとに中身量で幅が変わると
+   * 「自分の列を縦に読む」使い方ができなくなる） */
+  table-layout: fixed;
+}
+.mltable--eval { min-width: 720px; table-layout: auto; }
+.mltable thead th {
+  position: sticky;
+  top: 0;
+  background: var(--navy-800);
+  color: #fff;
+  z-index: 1;
+}
+.mltable__colhead {
+  padding: 8px 10px;
+  text-align: center;
+  vertical-align: middle;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+.mltable__code {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.mltable__rolename {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 400;
+  opacity: 0.72;
+  margin-top: 1px;
+}
+.mltable__rowhead {
+  width: 210px;
+  min-width: 190px;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-strong);
+  background: var(--navy-50);
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+.mltable thead .mltable__rowhead {
+  background: var(--navy-800);
+  color: #fff;
+  border-top: none;
+}
+.mltable__sublabel {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.mltable__cell {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.55;
+}
+.mltable__text { display: block; font-size: 12.5px; }
+.mltable__note {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.mltable__cell--none { background: var(--bg-soft); color: var(--text-subtle); text-align: center; }
+.mltable__cell--limit { background: #fffbeb; }
+.mltable__cell--limit .mltable__text { font-weight: 700; color: #92400e; }
+.mltable__mark { margin-left: 4px; color: var(--warn); font-size: 11px; cursor: help; }
+
+.mllegend { margin: 0; display: grid; gap: 6px; }
+.mllegend__row { display: flex; gap: 10px; align-items: baseline; }
+.mllegend__row dt {
+  flex: none;
+  min-width: 40px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+.mllegend__row dd { margin: 0; font-size: 12px; color: var(--text-muted); }
+
+/* ── モバイル ─────────────────────────────────────────────────── */
+@media (max-width: 820px) {
+  .authview, .mlview { padding: 14px 12px 40px; }
+  .authview { --authlayer-w: 92px; }
+  .authview__head { flex-direction: column; gap: 10px; }
+  .authgrid { display: block; border-radius: 10px; }
+  .authgrid__corner, .authgrid__colhead { display: none; }
+  .authgrid__layer {
+    background: var(--navy-800);
+    color: #fff;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .authgrid__layerName { color: #fff; }
+  .authgrid__layerNote { color: rgba(255, 255, 255, 0.7); }
+  .authgrid__cell--span { display: block; }
+  .mltable__rowhead { width: auto; min-width: 130px; }
+}
+
+/* ── 印刷 ─────────────────────────────────────────────────────── */
+@media print {
+  .authview, .mlview { overflow: visible; padding: 0; background: #fff; }
+  .authgrid, .mltable__scroll { break-inside: avoid; }
+  .mlsec { break-inside: avoid; }
+  .mltable thead th { position: static; }
+}
+.share-tips__warn { margin-top: 6px; font-size: 11px; color: var(--warn); font-weight: 600; }

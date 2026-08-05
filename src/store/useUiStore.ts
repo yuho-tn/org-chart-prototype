@@ -1,6 +1,12 @@
 import { create } from "zustand";
 
-export type OrgView = "tree" | "list" | "assignments";
+/**
+ * 「体制図」セクション内のタブ。
+ *  tree/list/assignments = 体制図（全メンバーの所属を示す社内発表用の図）
+ *  authority             = 組織図（マネージャー以上の権限図・2026-08-05 MTGで新設）
+ *  ml                    = ML規定（役職別の決裁権限表）
+ */
+export type OrgView = "tree" | "list" | "assignments" | "authority" | "ml";
 
 /**
  * Top-level "system" axis. Above the GlobalHeader sits a small system

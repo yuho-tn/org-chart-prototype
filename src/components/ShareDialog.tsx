@@ -178,12 +178,19 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               リンク先のデフォルト表示：
               <strong>
                 {view === "list"
-                  ? "組織図リスト"
+                  ? "体制図リスト"
                   : view === "assignments"
                     ? "配属一覧"
-                    : "組織図ツリー"}
+                    : view === "authority"
+                      ? "組織図（権限図）"
+                      : "体制図"}
               </strong>
               （現在のタブをそのまま反映）
+              {view === "ml" && (
+                <div className="share-tips__warn">
+                  ML規定は社内規定のため共有リンクでは開けません。体制図が表示されます。
+                </div>
+              )}
             </div>
             <div className="modal__actions" style={{ marginTop: 12 }}>
               <button className="btn btn--ghost" onClick={onClose}>閉じる</button>

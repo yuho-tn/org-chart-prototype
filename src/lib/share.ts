@@ -9,8 +9,12 @@ export function parseShareParams(): ShareParams {
   const params = new URLSearchParams(window.location.search);
   const versionId = params.get("v");
   const viewParam = params.get("view") as OrgView | null;
+  // "ml"（ML規定）は決裁金額を含む社内規定なので、匿名の共有リンクでは開けない。
   const view: OrgView =
-    viewParam === "list" || viewParam === "assignments" || viewParam === "tree"
+    viewParam === "list" ||
+    viewParam === "assignments" ||
+    viewParam === "tree" ||
+    viewParam === "authority"
       ? viewParam
       : "tree";
   return { versionId, view };

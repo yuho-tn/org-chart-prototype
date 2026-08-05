@@ -48,7 +48,9 @@ const TABS_BY_SYSTEM: Record<
 > = {
   talenthub: [
     { id: "home", label: "ホーム", Icon: Home },
-    { id: "org", label: "組織図", Icon: Network },
+    // セクション名は「体制図」。配下タブに権限図としての「組織図」を持つため、
+    // 上位の呼称と衝突しないよう 2026-08-05 のMTGで改称した（URLは #/org のまま）。
+    { id: "org", label: "体制図", Icon: Network },
     { id: "employees", label: "メンバー", Icon: Users },
     // ミッションは全ログインユーザーに表示（自分のシートがあるため）
     { id: "missions", label: "ミッション", Icon: Target },

@@ -47,8 +47,8 @@ type FeatureCard = {
 const CARDS: FeatureCard[] = [
   {
     key: "org",
-    label: "組織図",
-    desc: "全社の配置・兼務・役割をツリー/一覧で確認・編集",
+    label: "体制図",
+    desc: "全社の配置・兼務・役割と、マネージャー以上の権限図・ML規定",
     Icon: Network,
     route: { name: "editor" },
   },
