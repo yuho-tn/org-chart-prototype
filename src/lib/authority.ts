@@ -210,7 +210,12 @@ function resolveOwner(
     const best = leaders
       .filter((p) => authorityLevel(p.role) >= required)
       .sort((a, b) => authorityLevel(b.role) - authorityLevel(a.role))[0];
-    const picked = exact ?? best;
+    // DIV / TM は「自組織にその正式ロール（DM / TM）が居る時だけその人」。
+    // 同じ組織に在籍しているだけの役員は決裁者にしない（2026-08-06 裕鵬さん
+    // 指示：コーポレートTM は在籍する CFO ではなく、TMの役割を担う代表の
+    // 高谷さんが決裁者）。役員（Exe統括）レイヤーは正式ロールの定義が無いので
+    // 従来どおり自組織の最上位を採る。
+    const picked = formal ? (hops === 0 ? exact : (exact ?? best)) : best;
     if (picked) {
       return {
         owner: picked,

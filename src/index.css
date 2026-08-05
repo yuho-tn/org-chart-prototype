@@ -8856,7 +8856,6 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   color: var(--text-muted);
 }
 .authlegend--owner { border-color: var(--navy-200); background: var(--navy-50); color: var(--navy-800); }
-.authlegend--acting { border-color: #fcd9a4; background: #fff7ea; color: #9a5b09; }
 .authlegend--challenge { border-color: #e6d5f7; background: #faf5ff; color: #7e22ce; }
 
 .authview__empty,
@@ -9015,16 +9014,6 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   padding: 1px 6px;
   border-radius: 999px;
   background: var(--bg-soft);
-}
-.authcard__acting {
-  align-self: flex-start;
-  font-size: 10.5px;
-  font-weight: 600;
-  color: #9a5b09;
-  background: #fff7ea;
-  border: 1px solid #fcd9a4;
-  border-radius: 6px;
-  padding: 3px 7px;
 }
 
 /* ── 人チップ ─────────────────────────────────────────────────── */

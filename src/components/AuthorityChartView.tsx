@@ -34,13 +34,16 @@ function PersonChip({
   person,
   variant,
   prefix,
+  note,
 }: {
   person: AuthorityPerson;
   variant: "owner" | "challenge" | "exec";
   prefix?: string;
+  /** ホバー時の補足（上位から繰り上がった決裁者の説明など） */
+  note?: string;
 }) {
   return (
-    <div className={`authchip authchip--${variant}`}>
+    <div className={`authchip authchip--${variant}`} title={note}>
       {prefix && <span className="authchip__prefix">{prefix}</span>}
       <span className="authchip__name">{person.name}</span>
       <span className="authchip__role" title={person.roleDescription}>
@@ -59,14 +62,20 @@ function UnitCard({ unit }: { unit: AuthorityUnit }) {
       <div className="authcard__head">
         <span className="authcard__name">{unit.name}</span>
       </div>
-      {/* 繰り上げの理由を先に読ませてから名前を出す（「なぜこの人？」を残さない） */}
-      {unit.ownerIsActing && (
-        <div className="authcard__acting">
-          実質{unit.ownerFrom ? `（${unit.ownerFrom}から）` : ""}
-        </div>
-      )}
+      {/* 繰り上げ（実質マネージャー）はブロックを増やさず tooltip で補足する。
+       * 専用バッジを出すとカードが1段高くなり図が読みにくくなるため
+       * 廃止した（2026-08-06 裕鵬さんFB）。 */}
       {unit.owner ? (
-        <PersonChip person={unit.owner} variant="owner" prefix="決裁" />
+        <PersonChip
+          person={unit.owner}
+          variant="owner"
+          prefix="決裁"
+          note={
+            unit.ownerIsActing
+              ? `${unit.name} に決裁権を持つ役職者が不在のため、${unit.ownerFrom ?? "上位"} の${unit.owner.name}さんが決裁します`
+              : undefined
+          }
+        />
       ) : (
         <div className="authcard__empty">権限者が未設定</div>
       )}
@@ -299,11 +308,11 @@ export function AuthorityChartView() {
 
       <div className="authview__legend">
         <span className="authlegend authlegend--owner">決裁＝決裁権を持つ人</span>
-        <span className="authlegend authlegend--acting">
-          実質＝チャレンジ任用のため上位から繰り上げ
-        </span>
         <span className="authlegend authlegend--challenge">
           担当＝チャレンジ任用で実務を回している本人（決裁権なし）
+        </span>
+        <span className="authlegend">
+          チャレンジ任用の組織は、決裁権を持つ上位の役職者を「決裁」に表示しています
         </span>
       </div>
 
