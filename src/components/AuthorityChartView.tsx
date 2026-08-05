@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import {
   buildAuthorityChart,
@@ -12,13 +12,23 @@ import {
 
 /**
  * 「組織図」タブ＝権限図。体制図と同じデータから、マネージャー以上だけを
- * CEO / 役員 / DM / TM の4レイヤーに横軸を揃えて並べる（2026-08-05 MTG合意）。
+ * CEO / 役員 / DM / TM の4レイヤーのピラミッドツリーで表示する。
  *
  * 体制図（誰がどこに所属しているか）とは目的が違い、この画面が答えるのは
  * 「この組織の決裁は誰に上げればいいのか」1点。チャレンジ任用しかいない組織は
  * 上位から繰り上げた実質マネージャーを主役に置き、実務担当のチャレンジ本人は
  * 併記に回す。
+ *
+ * ── レイアウト方針（2026-08-05 裕鵬さん指示） ──────────────────
+ * ツリー形式にしつつ「役職ごとに縦の行を揃える」。入れ子のCSSツリーだと
+ * HR TM（役員直下のTM＝DM層を飛ばす枝）が DM行に来てしまうので採らない。
+ * 代わりに **レイヤー＝grid行 / 葉の数＝grid列** とし、各ノードを
+ * 「自分のサブツリーが占める列範囲」に置く（colStart/colSpan は
+ * lib/authority.ts が算出）。これで親は必ず子の真ん中に乗り、行は揃う。
+ * 親子の線は配置後の実DOM位置を測ってSVGで引く。
  */
+
+type Edge = { key: string; x1: number; y1: number; x2: number; y2: number; midY: number };
 
 function PersonChip({
   person,
@@ -36,7 +46,9 @@ function PersonChip({
       <span className="authchip__role" title={person.roleDescription}>
         {person.role}
       </span>
-      {person.isConcurrent && <span className="authchip__flag">兼務</span>}
+      {person.isConcurrent && (
+        <span className="authchip__flag" title="兼務">兼</span>
+      )}
     </div>
   );
 }
@@ -46,15 +58,11 @@ function UnitCard({ unit }: { unit: AuthorityUnit }) {
     <div className={`authcard authcard--${unit.layer}`}>
       <div className="authcard__head">
         <span className="authcard__name">{unit.name}</span>
-        {unit.parentName && (
-          <span className="authcard__parent">{unit.parentName}</span>
-        )}
       </div>
       {/* 繰り上げの理由を先に読ませてから名前を出す（「なぜこの人？」を残さない） */}
       {unit.ownerIsActing && (
         <div className="authcard__acting">
-          実質マネージャー
-          {unit.ownerFrom ? `（${unit.ownerFrom}から繰り上げ）` : ""}
+          実質{unit.ownerFrom ? `（${unit.ownerFrom}から）` : ""}
         </div>
       )}
       {unit.owner ? (
@@ -72,31 +80,74 @@ function UnitCard({ unit }: { unit: AuthorityUnit }) {
   );
 }
 
-function CompanyBlock({
+function CompanyTree({
   company,
   isAffiliate,
 }: {
   company: AuthorityCompany;
   isAffiliate: boolean;
 }) {
-  const cols = company.columns;
-  const hasDiv = cols.some((c) => c.divs.length > 0);
-  const hasTm = cols.some((c) => c.tms.length > 0);
-  // 列幅は中身の多さに比例させる。事業統括だけTMが7つあるので等幅にすると
-  // その列だけ縦に伸びて「横軸を揃える」意図が壊れる。広い列はセル内が
-  // 自動で2カラムに折り返す（.authgrid__cell の auto-fill）。
-  const weights = cols.map((c) =>
-    Math.min(3, Math.max(1, Math.ceil(Math.max(c.divs.length, c.tms.length) / 3))),
-  );
-  const gridStyle = {
-    gridTemplateColumns: `var(--authlayer-w) ${weights
-      .map((w) => `minmax(210px, ${w}fr)`)
-      .join(" ")}`,
-  };
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const nodeRefs = useRef(new Map<string, HTMLDivElement>());
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [size, setSize] = useState({ w: 0, h: 0 });
 
-  // 部署ノードを持たない法人（（株）ハウジングナビ等）はレイヤーグリッドが
-  // 成立しないので、役職者を並べただけの簡易表示にする。
-  if (cols.length === 0) {
+  const setNodeRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (el) nodeRefs.current.set(id, el);
+    else nodeRefs.current.delete(id);
+  }, []);
+
+  const units = useMemo(
+    () => company.layers.flatMap((r) => r.units),
+    [company.layers],
+  );
+
+  /** 配置後の実DOM位置から親子の接続線を作る。 */
+  const measure = useCallback(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const base = grid.getBoundingClientRect();
+    const next: Edge[] = [];
+    for (const u of units) {
+      if (!u.parentUnitId) continue;
+      const childEl = nodeRefs.current.get(u.id);
+      const parentEl = nodeRefs.current.get(u.parentUnitId);
+      if (!childEl || !parentEl) continue;
+      const c = childEl.getBoundingClientRect();
+      const p = parentEl.getBoundingClientRect();
+      const x1 = p.left - base.left + p.width / 2;
+      const y1 = p.bottom - base.top;
+      const x2 = c.left - base.left + c.width / 2;
+      const y2 = c.top - base.top;
+      // 行間(row-gap 44px)の中央を共通バスにする。親が同じ枝は必ず同じ高さで
+      // 横に走るので、レイヤーを飛ばす枝（HR TM 等）があっても図が乱れない。
+      next.push({ key: `${u.parentUnitId}->${u.id}`, x1, y1, x2, y2, midY: y1 + 22 });
+    }
+    setEdges(next);
+    setSize({ w: grid.scrollWidth, h: grid.scrollHeight });
+  }, [units]);
+
+  useLayoutEffect(() => {
+    measure();
+  }, [measure]);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(grid);
+    for (const el of nodeRefs.current.values()) ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [measure]);
+
+  // 部署ノードを持たない法人（（株）ハウジングナビ等）はツリーが成立しないので、
+  // 役職者を並べただけの簡易表示にする。
+  const hasTree = company.layers.some((r) => r.layer !== "ceo");
+  if (!hasTree) {
     const people = [...company.ceo, ...company.rootOfficers];
     return (
       <section className={`authco authco--flat ${isAffiliate ? "authco--affiliate" : ""}`}>
@@ -125,99 +176,68 @@ function CompanyBlock({
         {company.name}
       </h2>
 
-      {/* 列見出し（系統） */}
-      <div className="authgrid" style={gridStyle}>
-        <div className="authgrid__corner" />
-        {cols.map((c) => (
-          <div key={c.id} className="authgrid__colhead">
-            {c.name}
-          </div>
-        ))}
-
-        {/* CEO 帯：全列ぶち抜き */}
-        <div className="authgrid__layer">
-          <div className="authgrid__layerInner">
-            <span className="authgrid__layerName">{LAYER_LABEL.ceo}</span>
-            <span className="authgrid__layerNote">{LAYER_NOTE.ceo}</span>
-          </div>
-        </div>
+      <div className="authtree">
+        {/* 左レーン：レイヤー名。ツリー本体と同じ行グリッドで縦位置を揃える。 */}
         <div
-          className="authgrid__cell authgrid__cell--span"
-          style={{ gridColumn: `2 / span ${cols.length}` }}
+          className="authtree__lanes"
+          style={{ gridTemplateRows: `repeat(${company.layers.length}, auto)` }}
         >
-          {company.ceo.length ? (
-            company.ceo.map((p) => (
-              <div key={p.nodeId} className="authcard authcard--ceo">
-                <PersonChip person={p} variant="owner" prefix="決裁" />
-              </div>
-            ))
-          ) : (
-            <div className="authcard__empty">CEOが未設定</div>
-          )}
+          {company.layers.map((row) => (
+            <div key={row.layer} className="authtree__lane">
+              <span className="authtree__laneName">{LAYER_LABEL[row.layer]}</span>
+              <span className="authtree__laneNote">{LAYER_NOTE[row.layer]}</span>
+            </div>
+          ))}
         </div>
 
-        {/* 役員 */}
-        <div className="authgrid__layer">
-          <div className="authgrid__layerInner">
-            <span className="authgrid__layerName">{LAYER_LABEL.exec}</span>
-            <span className="authgrid__layerNote">{LAYER_NOTE.exec}</span>
-          </div>
-        </div>
-        {cols.map((c) => (
-          <div key={c.id} className="authgrid__cell">
-            {c.exec ? (
-              <UnitCard unit={c.exec} />
-            ) : (
-              <div className="authgrid__direct">
-                CEOが直接管掌
-                <span>この列の組織は役員レイヤーを経由しません</span>
-              </div>
+        <div className="authtree__scroll">
+          <div
+            className="authtree__grid"
+            ref={gridRef}
+            style={{
+              gridTemplateColumns: `repeat(${company.totalCols}, minmax(162px, 1fr))`,
+              gridTemplateRows: `repeat(${company.layers.length}, auto)`,
+            }}
+          >
+            <svg
+              className="authtree__wires"
+              width={size.w || undefined}
+              height={size.h || undefined}
+              aria-hidden
+            >
+              {edges.map((e) => (
+                <path
+                  key={e.key}
+                  d={`M ${e.x1} ${e.y1} V ${e.midY} H ${e.x2} V ${e.y2}`}
+                  fill="none"
+                />
+              ))}
+            </svg>
+            {company.layers.map((row, rowIndex) =>
+              row.units.map((u) => (
+                <div
+                  key={u.id}
+                  className="authtree__slot"
+                  style={{
+                    gridRow: rowIndex + 1,
+                    gridColumn: `${u.colStart} / span ${u.colSpan}`,
+                  }}
+                >
+                  <div
+                    className="authtree__node"
+                    ref={(el) => setNodeRef(u.id, el)}
+                  >
+                    <UnitCard unit={u} />
+                  </div>
+                </div>
+              )),
             )}
           </div>
-        ))}
-
-        {/* DM */}
-        {hasDiv && (
-          <>
-            <div className="authgrid__layer">
-              <div className="authgrid__layerInner">
-                <span className="authgrid__layerName">{LAYER_LABEL.div}</span>
-                <span className="authgrid__layerNote">{LAYER_NOTE.div}</span>
-              </div>
-            </div>
-            {cols.map((c) => (
-              <div key={c.id} className="authgrid__cell">
-                {c.divs.length ? (
-                  c.divs.map((u) => <UnitCard key={u.id} unit={u} />)
-                ) : (
-                  <div className="authgrid__none">—</div>
-                )}
-              </div>
-            ))}
-          </>
-        )}
-
-        {/* TM */}
-        {hasTm && (
-          <>
-            <div className="authgrid__layer">
-              <div className="authgrid__layerInner">
-                <span className="authgrid__layerName">{LAYER_LABEL.tm}</span>
-                <span className="authgrid__layerNote">{LAYER_NOTE.tm}</span>
-              </div>
-            </div>
-            {cols.map((c) => (
-              <div key={c.id} className="authgrid__cell">
-                {c.tms.length ? (
-                  c.tms.map((u) => <UnitCard key={u.id} unit={u} />)
-                ) : (
-                  <div className="authgrid__none">—</div>
-                )}
-              </div>
-            ))}
-          </>
-        )}
+        </div>
       </div>
+      <p className="authtree__hint">
+        枝が多い期は横に長くなります。図の中を左右にスクロールしてご覧ください。
+      </p>
 
       {company.rootOfficers.length > 0 && (
         <div className="authco__officers">
@@ -267,7 +287,7 @@ export function AuthorityChartView() {
           <h1 className="authview__title">組織図（権限図）</h1>
           <p className="authview__lead">
             決裁・承認を誰に上げるかを示す図です。マネージャー以上のみを、CEO／役員／DM／TMの
-            4レイヤーで横軸を揃えて表示しています（メンバーの所属は「体制図」タブ）。
+            4レイヤーで行を揃えたツリーで表示しています（メンバーの所属は「体制図」タブ）。
           </p>
         </div>
         <div className="authview__count">
@@ -279,16 +299,16 @@ export function AuthorityChartView() {
       <div className="authview__legend">
         <span className="authlegend authlegend--owner">決裁＝決裁権を持つ人</span>
         <span className="authlegend authlegend--acting">
-          実質マネージャー＝チャレンジ任用のため上位から繰り上げ
+          実質＝チャレンジ任用のため上位から繰り上げ
         </span>
         <span className="authlegend authlegend--challenge">
           担当＝チャレンジ任用で実務を回している本人（決裁権なし）
         </span>
       </div>
 
-      <CompanyBlock company={chart.main} isAffiliate={false} />
+      <CompanyTree company={chart.main} isAffiliate={false} />
       {chart.affiliates.map((c) => (
-        <CompanyBlock key={c.id} company={c} isAffiliate />
+        <CompanyTree key={c.id} company={c} isAffiliate />
       ))}
 
       <p className="authview__foot">

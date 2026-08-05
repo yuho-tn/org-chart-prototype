@@ -8892,7 +8892,7 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   color: var(--text-muted);
   border: 1px solid var(--border);
 }
-.authco--affiliate .authgrid { opacity: 0.96; }
+.authco--affiliate .authtree { opacity: 0.97; }
 
 .authco__officers {
   display: flex;
@@ -8911,92 +8911,81 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   color: var(--text-muted);
 }
 
-/* ── レイヤー帯グリッド ───────────────────────────────────────── */
-.authgrid {
+/* ── ピラミッドツリー（レイヤー＝行 / 葉の数＝列） ──────────────
+ * レイヤーごとに縦の行を揃えるのが要件なので、入れ子ツリーではなく
+ * 「行＝レイヤー固定・列＝葉」の grid に置く。親は子の列範囲に
+ * span するので自動的に子の中央に乗る。線は SVG オーバーレイ。 */
+.authtree {
   display: grid;
-  gap: 1px;
-  background: var(--border);
+  grid-template-columns: var(--authlayer-w) minmax(0, 1fr);
+  gap: 0;
   border: 1px solid var(--border);
   border-radius: 12px;
+  background: var(--panel);
   overflow: hidden;
 }
-.authgrid__corner { position: sticky; top: 0; z-index: 3; background: var(--navy-800); }
-.authgrid__colhead {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: var(--navy-800);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 9px 12px;
-  text-align: center;
-  letter-spacing: 0.02em;
-}
-/* レイヤー名はセルが縦に長くてもスクロール中ずっと見えるように貼り付ける。
- * grid item 自体は行高いっぱいに伸びるので、内側の箱を sticky にする。 */
-.authgrid__layer { background: var(--navy-50); }
-.authgrid__layerInner {
-  position: sticky;
-  top: 38px;
-  padding: 12px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.authgrid__layerName {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--navy-800);
-}
-.authgrid__layerNote {
-  font-size: 10px;
-  line-height: 1.5;
-  color: var(--text-muted);
-}
-.authgrid__cell {
-  background: var(--panel);
-  padding: 10px;
+.authtree__lanes {
   display: grid;
-  /* min() で列幅を上限に。列が狭い時にトラックが親を超えてカードがはみ出すのを防ぐ */
-  grid-template-columns: repeat(auto-fill, minmax(min(232px, 100%), 1fr));
-  align-content: start;
-  /* カードは内容の高さに合わせる（stretch のままだと短いカードだけ間延びする） */
-  align-items: start;
-  gap: 8px;
+  border-right: 1px solid var(--border);
+  background: var(--navy-50);
 }
-.authgrid__cell--span { display: flex; flex-wrap: wrap; align-items: center; }
-.authgrid__none {
-  font-size: 12px;
-  color: var(--text-subtle);
-  padding: 6px 2px;
-}
-.authgrid__direct {
+.authtree__lane {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 3px;
-  padding: 10px;
-  border: 1px dashed var(--border-strong);
-  border-radius: 8px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg-soft);
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
 }
-.authgrid__direct span { font-weight: 400; font-size: 10.5px; color: var(--text-subtle); }
+.authtree__lane:last-child { border-bottom: none; }
+.authtree__laneName { font-size: 12.5px; font-weight: 700; color: var(--navy-800); }
+.authtree__laneNote { font-size: 10px; line-height: 1.5; color: var(--text-muted); }
+
+.authtree__scroll { overflow-x: auto; }
+.authtree__hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-subtle);
+}
+.authtree__grid {
+  position: relative;
+  display: grid;
+  padding: 14px 14px 18px;
+  row-gap: 44px; /* 接続線を通すための行間 */
+  column-gap: 8px;
+  min-width: min-content;
+}
+.authtree__wires {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.authtree__wires path {
+  stroke: var(--navy-200);
+  stroke-width: 1.5;
+}
+.authtree__slot {
+  display: flex;
+  justify-content: center;
+  align-items: start;
+  min-width: 0;
+}
+.authtree__node { width: 100%; max-width: 210px; min-width: 0; }
 
 /* ── 組織カード ───────────────────────────────────────────────── */
 .authcard {
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 9px 10px;
+  padding: 8px 9px;
   background: var(--panel);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 .authcard--ceo { border-color: var(--navy-300); background: var(--navy-50); }
-.authcard--exec { border-color: var(--navy-200); }
+.authcard--exec { border-color: var(--navy-200); background: var(--navy-50); }
+.authcard--div { border-color: var(--border-strong); }
 .authcard__head {
   display: flex;
   align-items: baseline;
@@ -9016,6 +9005,7 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   background: var(--bg-soft);
 }
 .authcard__acting {
+  align-self: flex-start;
   font-size: 10.5px;
   font-weight: 600;
   color: #9a5b09;
@@ -9030,19 +9020,21 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 2px 5px;
   padding: 5px 8px;
   border-radius: 8px;
   border: 1px solid transparent;
   font-size: 12px;
 }
 .authchip__prefix {
-  flex: none;
-  font-size: 9.5px;
+  /* 常に独立行にする。カード幅162pxでは「決裁＋氏名＋役職＋兼」が1行に
+   * 収まらず、"兼" だけが次行に落ちて孤児チップに見えるため。 */
+  flex: 0 0 100%;
+  font-size: 9px;
   font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+  margin-bottom: -1px;
 }
 .authchip__name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .authchip__role {
@@ -9053,8 +9045,8 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   cursor: help;
 }
 .authchip__flag {
-  font-size: 9.5px;
-  padding: 1px 5px;
+  font-size: 9px;
+  padding: 0 4px;
   border-radius: 4px;
   background: var(--bg-soft);
   color: var(--text-muted);
@@ -9230,27 +9222,23 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
 /* ── モバイル ─────────────────────────────────────────────────── */
 @media (max-width: 820px) {
   .authview, .mlview { padding: 14px 12px 40px; }
-  .authview { --authlayer-w: 92px; }
+  .authview { --authlayer-w: 76px; }
   .authview__head { flex-direction: column; gap: 10px; }
-  .authgrid { display: block; border-radius: 10px; }
-  .authgrid__corner, .authgrid__colhead { display: none; }
-  .authgrid__layer {
-    background: var(--navy-800);
-    color: #fff;
-    flex-direction: row;
-    align-items: baseline;
-    gap: 8px;
-  }
-  .authgrid__layerName { color: #fff; }
-  .authgrid__layerNote { color: rgba(255, 255, 255, 0.7); }
-  .authgrid__cell--span { display: block; }
+  /* ツリーは畳むと行揃えが壊れるので、レイヤー名レーンは細くして残し、
+   * 本体は横スクロールで見せる（どの行がどのレイヤーかは常に読める）。 */
+  .authtree__lane { padding: 10px 7px; }
+  .authtree__laneName { font-size: 11px; }
+  .authtree__laneNote { display: none; }
+  .authtree__grid { row-gap: 38px; padding: 10px 10px 14px; }
+  .authtree__node { max-width: 220px; }
   .mltable__rowhead { width: auto; min-width: 130px; }
 }
 
 /* ── 印刷 ─────────────────────────────────────────────────────── */
 @media print {
   .authview, .mlview { overflow: visible; padding: 0; background: #fff; }
-  .authgrid, .mltable__scroll { break-inside: avoid; }
+  .authtree, .mltable__scroll { break-inside: avoid; }
+  .authtree__scroll { overflow: visible; }
   .mlsec { break-inside: avoid; }
   .mltable thead th { position: static; }
 }

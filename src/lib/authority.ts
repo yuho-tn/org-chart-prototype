@@ -98,10 +98,10 @@ export type AuthorityPerson = {
 };
 
 export type AuthorityUnit = {
-  /** 組織（部署）ノードのid */
+  /** 組織（部署）ノードのid。CEO段は擬似id CEO_UNIT_ID。 */
   id: string;
   name: string;
-  layer: Exclude<AuthorityLayer, "ceo">;
+  layer: AuthorityLayer;
   /** 決裁権を持つ人（＝承認ルートに載せる人）。不在なら null。 */
   owner: AuthorityPerson | null;
   /**
@@ -115,26 +115,35 @@ export type AuthorityUnit = {
   challengers: AuthorityPerson[];
   /** 同じ組織に在籍する役員（コーポレートTMのCFO等）。 */
   executives: AuthorityPerson[];
-  /** TMの場合の所属DIV名（列が同じでも所属が読めるように）。 */
+  /** 所属親組織の名前（線を追わなくても所属が読めるように）。 */
   parentName: string | null;
+
+  /* ── ツリー描画用（ピラミッド型レイアウト） ───────────────────
+   * レイヤー行を必ず揃えたまま親子を線で結ぶため、最下層の葉の数を
+   * 列数とする grid に各ノードを「自分のサブツリーが占める列範囲」で
+   * 置く。これで親が子の真ん中に乗り、行スキップ（HR TM のように
+   * 役員直下のTM＝DM行を飛ばす枝）があっても行は揃う。 */
+  /** 親ユニットのid。CEO段は null。 */
+  parentUnitId: string | null;
+  /** 1始まりの列開始位置（レイヤーラベル列は含めない）。 */
+  colStart: number;
+  /** 占有列数＝サブツリーの葉の数。 */
+  colSpan: number;
 };
 
-export type AuthorityColumn = {
-  /** 役員統括ノードのid、または CEO 直轄の擬似列 "__direct__"。 */
-  id: string;
-  /** 列見出し（事業統括／技術統括／CEO直轄）。 */
-  name: string;
-  /** 役員レイヤーのセル。CEO直轄列は null。 */
-  exec: AuthorityUnit | null;
-  divs: AuthorityUnit[];
-  tms: AuthorityUnit[];
+export type AuthorityLayerRow = {
+  layer: AuthorityLayer;
+  units: AuthorityUnit[];
 };
 
 export type AuthorityCompany = {
   id: string;
   name: string;
   ceo: AuthorityPerson[];
-  columns: AuthorityColumn[];
+  /** レイヤー順（CEO→役員→DM→TM）。空のレイヤーは含めない。 */
+  layers: AuthorityLayerRow[];
+  /** grid の総列数＝ツリーの葉の数。 */
+  totalCols: number;
   /** 部門付き役員（Exe統括を持たずDIV/TMに在籍する役員）。 */
   attachedExecutives: { person: AuthorityPerson; unitName: string }[];
   /**
@@ -151,7 +160,7 @@ export type AuthorityChart = {
   affiliates: AuthorityCompany[];
 };
 
-const DIRECT_COLUMN_ID = "__direct__";
+export const CEO_UNIT_ID = "__ceo__";
 
 function cleanName(s: string): string {
   return s.replace(/^\*+\s*/, "").trim();
@@ -253,18 +262,28 @@ function buildUnit(
       (p) => EXECUTIVE_ROLES.includes(p.role) && p.nodeId !== owner?.nodeId,
     ),
     parentName: parent && parent.category !== "ROOT" ? parent.name : null,
+    // ツリー配置は buildCompany が確定させる
+    parentUnitId: null,
+    colStart: 1,
+    colSpan: 1,
   };
 }
 
-/** ある組織が属する「系統」＝直近の Exe 祖先。無ければ CEO 直轄。 */
-function columnOf(nodes: Map<string, OrgNode>, dept: OrgNode): string {
+/**
+ * ある組織の「親ユニット」＝ツリー上の直近の祖先で、権限図に載る組織
+ * （Exe / DIV / TM）。見つからず法人ROOTに達したら CEO 段にぶら下げる。
+ * これで HR TM（事業統括の直下＝DM層を飛ばす枝）も正しく親へつながる。
+ */
+function parentUnitOf(nodes: Map<string, OrgNode>, dept: OrgNode): string {
   let cur: OrgNode | undefined = dept.parentId ? nodes.get(dept.parentId) : undefined;
   while (cur) {
-    if (cur.category === "Exe") return cur.id;
-    if (cur.category === "ROOT") return DIRECT_COLUMN_ID;
+    if (cur.category === "Exe" || cur.category === "DIV" || cur.category === "TM") {
+      return cur.id;
+    }
+    if (cur.category === "ROOT") return CEO_UNIT_ID;
     cur = cur.parentId ? nodes.get(cur.parentId) : undefined;
   }
-  return DIRECT_COLUMN_ID;
+  return CEO_UNIT_ID;
 }
 
 /** ある組織が属する法人ROOT。ネストROOT（子会社）があればそちらを返す。 */
@@ -277,68 +296,108 @@ function rootOf(nodes: Map<string, OrgNode>, node: OrgNode): string | null {
   return null;
 }
 
+const LAYER_ORDER: AuthorityLayer[] = ["ceo", "exec", "div", "tm"];
+
 function buildCompany(
   nodes: Map<string, OrgNode>,
   childrenOf: Map<string, OrgNode[]>,
   root: OrgNode,
   depts: OrgNode[],
 ): AuthorityCompany {
-  const execDepts = depts.filter((d) => d.category === "Exe");
-  const divDepts = depts.filter((d) => d.category === "DIV");
-  const tmDepts = depts.filter((d) => d.category === "TM");
+  const rootLeaders = leadersOf(childrenOf, root.id);
+  const ceo = rootLeaders.filter((p) => p.role === "CEO");
 
-  const columns: AuthorityColumn[] = execDepts.map((d) => ({
-    id: d.id,
-    name: d.name,
-    exec: buildUnit(nodes, childrenOf, d, "exec"),
-    divs: [],
-    tms: [],
-  }));
-  const direct: AuthorityColumn = {
-    id: DIRECT_COLUMN_ID,
-    name: "CEO直轄",
-    exec: null,
-    divs: [],
-    tms: [],
+  const ceoUnit: AuthorityUnit = {
+    id: CEO_UNIT_ID,
+    name: root.name,
+    layer: "ceo",
+    owner: ceo[0] ?? null,
+    ownerIsActing: false,
+    ownerFrom: null,
+    challengers: [],
+    executives: ceo.slice(1),
+    parentName: null,
+    parentUnitId: null,
+    colStart: 1,
+    colSpan: 1,
   };
 
-  const byId = new Map(columns.map((c) => [c.id, c]));
-  function put(dept: OrgNode, layer: "div" | "tm") {
-    const colId = columnOf(nodes, dept);
-    const col = byId.get(colId) ?? direct;
-    const unit = buildUnit(nodes, childrenOf, dept, layer);
-    (layer === "div" ? col.divs : col.tms).push(unit);
+  const units: AuthorityUnit[] = [ceoUnit];
+  for (const d of depts) {
+    const layer =
+      d.category === "Exe" ? "exec" : d.category === "DIV" ? "div" : d.category === "TM" ? "tm" : null;
+    if (!layer) continue; // Unit / DEPT はマネージャー以上の図には載せない
+    const unit = buildUnit(nodes, childrenOf, d, layer);
+    unit.parentUnitId = parentUnitOf(nodes, d);
+    units.push(unit);
   }
-  divDepts.forEach((d) => put(d, "div"));
-  tmDepts.forEach((d) => put(d, "tm"));
 
-  const allColumns = [...columns];
-  if (direct.divs.length || direct.tms.length) allColumns.push(direct);
+  const byId = new Map(units.map((u) => [u.id, u]));
+  const childrenOfUnit = new Map<string, AuthorityUnit[]>();
+  for (const u of units) {
+    if (!u.parentUnitId) continue;
+    // 親が存在しない（データ不整合）場合は CEO 段へ退避させ、迷子カードを作らない
+    const pid = byId.has(u.parentUnitId) ? u.parentUnitId : CEO_UNIT_ID;
+    u.parentUnitId = pid;
+    const arr = childrenOfUnit.get(pid) ?? [];
+    arr.push(u);
+    childrenOfUnit.set(pid, arr);
+  }
+  // 子の並びはレイヤー順（DIV → 直下TM）。同レイヤー内は元の並び順を保つ。
+  for (const arr of childrenOfUnit.values()) {
+    arr.sort((a, b) => LAYER_ORDER.indexOf(a.layer) - LAYER_ORDER.indexOf(b.layer));
+  }
 
-  // 部門付き役員：Exe統括を持たずDIV/TMに在籍している役員を役員行に補足表示する
+  // 葉の数を列数として、各ノードにサブツリーの列範囲を割り当てる（DFS）。
+  let cursor = 1;
+  function assign(u: AuthorityUnit): number {
+    const kids = childrenOfUnit.get(u.id) ?? [];
+    if (kids.length === 0) {
+      u.colStart = cursor;
+      u.colSpan = 1;
+      cursor += 1;
+      return 1;
+    }
+    const from = cursor;
+    let span = 0;
+    for (const k of kids) span += assign(k);
+    u.colStart = from;
+    u.colSpan = span;
+    return span;
+  }
+  assign(ceoUnit);
+  const totalCols = Math.max(1, cursor - 1);
+
+  const layers: AuthorityLayerRow[] = LAYER_ORDER.map((layer) => ({
+    layer,
+    units: units
+      .filter((u) => u.layer === layer)
+      .sort((a, b) => a.colStart - b.colStart),
+  })).filter((r) => r.units.length > 0);
+
+  // 部門付き役員：Exe統括を持たずDIV/TMに在籍している役員を補足表示する
   // （AI DIV・コーポレートTMの承認ルートが読めない、というMTGでの指摘への対応）。
   const attachedExecutives: AuthorityCompany["attachedExecutives"] = [];
-  for (const col of allColumns) {
-    for (const unit of [...col.divs, ...col.tms]) {
-      const execs = [
-        ...(unit.owner && EXECUTIVE_ROLES.includes(unit.owner.role) && !unit.ownerIsActing
-          ? [unit.owner]
-          : []),
-        ...unit.executives,
-      ];
-      for (const p of execs) {
-        if (attachedExecutives.some((x) => x.person.nodeId === p.nodeId)) continue;
-        attachedExecutives.push({ person: p, unitName: unit.name });
-      }
+  for (const unit of units) {
+    if (unit.layer === "ceo" || unit.layer === "exec") continue;
+    const execs = [
+      ...(unit.owner && EXECUTIVE_ROLES.includes(unit.owner.role) && !unit.ownerIsActing
+        ? [unit.owner]
+        : []),
+      ...unit.executives,
+    ];
+    for (const p of execs) {
+      if (attachedExecutives.some((x) => x.person.nodeId === p.nodeId)) continue;
+      attachedExecutives.push({ person: p, unitName: unit.name });
     }
   }
 
-  const rootLeaders = leadersOf(childrenOf, root.id);
   return {
     id: root.id,
     name: root.name,
-    ceo: rootLeaders.filter((p) => p.role === "CEO"),
-    columns: allColumns,
+    ceo,
+    layers,
+    totalCols,
     attachedExecutives,
     rootOfficers: rootLeaders
       .filter((p) => p.role !== "CEO" && authorityLevel(p.role) >= REQUIRED.div)
@@ -384,9 +443,9 @@ export function countManagers(chart: AuthorityChart): number {
   const ids = new Set<string>();
   const companies = [chart.main, ...chart.affiliates].filter(Boolean) as AuthorityCompany[];
   for (const c of companies) {
-    c.ceo.forEach((p) => ids.add(p.employeeNumber ?? p.name));
-    for (const col of c.columns) {
-      for (const unit of [col.exec, ...col.divs, ...col.tms].filter(Boolean) as AuthorityUnit[]) {
+    c.rootOfficers.forEach((p) => ids.add(p.employeeNumber ?? p.name));
+    for (const row of c.layers) {
+      for (const unit of row.units) {
         if (unit.owner) ids.add(unit.owner.employeeNumber ?? unit.owner.name);
         unit.challengers.forEach((p) => ids.add(p.employeeNumber ?? p.name));
         unit.executives.forEach((p) => ids.add(p.employeeNumber ?? p.name));
