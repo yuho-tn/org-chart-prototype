@@ -177,25 +177,16 @@ function CompanyTree({
       </h2>
 
       <div className="authtree">
-        {/* 左レーン：レイヤー名。ツリー本体と同じ行グリッドで縦位置を揃える。 */}
-        <div
-          className="authtree__lanes"
-          style={{ gridTemplateRows: `repeat(${company.layers.length}, auto)` }}
-        >
-          {company.layers.map((row) => (
-            <div key={row.layer} className="authtree__lane">
-              <span className="authtree__laneName">{LAYER_LABEL[row.layer]}</span>
-              <span className="authtree__laneNote">{LAYER_NOTE[row.layer]}</span>
-            </div>
-          ))}
-        </div>
-
         <div className="authtree__scroll">
+          {/* レイヤー名レーンとツリー本体は「同じ1つのgrid」に置く。
+           * 別gridで横並びにすると行トラックの高さが一致せず、
+           * 区分の帯とブロックが微妙にズレる（2026-08-06 FB）。
+           * レーンは column 1 に置き、横スクロール中も見えるよう sticky。 */}
           <div
             className="authtree__grid"
             ref={gridRef}
             style={{
-              gridTemplateColumns: `repeat(${company.totalCols}, minmax(162px, 1fr))`,
+              gridTemplateColumns: `var(--authlayer-w) repeat(${company.totalCols}, minmax(162px, 1fr))`,
               gridTemplateRows: `repeat(${company.layers.length}, auto)`,
             }}
           >
@@ -213,6 +204,18 @@ function CompanyTree({
                 />
               ))}
             </svg>
+
+            {company.layers.map((row, rowIndex) => (
+              <div
+                key={`lane-${row.layer}`}
+                className="authtree__lane"
+                style={{ gridRow: rowIndex + 1, gridColumn: 1 }}
+              >
+                <span className="authtree__laneName">{LAYER_LABEL[row.layer]}</span>
+                <span className="authtree__laneNote">{LAYER_NOTE[row.layer]}</span>
+              </div>
+            ))}
+
             {company.layers.map((row, rowIndex) =>
               row.units.map((u) => (
                 <div
@@ -220,13 +223,11 @@ function CompanyTree({
                   className="authtree__slot"
                   style={{
                     gridRow: rowIndex + 1,
-                    gridColumn: `${u.colStart} / span ${u.colSpan}`,
+                    // 1列目はレイヤー名レーンなので +1 する
+                    gridColumn: `${u.colStart + 1} / span ${u.colSpan}`,
                   }}
                 >
-                  <div
-                    className="authtree__node"
-                    ref={(el) => setNodeRef(u.id, el)}
-                  >
+                  <div className="authtree__node" ref={(el) => setNodeRef(u.id, el)}>
                     <UnitCard unit={u} />
                   </div>
                 </div>

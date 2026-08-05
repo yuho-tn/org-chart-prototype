@@ -8914,33 +8914,19 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
 /* ── ピラミッドツリー（レイヤー＝行 / 葉の数＝列） ──────────────
  * レイヤーごとに縦の行を揃えるのが要件なので、入れ子ツリーではなく
  * 「行＝レイヤー固定・列＝葉」の grid に置く。親は子の列範囲に
- * span するので自動的に子の中央に乗る。線は SVG オーバーレイ。 */
+ * span するので自動的に子の中央に乗る。線は SVG オーバーレイ。
+ *
+ * レイヤー名レーンも同じ grid の1列目に入れる（別gridで横並びにすると
+ * 行トラックの高さが一致せず帯とブロックがズレる・2026-08-06 FB）。
+ * 行間の余白は row-gap ではなくスロットの padding-bottom で作る。
+ * row-gap にすると帯がトラックの外側（＝ギャップ）を覆えず、
+ * 区分の境界線がブロックを収めきれないため。 */
 .authtree {
-  display: grid;
-  grid-template-columns: var(--authlayer-w) minmax(0, 1fr);
-  gap: 0;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel);
   overflow: hidden;
 }
-.authtree__lanes {
-  display: grid;
-  border-right: 1px solid var(--border);
-  background: var(--navy-50);
-}
-.authtree__lane {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  padding: 12px 10px;
-  border-bottom: 1px solid var(--border);
-}
-.authtree__lane:last-child { border-bottom: none; }
-.authtree__laneName { font-size: 12.5px; font-weight: 700; color: var(--navy-800); }
-.authtree__laneNote { font-size: 10px; line-height: 1.5; color: var(--text-muted); }
-
 .authtree__scroll { overflow-x: auto; }
 .authtree__hint {
   margin: 6px 0 0;
@@ -8950,14 +8936,15 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
 .authtree__grid {
   position: relative;
   display: grid;
-  padding: 14px 14px 18px;
-  row-gap: 44px; /* 接続線を通すための行間 */
+  padding: 0 14px 0 0;
+  row-gap: 0;
   column-gap: 8px;
   min-width: min-content;
 }
 .authtree__wires {
   position: absolute;
   inset: 0;
+  z-index: 0;
   pointer-events: none;
   overflow: visible;
 }
@@ -8965,11 +8952,36 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   stroke: var(--navy-200);
   stroke-width: 1.5;
 }
+
+/* レイヤー名の帯。行トラック全体（カード＋その下の配線余白）を占めるので、
+ * 境界線がちょうどブロック群を収める形になる。横スクロール中も残す。 */
+.authtree__lane {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 14px 10px;
+  background: var(--navy-50);
+  border-right: 1px solid var(--border);
+}
+/* 区分の境界線。レーンはJSXで連続して描画されるので隣接兄弟で引ける。
+ * 最終レーンに下線が出ない＝コンテナ枠との二重線を避けられる。 */
+.authtree__lane + .authtree__lane { border-top: 1px solid var(--border); }
+.authtree__laneName { font-size: 12.5px; font-weight: 700; color: var(--navy-800); }
+.authtree__laneNote { font-size: 10px; line-height: 1.5; color: var(--text-muted); }
+
 .authtree__slot {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: center;
   align-items: start;
   min-width: 0;
+  /* 上下の余白＝配線スペース。行トラックの内側に置くのがポイント。 */
+  padding: 14px 0 44px;
 }
 .authtree__node { width: 100%; max-width: 210px; min-width: 0; }
 
@@ -9226,7 +9238,7 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
   .authview__head { flex-direction: column; gap: 10px; }
   /* ツリーは畳むと行揃えが壊れるので、レイヤー名レーンは細くして残し、
    * 本体は横スクロールで見せる（どの行がどのレイヤーかは常に読める）。 */
-  .authtree__lane { padding: 10px 7px; }
+  .authtree__lane { padding: 12px 7px; }
   .authtree__laneName { font-size: 11px; }
   .authtree__laneNote { display: none; }
   .authtree__grid { row-gap: 38px; padding: 10px 10px 14px; }
