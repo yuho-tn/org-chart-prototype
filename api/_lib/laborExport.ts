@@ -14,7 +14,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   computeHalf, assignKey, amountKey,
   type Half, type TermCode, type HalfComputation,
-} from "../../src/lib/laborCost.ts";
+} from "../../src/lib/laborCost.js";
 
 /** index0 = 7月 … index11 = 6月（PLの MONTHS 並びと一致させる）。 */
 export const MONTH_ORDER = [

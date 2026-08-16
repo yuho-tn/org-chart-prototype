@@ -7,8 +7,8 @@
  *   SUPABASE_SERVICE_ROLE_KEY   … labor_* は default-deny RLS のため service_role が必要
  *   LABOR_EXPORT_SECRET         … 呼び出し側(PL)と共有する bearer トークン
  */
-import { buildLaborExport, fetchLaborTables } from "./_lib/laborExport.ts";
-import type { TermCode } from "../src/lib/laborCost.ts";
+import { buildLaborExport, fetchLaborTables } from "./_lib/laborExport.js";
+import type { TermCode } from "../src/lib/laborCost.js";
 
 /** 長さの違いも含めて分岐時間を一定にする（トークンの総当たり短縮を防ぐ）。 */
 function safeEqual(a: string, b: string): boolean {
