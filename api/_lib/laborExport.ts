@@ -35,6 +35,8 @@ export interface LaborExport {
   unrouted: Record<string, number[]>;
   diagnostics: {
     unmappedDepts: string[];
+    /** 取得できた元テーブルの行数。ページング欠損を目視・機械検証できるようにするため。 */
+    rowCounts: Record<string, number>;
     /** product+pools+unrouted の年計。talent-hub の全社総計と一致すること。 */
     grandTotal: number;
     /** computeHalf が返した全社総計の年計（突合の相手）。 */
@@ -50,15 +52,31 @@ const TABLES = [
 
 type Tables = Record<(typeof TABLES)[number], any[]>;
 
-/** service_role で labor_* を読む（RLSはdefault-denyのため anon では読めない）。 */
+/**
+ * service_role で labor_* を読む（RLSはdefault-denyのため anon では読めない）。
+ *
+ * ⚠ PostgREST は1リクエスト既定1000行で打ち切る。labor_amounts は3000行近くあるため、
+ * select("*") のままだと**エラーも警告も出さずに欠けた金額で集計が通ってしまう**
+ * （2026-08-16 本番実測: 全社総計が 56,081.6 → 14,949.6 に化けた）。必ず range で
+ * 最終ページまで取り切り、取得件数を diagnostics に出して欠損を目視できるようにする。
+ */
+const PAGE = 1000;
+
 export async function fetchLaborTables(url: string, serviceRoleKey: string): Promise<Tables> {
   const db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+
+  const fetchAll = async (table: string): Promise<any[]> => {
+    const rows: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await db.from(table).select("*").range(from, from + PAGE - 1);
+      if (error) throw new Error(`${table} の取得に失敗: ${error.message}`);
+      rows.push(...(data ?? []));
+      if (!data || data.length < PAGE) return rows;
+    }
+  };
+
   const out = {} as Tables;
-  for (const t of TABLES) {
-    const { data, error } = await db.from(t).select("*");
-    if (error) throw new Error(`${t} の取得に失敗: ${error.message}`);
-    out[t] = data ?? [];
-  }
+  for (const t of TABLES) out[t] = await fetchAll(t);
   return out;
 }
 
@@ -146,6 +164,7 @@ export function buildLaborExport(tables: Tables, term: TermCode): LaborExport {
     product, pools, unrouted,
     diagnostics: {
       unmappedDepts: [...unmappedDepts],
+      rowCounts: Object.fromEntries(TABLES.map((t) => [t, tables[t].length])),
       grandTotal: round1(sumAll(product) + sumAll(pools) + sumAll(unrouted)),
       grandTotalFromEngine: round1(grandFromEngine),
     },
