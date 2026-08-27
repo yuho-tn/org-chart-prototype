@@ -249,12 +249,31 @@ function leadersOf(childrenOf: Map<string, OrgNode[]>, deptId: string): Authorit
 /**
  * その組織が載る段。**在籍している役職**で決める（category は最後の保険）。
  * 体制図で人を動かせば段が自動で切り替わるようにするための中核。
+ *
+ * ── 「同居しているだけの役員」で段を上げない（2026-08-28 裕鵬さんFB） ──
+ * 配下に組織を持たない**末端チーム**に役員が在籍しているだけのケース
+ * （5期8月・9月のコーポレートTM＝森岡CTM＋小澤CFO）で、素朴に「最上位の役職＝
+ * 役員」と読むとチームごと役員段へ上がってしまい、決裁者まで小澤さんになる。
+ * これは 2026-08-06 の確定ルール「同じ組織に在籍しているだけの役員は決裁者に
+ * しない（コーポレートTMの決裁は代表の高谷さん）」と食い違う。
+ *
+ * そこで：
+ *   - 配下に組織を持つ「統括／親組織」は、最上位の役職で段を決める
+ *     （財務・労務統括＝CFO小澤＋DM高谷 → 役員段。裕鵬さん指示 #2）
+ *   - 配下に組織を持たない「末端チーム」は、役員を除いた管理職で段を決める
+ *     （コーポレートTM＝CTM森岡＋CFO小澤 → TM段。小澤さんは役員チップで併記）
  */
-function layerOfDept(dept: OrgNode, leaders: AuthorityPerson[]): ManagerLayer | null {
+function layerOfDept(
+  dept: OrgNode,
+  leaders: AuthorityPerson[],
+  hasChildUnits: boolean,
+): ManagerLayer | null {
   const found = new Set(leaders.map((p) => roleLayer(p.role)).filter(Boolean));
-  if (found.has("exec")) return "exec";
+  const nonExec = found.has("div") || found.has("tm");
+  if (found.has("exec") && (hasChildUnits || !nonExec)) return "exec";
   if (found.has("div")) return "div";
   if (found.has("tm")) return "tm";
+  if (found.has("exec")) return "exec";
   return (dept.category && CATEGORY_LAYER[dept.category]) ?? null;
 }
 
@@ -363,6 +382,10 @@ function buildUnit(
 /**
  * 抜けている段を埋める「兼務セル」。`forDeptId` の組織にはその段の役職者が
  * 居ないので、上位（または自組織の上位役職）から決裁できる人を引き当てる。
+ *
+ * `anchor` はその組織自身の決裁者。**その人が既に必要レベルを満たしているなら、
+ * 上の段もその人が兼ねる**。こうしないと、末端に同居している別の役職者が
+ * 拾われて「CEOの上にCFOが乗る」ような逆転が起きる（5期8月のコーポレートTM）。
  */
 function buildBridge(
   nodes: Map<string, OrgNode>,
@@ -371,8 +394,13 @@ function buildBridge(
   forName: string,
   layer: ManagerLayer,
   parentUnitId: string,
+  anchor: AuthorityPerson | null,
 ): AuthorityUnit {
-  const { owner, acting, from } = resolveOwner(nodes, childrenOf, forDeptId, layer, true);
+  const resolved =
+    anchor && authorityLevel(anchor.role) >= REQUIRED[layer]
+      ? { owner: anchor, acting: false, from: null }
+      : resolveOwner(nodes, childrenOf, forDeptId, layer, true);
+  const { owner, acting, from } = resolved;
   return {
     id: `__bridge__${layer}__${forDeptId}`,
     deptId: forDeptId,
@@ -446,10 +474,23 @@ function buildCompany(
   };
 
   // ① 段は「在籍する役職」から決める（category ではなく）
+  const unitCandidates = depts.filter(isUnitDept);
+  const candidateIds = new Set(unitCandidates.map((d) => d.id));
+  /** その組織の配下（Unitを挟んでいてもよい）に、権限図に載る組織があるか。 */
+  const hasChildUnits = (dept: OrgNode) =>
+    unitCandidates.some((other) => {
+      let cur: OrgNode | undefined = other.parentId ? nodes.get(other.parentId) : undefined;
+      while (cur) {
+        if (cur.id === dept.id) return true;
+        if (candidateIds.has(cur.id) || cur.category === "ROOT") return false;
+        cur = cur.parentId ? nodes.get(cur.parentId) : undefined;
+      }
+      return false;
+    });
+
   const layerOf = new Map<string, ManagerLayer>();
-  for (const d of depts) {
-    if (!isUnitDept(d)) continue;
-    const layer = layerOfDept(d, leadersOf(childrenOf, d.id));
+  for (const d of unitCandidates) {
+    const layer = layerOfDept(d, leadersOf(childrenOf, d.id), hasChildUnits(d));
     if (layer) layerOf.set(d.id, layer);
   }
   const unitDeptIds = new Set(layerOf.keys());
@@ -484,7 +525,7 @@ function buildCompany(
     ) as ManagerLayer[];
     let above = parent.id;
     for (const layer of gap) {
-      const bridge = buildBridge(nodes, childrenOf, u.deptId, u.name, layer, above);
+      const bridge = buildBridge(nodes, childrenOf, u.deptId, u.name, layer, above, u.owner);
       units.push(bridge);
       byId.set(bridge.id, bridge);
       above = bridge.id;
@@ -500,7 +541,7 @@ function buildCompany(
     const below = LAYER_ORDER.slice(layerIdx(u.layer) + 1) as ManagerLayer[];
     let above = u.id;
     for (const layer of below) {
-      const bridge = buildBridge(nodes, childrenOf, u.deptId, u.name, layer, above);
+      const bridge = buildBridge(nodes, childrenOf, u.deptId, u.name, layer, above, u.owner);
       units.push(bridge);
       byId.set(bridge.id, bridge);
       above = bridge.id;
