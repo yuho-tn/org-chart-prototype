@@ -8857,6 +8857,12 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
 }
 .authlegend--owner { border-color: var(--navy-200); background: var(--navy-50); color: var(--navy-800); }
 .authlegend--challenge { border-color: #e6d5f7; background: #faf5ff; color: #7e22ce; }
+.authlegend--bridge {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
 
 .authview__empty,
 .authcard__empty {
@@ -8997,6 +9003,20 @@ td.lg-sticky.lg-sel { background: #e3edf7; }
 .authcard--ceo { border-color: var(--navy-300); background: var(--navy-50); }
 .authcard--exec { border-color: var(--navy-200); background: var(--navy-50); }
 .authcard--div { border-color: var(--border-strong); }
+/* 兼務セル＝その段の役職者が体制図に居らず、上位が兼ねている枠。
+ * カードの高さを増やすバッジは置かず（2026-08-06 FB）、破線＋淡色と
+ * 組織名の弱いコントラストだけで「実在の組織カードではない」と読ませる。 */
+.authcard--bridge {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
+  cursor: help;
+}
+.authcard--bridge .authcard__name { color: var(--text-muted); font-weight: 600; }
+.authcard--bridge .authchip--owner {
+  background: transparent;
+  border-style: dashed;
+}
 .authcard__head {
   display: flex;
   align-items: baseline;

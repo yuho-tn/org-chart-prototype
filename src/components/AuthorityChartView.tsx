@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useOrgStore } from "../store/useOrgStore";
 import {
+  bridgeNote,
   buildAuthorityChart,
   countManagers,
   LAYER_LABEL,
@@ -26,6 +27,13 @@ import {
  * 「自分のサブツリーが占める列範囲」に置く（colStart/colSpan は
  * lib/authority.ts が算出）。これで親は必ず子の真ん中に乗り、行は揃う。
  * 親子の線は配置後の実DOM位置を測ってSVGで引く。
+ *
+ * ── 兼務セル（2026-08-28 裕鵬さん指示） ────────────────────────
+ * 「全ての組織に役員・DIVマネージャー・TMマネージャーがいる状態にする」。
+ * その段の役職者が体制図に居ない枝（役員直下のHR TM、TMを持たないフロントDIV
+ * など）は、上位から決裁を担う人を破線カードで補って段を埋める。実在の組織
+ * カードと混同しないよう、破線＋淡色＋tooltip で「兼務」であることを示す。
+ * カードの高さを増やす専用バッジは置かない（2026-08-06 FB）。
  */
 
 type Edge = { key: string; x1: number; y1: number; x2: number; y2: number; midY: number };
@@ -57,8 +65,12 @@ function PersonChip({
 }
 
 function UnitCard({ unit }: { unit: AuthorityUnit }) {
+  const note = unit.isBridge ? bridgeNote(unit) : undefined;
   return (
-    <div className={`authcard authcard--${unit.layer}`}>
+    <div
+      className={`authcard authcard--${unit.layer} ${unit.isBridge ? "authcard--bridge" : ""}`}
+      title={note}
+    >
       <div className="authcard__head">
         <span className="authcard__name">{unit.name}</span>
       </div>
@@ -71,9 +83,10 @@ function UnitCard({ unit }: { unit: AuthorityUnit }) {
           variant="owner"
           prefix="決裁"
           note={
-            unit.ownerIsActing
+            note ??
+            (unit.ownerIsActing
               ? `${unit.name} に決裁権を持つ役職者が不在のため、${unit.ownerFrom ?? "上位"} の${unit.owner.name}さんが決裁します`
-              : undefined
+              : undefined)
           }
         />
       ) : (
@@ -311,6 +324,9 @@ export function AuthorityChartView() {
         <span className="authlegend authlegend--challenge">
           担当＝チャレンジ任用で実務を回している本人（決裁権なし）
         </span>
+        <span className="authlegend authlegend--bridge">
+          破線＝その段の役職者が体制図に居らず、上位が兼ねている枠
+        </span>
         <span className="authlegend">
           チャレンジ任用の組織は、決裁権を持つ上位の役職者を「決裁」に表示しています
         </span>
@@ -322,8 +338,11 @@ export function AuthorityChartView() {
       ))}
 
       <p className="authview__foot">
-        この図は体制図と同じデータから自動生成されます。人事発令で体制図を更新すれば、
-        権限図も同時に更新されます。金額上限や承認の段数は「ML規定」タブを参照してください。
+        この図は体制図と同じデータから自動生成されます。どの段（役員／DIVマネージャー／
+        TMマネージャー）に載るかも、その組織に在籍している役職から自動で判定するので、
+        人事発令で体制図を更新すれば権限図も同時に切り替わります。役職者が置かれていない
+        段は、上位の決裁者を破線の枠で補って承認ルートが途切れないようにしています。
+        金額上限や承認の段数は「ML規定」タブを参照してください。
       </p>
     </div>
   );
