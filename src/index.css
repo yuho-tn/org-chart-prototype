@@ -5605,8 +5605,15 @@ body.is-dragging .dept-card__add-child {
 .annmoves__sep { color: var(--primary, #1B3A6B); font-weight: 700; vertical-align: top; }
 .annmoves__to { vertical-align: top; padding-left: 10px; }
 .annmoves__to .annmoves__deptPath { margin-right: 6px; }
-/* カッコ書き（備考）は新所属の直後に近接表示する。 */
-.annmoves__inlnote { color: var(--text-muted, #94a3b8); font-size: 11.5px; margin-left: 6px; }
+/* カッコ書き（備考）は新所属の直後に近接表示する。列幅が足りない時は
+ * 「（兼／務追加）」と語中で折り返さず、備考ごと次の行に落とす。 */
+.annmoves__inlnote {
+  display: inline-block;
+  white-space: nowrap;
+  color: var(--text-muted, #94a3b8);
+  font-size: 11.5px;
+  margin-left: 6px;
+}
 .annmoves__kenmu {
   display: block;
   color: var(--text-muted, #64748b);
