@@ -1,8 +1,16 @@
 import { useMemo, useState } from "react";
 import { useLaborCostStore } from "../../store/useLaborCostStore";
 import { useEmployeesStore } from "../../store/useEmployeesStore";
-import type { Half, TermCode } from "../../lib/laborCost";
+import type { Half, QuarterPart, TermCode } from "../../lib/laborCost";
 import { assignKey } from "../../lib/laborCost";
+
+/** 半期×Q の4スロット（0047）。TM一括割当はこの4つ全部に同じ値を書く。 */
+const HALF_QUARTERS: { half: Half; quarter: QuarterPart }[] = [
+  { half: "H1", quarter: 1 },
+  { half: "H1", quarter: 2 },
+  { half: "H2", quarter: 1 },
+  { half: "H2", quarter: 2 },
+];
 
 /**
  * 設定タブ:
@@ -48,13 +56,12 @@ export function LaborSettingsTab({ term }: { term: TermCode }) {
       tm: string | null;
     }[] = [];
     for (const p of [...store.people].sort((a, b) => a.sort_order - b.sort_order)) {
-      const a1 = store.assignments[assignKey(p.id, term, "H1")];
-      const a2 = store.assignments[assignKey(p.id, term, "H2")];
+      // 4スロット（1Q/2Q/3Q/4Q）のうち最初に見つかった product 所属をこの人の代表DIVとする
+      // （TM一括割当は年間を通じて同じTMを想定した簡易パネルのため）。
+      const as = HALF_QUARTERS.map((hq) => store.assignments[assignKey(p.id, term, hq.half, hq.quarter)]);
       const dept =
-        (a1?.dept && productDepts.has(a1.dept) && a1.dept) ||
-        (a2?.dept && productDepts.has(a2.dept) && a2.dept) ||
-        (a1?.kenmu_dept && productDepts.has(a1.kenmu_dept) && a1.kenmu_dept) ||
-        (a2?.kenmu_dept && productDepts.has(a2.kenmu_dept) && a2.kenmu_dept) ||
+        as.find((a) => a?.dept && productDepts.has(a.dept))?.dept ??
+        as.find((a) => a?.kenmu_dept && productDepts.has(a.kenmu_dept!))?.kenmu_dept ??
         null;
       if (!dept) continue;
       const div = divByDept.get(dept) ?? dept;
@@ -66,16 +73,16 @@ export function LaborSettingsTab({ term }: { term: TermCode }) {
         departed: p.departed,
         dept,
         div,
-        tm: a1?.tm ?? a2?.tm ?? null,
+        tm: as.find((a) => a?.tm)?.tm ?? null,
       });
     }
     return rows;
   }, [store.people, store.assignments, term, productDepts, divByDept, divsWithTms]);
 
   const setTm = (personId: string, tm: string | null) => {
-    const edits = (["H1", "H2"] as Half[])
-      .filter((h) => store.assignments[assignKey(personId, term, h)])
-      .map((half) => ({ personId, term, half, tm }));
+    const edits = HALF_QUARTERS
+      .filter((hq) => store.assignments[assignKey(personId, term, hq.half, hq.quarter)])
+      .map((hq) => ({ personId, term, half: hq.half, quarter: hq.quarter, tm }));
     if (edits.length > 0) store.applyAssignEdits(edits, "TM割当");
   };
 

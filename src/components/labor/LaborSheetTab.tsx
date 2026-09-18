@@ -3,44 +3,58 @@ import { useLaborCostStore } from "../../store/useLaborCostStore";
 import { useEmployeesStore } from "../../store/useEmployeesStore";
 import { LaborGrid } from "./LaborGrid";
 import type { GridColumn, GridEdit, GridRow } from "./LaborGrid";
-import type { Half, Slot, TermCode } from "../../lib/laborCost";
+import type { Half, QuarterPart, Slot, TermCode } from "../../lib/laborCost";
 import { amountKey, assignKey, ALLOC_TM } from "../../lib/laborCost";
 
 /**
  * 個人別シート: 元スプレッドシート「人件費ローデータ」と同じ列構成を
  * 期ごとに表示・編集する。
  * 列: 名前 | 社員番号 | 入社日 | マスター所属
- *    | 上期(所属/兼務先/兼務率/夏ボ/7〜12月/上期計)
- *    | 下期(所属/兼務先/兼務率/冬ボ/1〜6月/下期計) | 年計
+ *    | 上期・1Q(所属/兼務先/兼務率/夏ボ/7〜9月) | 上期・2Q(所属/兼務先/兼務率/10〜12月/上期計)
+ *    | 下期・3Q(所属/兼務先/兼務率/冬ボ/1〜3月) | 下期・4Q(所属/兼務先/兼務率/4〜6月/下期計) | 年計
  *
- * 名前・社員番号・入社日・マスター所属は TalentHub 従業員マスター(employees)と
- * employee_number で突合して表示する。所属(DIV)は「マスター所属」を候補として
- * 見ながらプルダウンで手動確定する（マスターの単一部署文字列は自動分離不可）。
+ * 1Q/2Q（3Q/4Q）は期中（Qまたぎ）の人事異動を表現するための分割で、大半の
+ * 従業員は同じ値が入る（0047）。名前・社員番号・入社日・マスター所属は
+ * TalentHub 従業員マスター(employees)と employee_number で突合して表示する。
+ * 所属(DIV)は「マスター所属」を候補として見ながらプルダウンで手動確定する
+ * （マスターの単一部署文字列は自動分離不可）。
  */
 
-const H1_AMOUNT_COLS: { key: Slot; title: string }[] = [
-  { key: "BS", title: "夏ボ" },
+const H1_Q1_MONTHS: { key: Slot; title: string }[] = [
   { key: "7", title: "7月" },
   { key: "8", title: "8月" },
   { key: "9", title: "9月" },
+];
+const H1_Q2_MONTHS: { key: Slot; title: string }[] = [
   { key: "10", title: "10月" },
   { key: "11", title: "11月" },
   { key: "12", title: "12月" },
 ];
-const H2_AMOUNT_COLS: { key: Slot; title: string }[] = [
-  { key: "BW", title: "冬ボ" },
+const H2_Q1_MONTHS: { key: Slot; title: string }[] = [
   { key: "1", title: "1月" },
   { key: "2", title: "2月" },
   { key: "3", title: "3月" },
+];
+const H2_Q2_MONTHS: { key: Slot; title: string }[] = [
   { key: "4", title: "4月" },
   { key: "5", title: "5月" },
   { key: "6", title: "6月" },
 ];
+const H1_BONUS_COL: { key: Slot; title: string } = { key: "BS", title: "夏ボ" };
+const H2_BONUS_COL: { key: Slot; title: string } = { key: "BW", title: "冬ボ" };
+const H1_AMOUNT_COLS = [H1_BONUS_COL, ...H1_Q1_MONTHS, ...H1_Q2_MONTHS];
+const H2_AMOUNT_COLS = [H2_BONUS_COL, ...H2_Q1_MONTHS, ...H2_Q2_MONTHS];
 
 const AMOUNT_KEYS = new Set<string>([
   ...H1_AMOUNT_COLS.map((c) => c.key),
   ...H2_AMOUNT_COLS.map((c) => c.key),
 ]);
+
+/** H1: 1Q=7〜9月／2Q=10〜12月。H2: 3Q(quarter=1)=1〜3月／4Q(quarter=2)=4〜6月。 */
+const QUARTER_LABEL: Record<Half, [string, string]> = {
+  H1: ["1Q（7〜9月）", "2Q（10〜12月）"],
+  H2: ["3Q（1〜3月）", "4Q（4〜6月）"],
+};
 
 const TOTAL_ROW_ID = "__total__";
 
@@ -127,9 +141,9 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
     return m;
   }, [tms]);
 
-  // その行・その半期の所属DIVに属するTMだけを選択肢に出す（クロスDIV誤選択の防止）。
-  const tmOptionsFor = (h: Half) => (row: GridRow): string[] => {
-    const dept = row.cells[`${h}:dept`];
+  // その行・そのQの所属DIVに属するTMだけを選択肢に出す（クロスDIV誤選択の防止）。
+  const tmOptionsFor = (h: Half, q: QuarterPart) => (row: GridRow): string[] => {
+    const dept = row.cells[`${h}:${q}:dept`];
     if (typeof dept !== "string" || !dept) return [];
     const div = divByDept.get(dept) ?? dept;
     const list = tmNamesByDiv.get(div) ?? [];
@@ -137,25 +151,41 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
     return list.length >= 2 ? [...list, ALLOC_TM] : list;
   };
   // 兼務先TMは兼務先DIVのTMだけに絞る（所属側と同じ考え方）。
-  const kenmuTmOptionsFor = (h: Half) => (row: GridRow): string[] => {
-    const kdept = row.cells[`${h}:kenmu`];
+  const kenmuTmOptionsFor = (h: Half, q: QuarterPart) => (row: GridRow): string[] => {
+    const kdept = row.cells[`${h}:${q}:kenmu`];
     if (typeof kdept !== "string" || !kdept) return [];
     const div = divByDept.get(kdept) ?? kdept;
     return tmNamesByDiv.get(div) ?? [];
   };
 
   const columns: GridColumn[] = useMemo(() => {
-    const half = (h: Half, label: string, amountCols: { key: Slot; title: string }[]): GridColumn[] => [
-      { key: `${h}:dept`, title: `${h === "H1" ? "上期" : "下期"}所属`, width: 130, type: "select", group: label, options: deptOptions },
-      { key: `${h}:tm`, title: "TM", width: 118, type: "select", group: label, optionsFor: tmOptionsFor(h) },
-      { key: `${h}:kenmu`, title: "兼務先", width: 120, type: "select", group: label, options: deptOptions },
-      { key: `${h}:kenmu_tm`, title: "兼務先TM", width: 118, type: "select", group: label, optionsFor: kenmuTmOptionsFor(h) },
-      { key: `${h}:rate`, title: "兼務率", width: 64, type: "percent", group: label },
-      ...amountCols.map((c): GridColumn => ({
-        key: c.key, title: c.title, width: 72, type: "number", group: label,
-      })),
-      { key: `${h}:total`, title: h === "H1" ? "上期計" : "下期計", width: 84, type: "readonly", group: label, align: "right" },
+    const quarterCols = (h: Half, q: QuarterPart, label: string): GridColumn[] => [
+      { key: `${h}:${q}:dept`, title: "所属", width: 130, type: "select", group: label, options: deptOptions },
+      { key: `${h}:${q}:tm`, title: "TM", width: 118, type: "select", group: label, optionsFor: tmOptionsFor(h, q) },
+      { key: `${h}:${q}:kenmu`, title: "兼務先", width: 120, type: "select", group: label, options: deptOptions },
+      { key: `${h}:${q}:kenmu_tm`, title: "兼務先TM", width: 118, type: "select", group: label, optionsFor: kenmuTmOptionsFor(h, q) },
+      { key: `${h}:${q}:rate`, title: "兼務率", width: 64, type: "percent", group: label },
     ];
+    const half = (
+      h: Half,
+      bonusCol: { key: Slot; title: string },
+      q1Months: { key: Slot; title: string }[],
+      q2Months: { key: Slot; title: string }[],
+    ): GridColumn[] => {
+      const [label1, label2] = QUARTER_LABEL[h];
+      return [
+        ...quarterCols(h, 1, label1),
+        { key: bonusCol.key, title: bonusCol.title, width: 72, type: "number", group: label1 },
+        ...q1Months.map((c): GridColumn => ({
+          key: c.key, title: c.title, width: 72, type: "number", group: label1,
+        })),
+        ...quarterCols(h, 2, label2),
+        ...q2Months.map((c): GridColumn => ({
+          key: c.key, title: c.title, width: 72, type: "number", group: label2,
+        })),
+        { key: `${h}:total`, title: h === "H1" ? "上期計" : "下期計", width: 84, type: "readonly", group: label2, align: "right" },
+      ];
+    };
     return [
       { key: "name", title: "名前", width: 150, type: "readonly", sticky: true },
       { key: "emp_no", title: "社員番号", width: 84, type: "readonly" },
@@ -163,8 +193,8 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
       { key: "master_dept", title: "マスター部署", width: 132, type: "readonly" },
       { key: "master_pos", title: "マスター役職", width: 120, type: "readonly" },
       { key: "master_tm", title: "マスターTM（参考）", width: 120, type: "readonly" },
-      ...half("H1", "上期（7〜12月）", H1_AMOUNT_COLS),
-      ...half("H2", "下期（1〜6月）", H2_AMOUNT_COLS),
+      ...half("H1", H1_BONUS_COL, H1_Q1_MONTHS, H1_Q2_MONTHS),
+      ...half("H2", H2_BONUS_COL, H2_Q1_MONTHS, H2_Q2_MONTHS),
       { key: "y_total", title: "年計", width: 92, type: "readonly", align: "right" },
     ];
   }, [deptOptions, divByDept, tmNamesByDiv]);
@@ -176,8 +206,10 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
     for (const p of sorted) {
       // 未連携かつ手動でない行（旧退職者等のノイズ）は非表示（req: 社員でないため除く）
       if (!p.employee_number && !p.is_manual) continue;
-      const a1 = assignments[assignKey(p.id, term, "H1")];
-      const a2 = assignments[assignKey(p.id, term, "H2")];
+      const a1q1 = assignments[assignKey(p.id, term, "H1", 1)];
+      const a1q2 = assignments[assignKey(p.id, term, "H1", 2)];
+      const a2q1 = assignments[assignKey(p.id, term, "H2", 1)];
+      const a2q2 = assignments[assignKey(p.id, term, "H2", 2)];
       const emp = p.employee_number ? empByNum.get(p.employee_number) : null;
       // 万円で0は「無データ」＝空欄扱い（スプシ挙動）。Deleteで0が残っても空表示。
       const amt = (slot: Slot) => {
@@ -196,16 +228,26 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         master_dept: emp?.department ?? (p.employee_number ? "—" : ""),
         master_pos: emp?.position_title ?? (p.employee_number ? "—" : ""),
         master_tm: parseMasterTm(emp?.department, emp?.position_title) ?? (p.employee_number ? "—" : ""),
-        "H1:dept": a1?.dept ?? null,
-        "H1:tm": a1?.tm ?? null,
-        "H1:kenmu": a1?.kenmu_dept ?? null,
-        "H1:kenmu_tm": a1?.kenmu_tm ?? null,
-        "H1:rate": a1?.kenmu_rate ? a1.kenmu_rate : null,
-        "H2:dept": a2?.dept ?? null,
-        "H2:tm": a2?.tm ?? null,
-        "H2:kenmu": a2?.kenmu_dept ?? null,
-        "H2:kenmu_tm": a2?.kenmu_tm ?? null,
-        "H2:rate": a2?.kenmu_rate ? a2.kenmu_rate : null,
+        "H1:1:dept": a1q1?.dept ?? null,
+        "H1:1:tm": a1q1?.tm ?? null,
+        "H1:1:kenmu": a1q1?.kenmu_dept ?? null,
+        "H1:1:kenmu_tm": a1q1?.kenmu_tm ?? null,
+        "H1:1:rate": a1q1?.kenmu_rate ? a1q1.kenmu_rate : null,
+        "H1:2:dept": a1q2?.dept ?? null,
+        "H1:2:tm": a1q2?.tm ?? null,
+        "H1:2:kenmu": a1q2?.kenmu_dept ?? null,
+        "H1:2:kenmu_tm": a1q2?.kenmu_tm ?? null,
+        "H1:2:rate": a1q2?.kenmu_rate ? a1q2.kenmu_rate : null,
+        "H2:1:dept": a2q1?.dept ?? null,
+        "H2:1:tm": a2q1?.tm ?? null,
+        "H2:1:kenmu": a2q1?.kenmu_dept ?? null,
+        "H2:1:kenmu_tm": a2q1?.kenmu_tm ?? null,
+        "H2:1:rate": a2q1?.kenmu_rate ? a2q1.kenmu_rate : null,
+        "H2:2:dept": a2q2?.dept ?? null,
+        "H2:2:tm": a2q2?.tm ?? null,
+        "H2:2:kenmu": a2q2?.kenmu_dept ?? null,
+        "H2:2:kenmu_tm": a2q2?.kenmu_tm ?? null,
+        "H2:2:rate": a2q2?.kenmu_rate ? a2q2.kenmu_rate : null,
       };
       for (const c of H1_AMOUNT_COLS) {
         const v = amt(c.key);
@@ -228,7 +270,7 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
       // 退職者非表示: 当期（上期＋下期）で計上ゼロの退職者のみ隠す。
       // 例: 10月退社は上期計上あり→hasData=true→残る。
       if (hideDeparted && p.departed && !hasData) continue;
-      if (!showAll && !hasData && !a1 && !a2) continue;
+      if (!showAll && !hasData && !a1q1 && !a1q2 && !a2q1 && !a2q2) continue;
       out.push({
         id: p.id,
         cells,
@@ -265,13 +307,14 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         });
         continue;
       }
-      const [half, field] = e.colKey.split(":") as [Half, string];
+      const [half, qStr, field] = e.colKey.split(":") as [Half, string, string];
+      const quarter = (Number(qStr) as QuarterPart) === 2 ? 2 : 1;
       if (field === "dept") {
         const newDept = e.value == null ? null : String(e.value);
         // 所属変更で旧TMが新DIVに属さなくなる場合は同じ編集内でTMも自動クリア
         // （誤ルーティング防止／dept・tmは1編集にまとめる＝別編集にすると元値独立計算でdeptが失われる）。
-        const patch: Parameters<typeof applyAssignEdits>[0][number] = { personId: e.rowId, term, half, dept: newDept };
-        const curTm = assignments[assignKey(e.rowId, term, half)]?.tm ?? null;
+        const patch: Parameters<typeof applyAssignEdits>[0][number] = { personId: e.rowId, term, half, quarter, dept: newDept };
+        const curTm = assignments[assignKey(e.rowId, term, half, quarter)]?.tm ?? null;
         if (curTm) {
           const newDiv = newDept ? (divByDept.get(newDept) ?? newDept) : null;
           const allowed = newDiv ? tmNamesByDiv.get(newDiv) ?? [] : [];
@@ -282,12 +325,12 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         }
         assignEdits.push(patch);
       }
-      else if (field === "tm") assignEdits.push({ personId: e.rowId, term, half, tm: e.value == null ? null : String(e.value) });
+      else if (field === "tm") assignEdits.push({ personId: e.rowId, term, half, quarter, tm: e.value == null ? null : String(e.value) });
       else if (field === "kenmu") {
         const newKenmu = e.value == null ? null : String(e.value);
-        const patch: Parameters<typeof applyAssignEdits>[0][number] = { personId: e.rowId, term, half, kenmu_dept: newKenmu };
+        const patch: Parameters<typeof applyAssignEdits>[0][number] = { personId: e.rowId, term, half, quarter, kenmu_dept: newKenmu };
         // 兼務先変更で旧兼務先TMが新兼務先DIVに属さなくなる場合は同編集内でクリア。
-        const curKtm = assignments[assignKey(e.rowId, term, half)]?.kenmu_tm ?? null;
+        const curKtm = assignments[assignKey(e.rowId, term, half, quarter)]?.kenmu_tm ?? null;
         if (curKtm) {
           const newDiv = newKenmu ? (divByDept.get(newKenmu) ?? newKenmu) : null;
           const allowed = newDiv ? tmNamesByDiv.get(newDiv) ?? [] : [];
@@ -295,8 +338,8 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         }
         assignEdits.push(patch);
       }
-      else if (field === "kenmu_tm") assignEdits.push({ personId: e.rowId, term, half, kenmu_tm: e.value == null ? null : String(e.value) });
-      else if (field === "rate") assignEdits.push({ personId: e.rowId, term, half, kenmu_rate: e.value == null ? 0 : Number(e.value) || 0 });
+      else if (field === "kenmu_tm") assignEdits.push({ personId: e.rowId, term, half, quarter, kenmu_tm: e.value == null ? null : String(e.value) });
+      else if (field === "rate") assignEdits.push({ personId: e.rowId, term, half, quarter, kenmu_rate: e.value == null ? 0 : Number(e.value) || 0 });
     }
     if (amountEdits.length > 0) applyAmountEdits(amountEdits, label);
     if (assignEdits.length > 0) applyAssignEdits(assignEdits, label);
@@ -330,6 +373,31 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         ? `${n}名の入社日をマスターから取り込みました`
         : "マスターと差異のある入社日はありませんでした（連携済みのみ対象）",
     );
+  };
+
+  // 1Q（3Q）の所属・TM・兼務設定を、全員の2Q（4Q）へ一括コピーする
+  // （ほとんどの従業員は1Q=2Qのため。個別に異動がある人だけ後から2Q単体を編集する）。
+  const copyQuarterToSecond = (half: Half) => {
+    const [q1Label, q2Label] = QUARTER_LABEL[half];
+    if (
+      !window.confirm(
+        `${q1Label}の所属・TM・兼務先・兼務率を、全員の${q2Label}へ上書きコピーします。` +
+          `すでに${q2Label}を個別に設定している人の値も上書きされます。よろしいですか？`,
+      )
+    ) {
+      return;
+    }
+    const copyEdits: Parameters<typeof applyAssignEdits>[0] = [];
+    for (const p of people) {
+      const a1 = assignments[assignKey(p.id, term, half, 1)];
+      if (!a1) continue;
+      copyEdits.push({
+        personId: p.id, term, half, quarter: 2,
+        dept: a1.dept, kenmu_dept: a1.kenmu_dept, kenmu_rate: a1.kenmu_rate,
+        tm: a1.tm, kenmu_tm: a1.kenmu_tm,
+      });
+    }
+    if (copyEdits.length > 0) applyAssignEdits(copyEdits, `${q1Label}→${q2Label} 一括コピー`);
   };
 
   // 手動（見立て）行＝マスター未登録・削除可
@@ -405,6 +473,12 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         </label>
         <button className="labor-btn" onClick={syncHiredFromMaster}>
           入社日をマスターから取込
+        </button>
+        <button className="labor-btn" onClick={() => copyQuarterToSecond("H1")}>
+          1Q→2Q 一括コピー
+        </button>
+        <button className="labor-btn" onClick={() => copyQuarterToSecond("H2")}>
+          3Q→4Q 一括コピー
         </button>
         {term === "5" && (
           <div className="labor-forecast-ctl">
@@ -482,6 +556,12 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         コピー/ペースト（⌘C/⌘V）・⌘Z 取り消し・⌘D フィルダウン・Delete クリア。金額は万円。
         兼務率は所属から差し引く率（50% → 所属50%/兼務先50%。兼務先が
         空欄の場合、その分はどの部署にも計上しない＝元シート仕様）。
+        上期は1Q（7〜9月）/2Q（10〜12月）、下期は3Q（1〜3月）/4Q（4〜6月）に分けて所属を持てます。
+        ほとんどの人は1Q=2Q（3Q=4Q）で同じ値のままでOK。期中で人事異動があった人だけ、
+        異動後のQの所属・TM・兼務先を個別に書き換えてください（変更前後で計上組織が切り替わり、
+        7〜9月・10〜12月それぞれの実額がその時点の所属へ計上されます。夏ボ/冬ボはこれまでどおり
+        半期÷6を維持したまま、月数に応じて自然に両方の所属へ按分されます）。
+        「1Q→2Q 一括コピー」「3Q→4Q 一括コピー」で全員分をまず複製し、異動者だけ後から個別修正すると楽です。
       </p>
     </div>
   );

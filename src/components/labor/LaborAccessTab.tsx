@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { useLaborAccessStore, type LaborRole } from "../../store/useLaborAccessStore";
+import {
+  useLaborAccessStore,
+  LABOR_DIV_TARGETS,
+  type LaborRole,
+  type LaborDivTarget,
+} from "../../store/useLaborAccessStore";
 import { useAuthStore } from "../../store/useAuthStore";
 
 /**
@@ -8,9 +13,15 @@ import { useAuthStore } from "../../store/useAuthStore";
  *  - owner  … データ閲覧 ＋ このリスト編集
  *  - viewer … データ閲覧のみ
  * DB 側で「owner を0人にする操作」は必ず失敗する（ロックアウト防止）。
+ *
+ * 下半分は DIV別ページ（#/labor/div/:target）のメールアドレス単位アクセス管理。
+ * 全従業員データは見せず、指定したDIV/プール1件分の詳細だけをそのアドレスに見せる。
  */
 
 const roleLabel: Record<LaborRole, string> = { owner: "管理者", viewer: "閲覧者" };
+
+const DIV_TARGET_URL = (target: LaborDivTarget) =>
+  `${window.location.origin}/#/labor/div/${encodeURIComponent(target)}`;
 
 export function LaborAccessTab() {
   const admins = useLaborAccessStore((s) => s.admins);
@@ -23,13 +34,25 @@ export function LaborAccessTab() {
   const updateRole = useLaborAccessStore((s) => s.updateRole);
   const myEmail = useAuthStore((s) => s.session?.user?.email ?? "").toLowerCase();
 
+  const divAccess = useLaborAccessStore((s) => s.divAccess);
+  const divAccessLoading = useLaborAccessStore((s) => s.divAccessLoading);
+  const divAccessError = useLaborAccessStore((s) => s.divAccessError);
+  const loadDivAccess = useLaborAccessStore((s) => s.loadDivAccess);
+  const addDivAccess = useLaborAccessStore((s) => s.addDivAccess);
+  const removeDivAccess = useLaborAccessStore((s) => s.removeDivAccess);
+
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<LaborRole>("viewer");
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+  const [divEmail, setDivEmail] = useState("");
+  const [divTarget, setDivTarget] = useState<LaborDivTarget>(LABOR_DIV_TARGETS[0]);
+  const [divMsg, setDivMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
   useEffect(() => {
     void loadAdmins();
-  }, [loadAdmins]);
+    void loadDivAccess();
+  }, [loadAdmins, loadDivAccess]);
 
   const ownerCount = admins.filter((a) => a.role === "owner").length;
 
@@ -60,6 +83,28 @@ export function LaborAccessTab() {
     const r = await updateRole(targetEmail, next);
     if (r.ok) flash("ok", `${targetEmail} を「${roleLabel[next]}」に変更しました。`);
     else flash("err", r.reason ?? "変更に失敗しました。");
+  };
+
+  const flashDiv = (kind: "ok" | "err", text: string) => {
+    setDivMsg({ kind, text });
+    if (kind === "ok") setTimeout(() => setDivMsg(null), 2500);
+  };
+
+  const onAddDiv = async () => {
+    const r = await addDivAccess(divEmail, divTarget);
+    if (r.ok) {
+      flashDiv("ok", `${divEmail.trim().toLowerCase()} に「${divTarget}」の閲覧権限を追加しました。`);
+      setDivEmail("");
+    } else {
+      flashDiv("err", r.reason ?? "追加に失敗しました。");
+    }
+  };
+
+  const onRemoveDiv = async (targetEmail: string, target: LaborDivTarget) => {
+    if (!window.confirm(`${targetEmail} の「${target}」閲覧権限を削除します。よろしいですか？`)) return;
+    const r = await removeDivAccess(targetEmail, target);
+    if (r.ok) flashDiv("ok", `${targetEmail} の「${target}」閲覧権限を削除しました。`);
+    else flashDiv("err", r.reason ?? "削除に失敗しました。");
   };
 
   return (
@@ -160,6 +205,93 @@ export function LaborAccessTab() {
       <p className="labor-note">
         管理者 {ownerCount}名 ／ 全{admins.length}名。最後の管理者は削除・降格できません（ロックアウト防止）。
       </p>
+
+      <div className="labor-access-intro">
+        <h2>DIV別アクセス</h2>
+        <p className="labor-hint">
+          全従業員データは見せず、指定したDIV（またはHR TM/コーポレートTM/開発TM/フロントDIVの按分プール）
+          1件分の詳細人件費だけを、そのメールアドレスに見せます。専用URLはそのDIVの担当者だけに共有してください
+          （このアプリのナビには出しません）。
+        </p>
+      </div>
+
+      <div className="labor-access-add">
+        <input
+          className="labor-access-input"
+          type="email"
+          inputMode="email"
+          placeholder="メールアドレス（例: name@sho-san.co.jp）"
+          value={divEmail}
+          onChange={(e) => setDivEmail(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && divEmail.trim()) void onAddDiv(); }}
+          disabled={busy}
+        />
+        <select
+          className="labor-select"
+          value={divTarget}
+          onChange={(e) => setDivTarget(e.target.value as LaborDivTarget)}
+          disabled={busy}
+        >
+          {LABOR_DIV_TARGETS.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <button className="labor-btn labor-btn--on" onClick={() => void onAddDiv()} disabled={busy || !divEmail.trim()}>
+          追加
+        </button>
+      </div>
+
+      {divMsg && (
+        <div className={divMsg.kind === "ok" ? "labor-access-msg labor-access-msg--ok" : "labor-access-msg labor-access-msg--err"}>
+          {divMsg.text}
+        </div>
+      )}
+      {divAccessError && <div className="labor-warn">読み込みエラー: {divAccessError}</div>}
+
+      <table className="labor-access-table">
+        <thead>
+          <tr>
+            <th>メールアドレス</th>
+            <th>閲覧できるDIV/プール</th>
+            <th className="labor-access-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {divAccessLoading && divAccess.length === 0 ? (
+            <tr><td colSpan={3} className="labor-access-empty">読み込み中…</td></tr>
+          ) : divAccess.length === 0 ? (
+            <tr><td colSpan={3} className="labor-access-empty">登録なし</td></tr>
+          ) : (
+            divAccess.map((a) => (
+              <tr key={`${a.email}::${a.target}`}>
+                <td>{a.email}</td>
+                <td>
+                  {a.target}
+                  <a
+                    className="labor-backlink"
+                    href={DIV_TARGET_URL(a.target)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="このアドレス用の専用URL（別タブで開く）"
+                  >
+                    　URLを開く
+                  </a>
+                </td>
+                <td className="labor-access-actions">
+                  <button
+                    className="labor-access-del"
+                    onClick={() => void onRemoveDiv(a.email, a.target)}
+                    disabled={busy}
+                  >
+                    削除
+                  </button>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+      <p className="labor-note">DIV別アクセス 全{divAccess.length}件。</p>
     </div>
   );
 }

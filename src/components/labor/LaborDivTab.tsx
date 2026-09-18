@@ -5,7 +5,7 @@ import type { Half, HalfComputation, TermCode } from "../../lib/laborCost";
 import { computeHalf, fmtMan } from "../../lib/laborCost";
 
 /** personId → 正式名称（個人別シートと同じ規則: マスターの display_name || full_name、無ければ labor_people.name）。 */
-type NameResolver = (personId: string, fallback: string) => string;
+export type NameResolver = (personId: string, fallback: string) => string;
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
@@ -195,7 +195,7 @@ export function LaborDivTab({ term }: { term: TermCode }) {
   );
 }
 
-function DivBlock({
+export function DivBlock({
   d,
   MonthCells,
   nameOf,
@@ -238,7 +238,7 @@ function DivBlock({
   );
 }
 
-function PoolBlock({
+export function PoolBlock({
   p,
   groupLabel,
   MonthCells,

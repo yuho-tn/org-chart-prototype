@@ -50,7 +50,7 @@ const TABLES = [
   "labor_settings",
 ] as const;
 
-type Tables = Record<(typeof TABLES)[number], any[]>;
+export type Tables = Record<(typeof TABLES)[number], any[]>;
 
 /**
  * service_role で labor_* を読む（RLSはdefault-denyのため anon では読めない）。
@@ -80,14 +80,14 @@ export async function fetchLaborTables(url: string, serviceRoleKey: string): Pro
   return out;
 }
 
-function runHalf(tables: Tables, term: TermCode, half: Half): HalfComputation {
+export function runHalf(tables: Tables, term: TermCode, half: Half): HalfComputation {
   const termRow = tables.labor_terms.find((t) => t.code === term);
   if (!termRow) throw new Error(`期 ${term} が labor_terms にありません`);
 
   // Supabase の numeric は文字列で返る場合があるため必ず数値化する。
   const assignments: Record<string, any> = {};
   for (const a of tables.labor_assignments) {
-    assignments[assignKey(a.person_id, a.term, a.half)] = { ...a, kenmu_rate: Number(a.kenmu_rate) };
+    assignments[assignKey(a.person_id, a.term, a.half, a.quarter)] = { ...a, kenmu_rate: Number(a.kenmu_rate) };
   }
   const amounts: Record<string, any> = {};
   for (const a of tables.labor_amounts) {

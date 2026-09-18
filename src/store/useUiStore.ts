@@ -93,7 +93,9 @@ export type Route =
   | { name: "grades" }
   | { name: "audit_log" }
   // 人件費管理（chrome 無し・ナビ導線なし・URL直打ち専用・laborcost_admins限定）
-  | { name: "labor" };
+  | { name: "labor" }
+  // DIV別人件費ページ（chrome 無し・ナビ導線なし・URL直打ち専用・labor_div_access限定）
+  | { name: "labor_div"; target: string };
 
 export function sectionOfRoute(r: Route): Section {
   switch (r.name) {
@@ -140,6 +142,7 @@ export function sectionOfRoute(r: Route): Section {
     case "audit_log":
       return "audit_log";
     case "labor":
+    case "labor_div":
       return "labor";
   }
 }
@@ -257,6 +260,15 @@ function readRouteFromHash(): Route {
   if (h === "#/payroll/audit-log") return { name: "audit_log" };
   // 人件費管理（ナビ導線なし・URL直打ち専用）
   if (h === "#/labor") return { name: "labor" };
+  // DIV別人件費ページ: #/labor/div/:target（target はURLエンコードされている想定）
+  const laborDiv = /^#\/labor\/div\/([^/]+)$/.exec(h);
+  if (laborDiv) {
+    try {
+      return { name: "labor_div", target: decodeURIComponent(laborDiv[1]) };
+    } catch {
+      return { name: "home" };
+    }
+  }
   return { name: "home" };
 }
 
@@ -322,6 +334,8 @@ function routeToHash(r: Route): string {
       return "#/payroll/audit-log";
     case "labor":
       return "#/labor";
+    case "labor_div":
+      return `#/labor/div/${encodeURIComponent(r.target)}`;
   }
 }
 

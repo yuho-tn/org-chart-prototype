@@ -13,6 +13,13 @@
  *   - 途中入社/退職は smoothSalary で扱いが変わる:
  *       OFF = 在籍月（金額が入っている月）のみ計上＝月次データそのまま
  *       ON  = 当該半期の給与合計を半期の全月へ均等ならし（凸凹から個人給与を隠す・金額保存）
+ *
+ * Q（3ヶ月）単位の所属変更（0047）:
+ *   - labor_assignments は半期(H1/H2)をさらに前半3ヶ月(quarter=1)/後半3ヶ月(quarter=2)に分けて持つ
+ *     （表示上は H1=1Q/2Q、H2=3Q/4Q）。1Q/2Qの割当が同一なら従来どおり半期一括で計上し、
+ *     異なる場合だけ3ヶ月ずつ別の所属として計上する（給与の均等ならしも3ヶ月単位に切替わる）。
+ *   - ボーナスは変更後も「半期÷6」を維持したまま、月数に応じて自然に半期内で按分される
+ *     （3ヶ月区間なら bonus/6×3=bonus/2 がその区間の所属へ計上される）。
  */
 
 // ── 型 ──────────────────────────────────────────────────────────────
@@ -56,10 +63,15 @@ export type LaborPersonRow = {
   is_manual?: boolean;
 };
 
+/** 半期内の前半3ヶ月(1)/後半3ヶ月(2)。表示上は H1=1Q/2Q、H2=3Q/4Q（0047）。 */
+export type QuarterPart = 1 | 2;
+
 export type LaborAssignmentRow = {
   person_id: string;
   term: TermCode;
   half: Half;
+  /** 半期内のQ（0047）。1Q/2Qが同一割当なら実質「半期一括」と同じ結果になる。 */
+  quarter: QuarterPart;
   dept: string | null;
   kenmu_dept: string | null;
   kenmu_rate: number;
@@ -137,9 +149,28 @@ export function amountKey(personId: string, term: TermCode, slot: Slot): AmountK
   return `${personId}::${term}::${slot}`;
 }
 
-export type AssignKey = `${string}::${TermCode}::${Half}`;
-export function assignKey(personId: string, term: TermCode, half: Half): AssignKey {
-  return `${personId}::${term}::${half}`;
+export type AssignKey = `${string}::${TermCode}::${Half}::${QuarterPart}`;
+export function assignKey(
+  personId: string,
+  term: TermCode,
+  half: Half,
+  quarter: QuarterPart,
+): AssignKey {
+  return `${personId}::${term}::${half}::${quarter}`;
+}
+
+/** dept/kenmu_dept/kenmu_rate/tm/kenmu_tm が同一か（1Q=2Q判定に使う）。 */
+export function sameAssignment(
+  a: Pick<LaborAssignmentRow, "dept" | "kenmu_dept" | "kenmu_rate" | "tm" | "kenmu_tm">,
+  b: Pick<LaborAssignmentRow, "dept" | "kenmu_dept" | "kenmu_rate" | "tm" | "kenmu_tm">,
+): boolean {
+  return (
+    a.dept === b.dept &&
+    a.kenmu_dept === b.kenmu_dept &&
+    (a.kenmu_rate ?? 0) === (b.kenmu_rate ?? 0) &&
+    a.tm === b.tm &&
+    a.kenmu_tm === b.kenmu_tm
+  );
 }
 
 // ── 按分計算 ────────────────────────────────────────────────────────
@@ -327,99 +358,118 @@ export function computeHalf(inp: Inputs): HalfComputation {
   const unmapped = new Set<string>();
 
   for (const p of people) {
-    const a = assignments[assignKey(p.id, term.code, half)];
-    if (!a) continue;
     const monthAmtRaw = (m: string) =>
       amounts[amountKey(p.id, term.code, m as Slot)]?.amount ?? 0;
     const bonus = amounts[amountKey(p.id, term.code, bonusSlot)]?.amount ?? 0;
     const hasAny = bonus !== 0 || months.some((m) => monthAmtRaw(m) !== 0);
     if (!hasAny) continue;
-    // 給与の半期内均等ならし: この人の当該半期給与合計を半期の全月へ均等割り。
-    // 例: 10月退職で7〜9月しか計上のない人も、その合計を7〜12月の6ヶ月へ均等計上。
-    // 半期合計は不変（Σ=元の合計）＝金額保存。ボーナスは元々 半期÷6 で均等。
-    const salaryTotal = months.reduce((s, m) => s + monthAmtRaw(m), 0);
-    const monthAmt = inp.smoothSalary
-      ? (_m: string) => salaryTotal / months.length
-      : monthAmtRaw;
 
-    // 配分先: 所属(1-rate) + 兼務先(rate)。所属側は tm、兼務先側は kenmu_tm を使う（0042）。
-    // 元シート仕様: 兼務先が空欄でも兼務率>0なら所属から差し引く
-    // （その分はSHO-SAN人件費の外＝どこにも計上しない。例: 丹野30%）。
-    const targets: { dept: string; tm: string | null; share: number }[] = [];
-    const rate = Math.min(Math.max(a.kenmu_rate ?? 0, 0), 1);
-    if (a.dept) targets.push({ dept: a.dept, tm: a.tm ?? null, share: 1 - rate });
-    if (a.kenmu_dept && rate > 0) targets.push({ dept: a.kenmu_dept, tm: a.kenmu_tm ?? null, share: rate });
-    if (targets.length === 0) continue;
+    // 1Q/2Q（前半3ヶ月/後半3ヶ月）の割当を見る。同一なら半期一括の1区間、
+    // 異なるなら3ヶ月ずつの2区間として処理する（0047）。
+    const a1 = assignments[assignKey(p.id, term.code, half, 1)];
+    const a2 = assignments[assignKey(p.id, term.code, half, 2)];
+    type Segment = { a: LaborAssignmentRow; segMonths: string[]; segBonus: number };
+    let segments: Segment[];
+    if (a1 && a2 && !sameAssignment(a1, a2)) {
+      segments = [
+        { a: a1, segMonths: months.slice(0, 3), segBonus: bonus / 2 },
+        { a: a2, segMonths: months.slice(3, 6), segBonus: bonus / 2 },
+      ];
+    } else {
+      const a = a1 ?? a2;
+      if (!a) continue;
+      segments = [{ a, segMonths: [...months], segBonus: bonus }];
+    }
 
-    for (const t of targets) {
-      const map = mapByDept.get(t.dept);
-      if (!map) { unmapped.add(t.dept); continue; }
-      if (map.treatment === "front") {
-        const poolName = map.div ?? t.dept;
-        const group: AllocGroup = map.alloc_group ?? "overhead";
-        const pool = ensurePool(poolName, group);
-        const monthsRec: Record<string, number> = {};
-        for (const m of months) {
-          const v = monthAmt(m) * t.share;
-          monthsRec[m] = v;
-          pool.salary[m] += v;
-          pool.bonus[m] += (bonus * t.share) / 6;
+    for (const { a, segMonths, segBonus } of segments) {
+      // 給与の区間内均等ならし: この人のこの区間の給与合計を区間の全月へ均等割り。
+      // 例: 10月退職で7〜9月しか計上のない人も、その合計を7〜12月の6ヶ月へ均等計上。
+      // 区間合計は不変（Σ=元の合計）＝金額保存。ボーナスは区間の月数に応じて 半期÷6 を維持。
+      const segTotal = segMonths.reduce((s, m) => s + monthAmtRaw(m), 0);
+      const monthAmt = inp.smoothSalary
+        ? (_m: string) => segTotal / segMonths.length
+        : monthAmtRaw;
+      const bonusPerMonth = segBonus / segMonths.length; // 常に bonus/6 と一致
+
+      // 配分先: 所属(1-rate) + 兼務先(rate)。所属側は tm、兼務先側は kenmu_tm を使う（0042）。
+      // 元シート仕様: 兼務先が空欄でも兼務率>0なら所属から差し引く
+      // （その分はSHO-SAN人件費の外＝どこにも計上しない。例: 丹野30%）。
+      const targets: { dept: string; tm: string | null; share: number }[] = [];
+      const rate = Math.min(Math.max(a.kenmu_rate ?? 0, 0), 1);
+      if (a.dept) targets.push({ dept: a.dept, tm: a.tm ?? null, share: 1 - rate });
+      if (a.kenmu_dept && rate > 0) targets.push({ dept: a.kenmu_dept, tm: a.kenmu_tm ?? null, share: rate });
+      if (targets.length === 0) continue;
+
+      for (const t of targets) {
+        const map = mapByDept.get(t.dept);
+        if (!map) { unmapped.add(t.dept); continue; }
+        if (map.treatment === "front") {
+          const poolName = map.div ?? t.dept;
+          const group: AllocGroup = map.alloc_group ?? "overhead";
+          const pool = ensurePool(poolName, group);
+          const monthsRec: Record<string, number> = {};
+          for (const m of segMonths) {
+            const v = monthAmt(m) * t.share;
+            monthsRec[m] = v;
+            pool.salary[m] += v;
+            pool.bonus[m] += bonusPerMonth * t.share;
+          }
+          pool.members.push({
+            personId: p.id, name: p.name, share: t.share,
+            months: monthsRec, bonus: segBonus * t.share,
+          });
+          continue;
         }
-        pool.members.push({
-          personId: p.id, name: p.name, share: t.share,
-          months: monthsRec, bonus: bonus * t.share,
-        });
-        continue;
-      }
-      if (map.treatment === "corporate") {
-        for (const m of months) corpSalary[m] += monthAmt(m) * t.share;
-        for (const m of months) corpBonus[m] += (bonus * t.share) / 6;
-        continue;
-      }
-      // product
-      const div = map.div ?? t.dept;
-      // TM: 所属側は tm、兼務先側は kenmu_tm（各ターゲットが自分のTMを持つ・0042）
-      const assignedTm = t.tm ?? null;
-      const isAlloc = assignedTm === ALLOC_TM;
-      // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）。
-      // ALLOC_TM は実TMではないのでDIV解決には使わない（所属DIVで按分）。
-      const tmDiv = assignedTm && !isAlloc ? tmDivOf.get(assignedTm) : undefined;
-      const targetDiv = tmDiv ?? div;
-
-      // 指定 (div, tm, effShare) にメンバー給与・ボーナス按分を計上するローカル関数。
-      const pushMember = (tdiv: string, tmName: string, effShare: number) => {
-        const b = ensureTm(tdiv, tmName);
-        const monthsRec: Record<string, number> = {};
-        for (const m of months) {
-          const v = monthAmt(m) * effShare;
-          monthsRec[m] = v;
-          b.salaryByMonth[m] += v;
-          b.bonusByMonth[m] += (bonus * effShare) / 6;
+        if (map.treatment === "corporate") {
+          for (const m of segMonths) corpSalary[m] += monthAmt(m) * t.share;
+          for (const m of segMonths) corpBonus[m] += bonusPerMonth * t.share;
+          continue;
         }
-        b.members.push({
-          personId: p.id, name: p.name, share: effShare,
-          months: monthsRec, bonus: bonus * effShare,
-        });
-      };
+        // product
+        const div = map.div ?? t.dept;
+        // TM: 所属側は tm、兼務先側は kenmu_tm（各ターゲットが自分のTMを持つ・0042）
+        const assignedTm = t.tm ?? null;
+        const isAlloc = assignedTm === ALLOC_TM;
+        // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）。
+        // ALLOC_TM は実TMではないのでDIV解決には使わない（所属DIVで按分）。
+        const tmDiv = assignedTm && !isAlloc ? tmDivOf.get(assignedTm) : undefined;
+        const targetDiv = tmDiv ?? div;
 
-      if (isAlloc && divsWithTms.has(targetDiv)) {
-        // 売上目標比按分: 所属DIVの各TMへ、TM売上目標の比率で分割計上。
-        // 目標が全て0/未入力なら均等割り（フォールバック）。
-        const divTms = inp.tms.filter((x) => x.div === targetDiv);
-        const totalT = divTms.reduce((s, x) => s + (tmTargetOf.get(x.tm) ?? 0), 0);
-        for (const x of divTms) {
-          const ratio = totalT > 0 ? (tmTargetOf.get(x.tm) ?? 0) / totalT : 1 / divTms.length;
-          if (ratio > 0) pushMember(targetDiv, x.tm, t.share * ratio);
+        // 指定 (div, tm, effShare) にメンバー給与・ボーナス按分を計上するローカル関数。
+        const pushMember = (tdiv: string, tmName: string, effShare: number) => {
+          const b = ensureTm(tdiv, tmName);
+          const monthsRec: Record<string, number> = {};
+          for (const m of segMonths) {
+            const v = monthAmt(m) * effShare;
+            monthsRec[m] = v;
+            b.salaryByMonth[m] += v;
+            b.bonusByMonth[m] += bonusPerMonth * effShare;
+          }
+          b.members.push({
+            personId: p.id, name: p.name, share: effShare,
+            months: monthsRec, bonus: segBonus * effShare,
+          });
+        };
+
+        if (isAlloc && divsWithTms.has(targetDiv)) {
+          // 売上目標比按分: 所属DIVの各TMへ、TM売上目標の比率で分割計上。
+          // 目標が全て0/未入力なら均等割り（フォールバック）。
+          const divTms = inp.tms.filter((x) => x.div === targetDiv);
+          const totalT = divTms.reduce((s, x) => s + (tmTargetOf.get(x.tm) ?? 0), 0);
+          for (const x of divTms) {
+            const ratio = totalT > 0 ? (tmTargetOf.get(x.tm) ?? 0) / totalT : 1 / divTms.length;
+            if (ratio > 0) pushMember(targetDiv, x.tm, t.share * ratio);
+          }
+        } else {
+          // 通常: 単一TM。TM未割当時は「（TM未割当）」（TMありDIV）or「（DIV直計上）」。
+          const tm =
+            assignedTm && !isAlloc
+              ? assignedTm
+              : divsWithTms.has(targetDiv)
+                ? UNASSIGNED_TM
+                : DIV_DIRECT_TM;
+          pushMember(targetDiv, tm, t.share);
         }
-      } else {
-        // 通常: 単一TM。TM未割当時は「（TM未割当）」（TMありDIV）or「（DIV直計上）」。
-        const tm =
-          assignedTm && !isAlloc
-            ? assignedTm
-            : divsWithTms.has(targetDiv)
-              ? UNASSIGNED_TM
-              : DIV_DIRECT_TM;
-        pushMember(targetDiv, tm, t.share);
       }
     }
   }

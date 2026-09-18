@@ -52,6 +52,11 @@ const SurveyPage = lazy(() =>
 const LaborPage = lazy(() =>
   import("./components/labor/LaborPage").then((m) => ({ default: m.LaborPage })),
 );
+// DIV別人件費ページ（#/labor/div/:target）。chrome 無し・ナビ導線なし・URL直打ち専用。
+// labor_div_access 許可リスト（api/labor-div-report.ts が service_role＋per-user JWTで判定）。
+const LaborDivViewPage = lazy(() =>
+  import("./components/labor/LaborDivViewPage").then((m) => ({ default: m.LaborDivViewPage })),
+);
 // パルスサーベイ 管理ダッシュボード（#/pulse・app シェル内・権限者）。
 const PulseDashboardPage = lazy(() =>
   import("./components/pulse/PulseDashboardPage").then((m) => ({ default: m.PulseDashboardPage })),
@@ -674,6 +679,15 @@ export default function App() {
     return (
       <Suspense fallback={<BootSplash />}>
         <LaborPage />
+      </Suspense>
+    );
+  }
+
+  // DIV別人件費ページ: chrome 無しスタンドアロン。ナビには一切出さない。
+  if (route.name === "labor_div") {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <LaborDivViewPage target={route.target} />
       </Suspense>
     );
   }

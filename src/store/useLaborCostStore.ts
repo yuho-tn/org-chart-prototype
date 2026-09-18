@@ -12,6 +12,7 @@ import type {
   LaborPersonRow,
   LaborTermRow,
   LaborTmRow,
+  QuarterPart,
   Slot,
   TermCode,
 } from "../lib/laborCost";
@@ -29,7 +30,7 @@ import { amountKey, assignKey } from "../lib/laborCost";
 
 type AmountPatch = { personId: string; term: TermCode; slot: Slot; amount: number };
 type AssignPatch = {
-  personId: string; term: TermCode; half: Half;
+  personId: string; term: TermCode; half: Half; quarter: QuarterPart;
   dept?: string | null; kenmu_dept?: string | null; kenmu_rate?: number; tm?: string | null; kenmu_tm?: string | null;
 };
 
@@ -127,6 +128,7 @@ async function flushQueues(set: (p: Partial<State>) => void, get: () => State) {
         person_id: a.person_id,
         term: a.term,
         half: a.half,
+        quarter: a.quarter,
         dept: a.dept,
         kenmu_dept: a.kenmu_dept,
         kenmu_rate: a.kenmu_rate,
@@ -135,7 +137,7 @@ async function flushQueues(set: (p: Partial<State>) => void, get: () => State) {
       }));
       const { error } = await supabase
         .from("labor_assignments")
-        .upsert(payload, { onConflict: "person_id,term,half" });
+        .upsert(payload, { onConflict: "person_id,term,half,quarter" });
       if (error) throw error;
     }
     set({
@@ -150,7 +152,7 @@ async function flushQueues(set: (p: Partial<State>) => void, get: () => State) {
       if (!amountQueue.has(key)) amountQueue.set(key, p);
     }
     for (const a of assignRows) {
-      const key = assignKey(a.person_id, a.term, a.half);
+      const key = assignKey(a.person_id, a.term, a.half, a.quarter);
       if (!assignQueue.has(key)) assignQueue.set(key, a);
     }
     set({ saveState: "error", saveError: e instanceof Error ? e.message : String(e) });
@@ -206,7 +208,7 @@ function applyAssignsRaw(
   set((s) => {
     const assignments = { ...s.assignments };
     for (const r of rows) {
-      const key = assignKey(r.person_id, r.term, r.half);
+      const key = assignKey(r.person_id, r.term, r.half, r.quarter);
       assignments[key] = r;
       assignQueue.set(key, r);
     }
@@ -270,7 +272,7 @@ export const useLaborCostStore = create<State>((set, get) => ({
         await Promise.all([
           supabase.from("labor_terms").select("*").order("sort_order"),
           supabase.from("labor_people").select("*").order("sort_order"),
-          fetchAll<LaborAssignmentRow>("labor_assignments", ["person_id", "term", "half"]),
+          fetchAll<LaborAssignmentRow>("labor_assignments", ["person_id", "term", "half", "quarter"]),
           fetchAll<LaborAmountRow>("labor_amounts", ["person_id", "term", "slot"]),
           supabase.from("labor_dept_map").select("*"),
           supabase.from("labor_tms").select("*").order("sort_order"),
@@ -285,7 +287,7 @@ export const useLaborCostStore = create<State>((set, get) => ({
 
       const assignments: Record<AssignKey, LaborAssignmentRow> = {};
       for (const a of (assigns.data ?? []) as LaborAssignmentRow[]) {
-        assignments[assignKey(a.person_id, a.term, a.half)] = {
+        assignments[assignKey(a.person_id, a.term, a.half, a.quarter)] = {
           ...a,
           kenmu_rate: Number(a.kenmu_rate ?? 0),
         };
@@ -346,10 +348,10 @@ export const useLaborCostStore = create<State>((set, get) => ({
     const beforeRows: LaborAssignmentRow[] = [];
     const afterRows: LaborAssignmentRow[] = [];
     for (const e of edits) {
-      const key = assignKey(e.personId, e.term, e.half);
+      const key = assignKey(e.personId, e.term, e.half, e.quarter);
       const prev: LaborAssignmentRow =
         assignments[key] ?? {
-          person_id: e.personId, term: e.term, half: e.half,
+          person_id: e.personId, term: e.term, half: e.half, quarter: e.quarter,
           dept: null, kenmu_dept: null, kenmu_rate: 0, tm: null, kenmu_tm: null,
         };
       beforeRows.push(prev);
