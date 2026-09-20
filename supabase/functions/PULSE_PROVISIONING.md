@@ -32,30 +32,28 @@
 ```bash
 cd ~/projects/active/meta/org-chart-prototype
 supabase functions deploy pulse-summary --project-ref kgofrmfsfnxbzqkfrkqo
-supabase functions deploy pulse-notify  --no-verify-jwt --project-ref kgofrmfsfnxbzqkfrkqo
-supabase functions deploy pulse-answer  --no-verify-jwt --project-ref kgofrmfsfnxbzqkfrkqo
+supabase functions deploy pulse-notify  --project-ref kgofrmfsfnxbzqkfrkqo
+supabase functions deploy pulse-answer  --project-ref kgofrmfsfnxbzqkfrkqo
 ```
 
-`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` は自動注入される。
+`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` は自動注入される
+（2026-09-20 実測: Runtime に注入される値は `sb_publishable_…` / `sb_secret_…` 形式。
+CLI `projects api-keys` の legacy JWT とは別物なので、ローカルで同じ鍵を再現しようとしない）。
 
-**`pulse-notify` も必ず `--no-verify-jwt` 付きでデプロイすること（v3 P1・独立レビュー指摘）**。
-pg_cron（0050 `pulse_cron_fire_reminders`）は `x-cron-secret` ヘッダだけで pulse-notify を呼ぶ
-（JWT を持たない）。verify_jwt=true で再デプロイするとゲートウェイの 401 で自動リマインドが黙って
-全滅する（`cron.job_run_details` は succeeded のまま・失敗は `net._http_response` にしか残らない）。
-本番の pulse-notify は 2026-09-20 時点で `verify_jwt:false`（v5）で稼働中＝その状態を維持する。
-保険として Vault に `pulse_anon_key`（公開 anon key）を入れておくと 0050 が Authorization も付ける（任意）。
+**verify_jwt は `supabase/config.toml` で関数ごとに固定している（2026-09-20 追加）**:
+`pulse-answer` / `pulse-notify` / `smarthr-sync` / `employees-export` = false、`pulse-summary` = true。
+`functions deploy` は config.toml の値を使うので、フラグを毎回付ける必要はない
+（以前は `--no-verify-jwt` を手で付ける運用で、付け忘れた再デプロイ1回で
+「トークン回答・cron リマインドが黙って全滅」する構造だった＝独立レビュー指摘）。
+デプロイ後は `supabase functions list --project-ref kgofrmfsfnxbzqkfrkqo` で verify_jwt を必ず目視する。
 
-**`pulse-answer` は必ず `--no-verify-jwt` 付きでデプロイすること（v3 P1・重要）**。
-`pulse-answer` は `#/survey?t=<token>`（ログイン不要の本人専用URL）からの回答を
-受ける関数で、認可は Authorization ヘッダ（Supabase 側の JWT 検証）ではなく
-本人専用トークン（`_shared/pulseToken.ts`）だけで行う。`--no-verify-jwt` を
-付け忘れて（または verify_jwt=true 相当で）デプロイすると、プラットフォーム側の
-JWT 検証で（Authorization ヘッダを送らない）トークン経由のリクエストが全て
-弾かれ、回答が全滅する。**このリポには `supabase/config.toml` が無く
-`[functions.pulse-answer] verify_jwt = false` のような永続設定も持たないため、
-`functions deploy` を叩くたびに毎回 `--no-verify-jwt` を明示すること**
-（フラグを付け忘れた再デプロイ1回で機能が壊れる。config.toml 側で恒久化する
-運用に変えるなら、それ自体を変更として明示的にレビューする）。
+- `pulse-answer`: `#/survey?t=<token>`（ログイン不要の本人専用URL）からの回答を受ける。認可は
+  Authorization ヘッダ（ゲートウェイの JWT 検証）ではなく本人専用トークン（`_shared/pulseToken.ts`）だけ。
+  verify_jwt=true になると（Authorization を送らない）トークン経由のリクエストが全て弾かれ、回答が全滅する。
+- `pulse-notify`: pg_cron（0050 `pulse_cron_fire_reminders`）が `x-cron-secret` ヘッダだけで呼ぶ
+  （JWT を持たない）。verify_jwt=true になるとゲートウェイの 401 で自動リマインドが黙って全滅する
+  （`cron.job_run_details` は succeeded のまま・失敗は `net._http_response` にしか残らない）。
+  保険として Vault に `pulse_anon_key`（公開 anon key）を入れておくと 0050 が Authorization も付ける（任意）。
 
 ---
 
@@ -114,124 +112,40 @@ supabase secrets set PULSE_APP_URL="https://shosan-talent-hub.vercel.app" --proj
    手動でSlack投稿してください」＋「回答URLをコピー」ボタンを表示する（v3以降は「自分用URL」＝
    後述の preview モードの `my_url` に置き換わる）。
 
-### 2-4. 本人専用トークン URL の署名鍵（PULSE_TOKEN_SECRET・任意・v3 P1）
+### 2-4. 本人専用トークン URL の署名鍵（PULSE_TOKEN_SECRET・**必須**・v3 P1）
 
 v3 から配信メッセージの `{url}` は `#/survey?t=<token>`（ログイン不要・本人専用URL）になる。
-`token` の署名鍵は `_shared/pulseToken.ts` が以下の順で解決する:
+`token` の署名鍵は `_shared/pulseToken.ts` が **専用 secret `PULSE_TOKEN_SECRET` だけ**から派生する
+（`K = HMAC-SHA256(key=PULSE_TOKEN_SECRET, msg="talenthub-pulse-answer-v1")`）。
 
-1. `PULSE_TOKEN_SECRET`（このセクションの secret。**任意**）があればそれを鍵材料にする
-2. 無ければ `SUPABASE_SERVICE_ROLE_KEY` を鍵材料に流用する（追加設定ゼロで動く既定値）
-
-投入する場合:
 ```bash
-supabase secrets set PULSE_TOKEN_SECRET="<ランダム32桁以上>" --project-ref kgofrmfsfnxbzqkfrkqo
+openssl rand -hex 32
+supabase secrets set PULSE_TOKEN_SECRET="<↑で出た値>" --project-ref kgofrmfsfnxbzqkfrkqo
 ```
 
-**投入・変更のタイミングに注意（重要）**: 鍵材料が変わると過去に発行した全トークンの署名検証が
-すべて失敗する（`pulse-answer` が invalid_token を返す＝配布済みURLが軒並み無効になる）。
-そのため：
-- **投入するなら「初回の一斉送信より前」に一度だけ決めて固定する**（未投入のまま運用開始しても
-  害はない＝ `SUPABASE_SERVICE_ROLE_KEY` に暗黙フォールバックするだけ。ただし service role key は
-  他の用途にも使う共有シークレットなので、トークン署名専用の鍵をローテーションしたくなった時のために
-  `PULSE_TOKEN_SECRET` を別途用意しておく方が安全）。
-- **一斉送信・リマインドを送った後に `PULSE_TOKEN_SECRET` を新規投入・変更しない**（その回のサイクルで
-  既に配っているURLが全員分まとめて無効になる。変更する場合は当該サイクルの受付を締め切ってから、
+未投入のときは `pulse-answer`／`pulse-notify`（preview 含む）が HTTP 500
+`{ error: "token_secret_not_configured" }` を返し、管理画面に「PULSE_TOKEN_SECRET が未設定です」と出る
+（黙って invalid_token にはしない）。
+
+**なぜ専用 secret を必須にしたか（2026-09-20 実測）**: 当初は `SUPABASE_SERVICE_ROLE_KEY` への
+フォールバックを持たせていたが、Edge Runtime が注入する `SUPABASE_SERVICE_ROLE_KEY` は
+プラットフォーム都合で値が変わる（legacy JWT → `sb_secret_…` へ切り替わっていた。CLI の
+`projects api-keys` からはその値を確認できない）。その鍵に依存すると配布済みURLが月の途中で
+黙って全滅し得るため、自分たちで管理する用途専用の secret だけを材料にする。
+
+**変更のタイミングに注意（重要）**: 値を変えると過去に発行した全トークンの署名検証が失敗する
+（配布済みURLが軒並み `invalid_token`）。
+- **初回の一斉送信より前に一度だけ決めて固定する。**
+- **一斉送信・リマインドを送った後に変更しない**（変更するなら当該サイクルを締め切ってから、
   次サイクルの配信前に行う）。
-
----
-
-## 3. 締切前リマインドの自動化（pg_cron・任意）
-
-> **v3（migration `0050_pulse_reminder_cron.sql`）適用後はこの手動SQLを実行しないこと**。
-> 0050 は `pulse_cron_due_cycles()`（営業日ベースの当日リマインド対象判定）と
-> `pulse_cron_fire_reminders()`（本体・secret は Vault `pulse_cron_secret` から取得）を
-> 定義したうえで `cron.job` に `'pulse-reminders'` という名前で自動登録する（`docs/PULSE_ACTIVATION_RUNBOOK.md`
-> §④がこの新手順に置き換わる）。下記の旧SQL（`'pulse-due-reminders'`）を同時に流すと
-> **cron ジョブが2本同時稼働してリマインドが二重送信される**。0050 適用前の暫定運用として
-> 下記SQLを使った場合は、0050 適用時に必ず `select cron.unschedule('pulse-due-reminders');`
-> で解除してから 0050 を流すこと。
-
-自動リマインドは pg_cron ＋ pg_net で pulse-notify を叩く。**secret を含むため手動で1回実行**
-（このSQLはリポにコミットしない。値を差し込んで Supabase SQL Editor で実行）。
-
-```sql
--- 拡張（未有効なら）
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
-
--- 共有シークレット（cron からの起動を認可）
--- 1) ランダム値を1つ決めて Edge Function 側にも入れる:
---    supabase secrets set PULSE_CRON_SECRET="<ランダム32桁>" --project-ref kgofrmfsfnxbzqkfrkqo
--- 2) 下の <CRON_SECRET> と <FUNCTIONS_URL> を実値に置換して実行:
-
--- 毎日 09:00 JST(=00:00 UTC) に、締切2日前以内の sent サイクルへリマインド
-select cron.schedule(
-  'pulse-due-reminders',
-  '0 0 * * *',
-  $$
-  select net.http_post(
-    url := 'https://kgofrmfsfnxbzqkfrkqo.supabase.co/functions/v1/pulse-notify',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'x-cron-secret', '<CRON_SECRET>'
-    ),
-    body := jsonb_build_object('cycle_id', c.id::text, 'mode', 'reminder')
-  )
-  from public.pulse_cycles c
-  where c.status = 'sent'
-    and c.due_date is not null
-    and c.due_date >= current_date
-    and c.due_date <= current_date + interval '2 days'
-  $$
-);
-
--- 解除: select cron.unschedule('pulse-due-reminders');
-```
-
----
-
-## 4. 動作確認
-
-- **v3・secrets投入前でも可**: #/pulse/admin → sent サイクルの「文面と自分用URLを確認」
-  （`pulse-notify` mode=preview）→ 対象人数・broadcast/reminder 文面・件名・（自分が対象者なら）
-  自分専用URLが返ることを確認。preview は SLACK_BOT_TOKEN / RESEND_API_KEY 未投入でも動く
-  （`no_channel_configured` の対象外）。`my_url` を実際に開き、`pulse-answer` の get（ログイン不要）
-  で設問が表示されることを確認する。
-- 6: #/pulse →「AI要約を生成」→ 要約が表示されれば OK。回答者5名未満のサイクルでは
-  「主要テーマ」に『コメント非表示（少人数）』のような記述が出ることを確認（n<5 マスク）。
-- 7: #/pulse/admin → sent サイクルの「一斉送信」→ 応答 `counts` で slack_ok / email_ok / skipped を確認、
-  Slack DM とメール受信を実機確認。文面中の URL がログイン無しで開き、送信→サンクス画面まで進むことを
-  確認する。`pulse_notifications` に記録が入る（reminder は `reminder_no` も入る）。
-  secrets が両方未設定なら「配信チャネル未設定」エラー表示になることを確認（preview は対象外）。
-  同じサイクルに対して「一斉送信」を2回叩いても二重送信されない（チャネル別スキップ）ことを確認。
-
----
-
-## 5. 運用開始（本番活性化）— 現在地と残タスク
-
-**migration 0029〜0032（メンバー推移 / eNPS / 面談ログ / テストデータ掃除＋初期設問seed）は
-適用済み。** 以下は完了済み・残タスクの棚卸し（コピペ手順は `docs/PULSE_ACTIVATION_RUNBOOK.md`）。
-
-- [x] 0029〜0032 適用（テストデータ一掃・「月次パルスサーベイ v1」draft seed 済み）
-- [x] Edge Function `pulse-summary` / `pulse-notify` デプロイ済み
-- [x] 0045（本ハードニング）で `pulse-notify` の `no_channel_configured` 明示化・
-      集計/コメントの n<5 マスク強化・`pulse_my_history` / `pulse_admin_cycle_stats` 追加
-- [ ] secrets 投入（§1〜2. ANTHROPIC_API_KEY / SLACK_BOT_TOKEN / RESEND_API_KEY / RESEND_FROM / PULSE_APP_URL）
-- [ ] #/pulse/admin で「月次パルスサーベイ v1」の設問文言を最終編集 → **有効化**
-      （有効化後は設問凍結。修正は「複製で新版」→ 編集 → 有効化）
-- [ ] サイクル作成（period=開始月・締切日設定）→「受付開始」
-- [ ] 「一斉送信」ボタン（Slack DM＋メールのダブル配信・初回は裕鵬さん1クリック承認）
-- [ ] （任意）§3 の pg_cron で締切前リマインド自動化
-- [ ] 1サイクル通し確認: 配信 → 回答（#/survey・eNPS 0-10・マイパルス表示含む）→ 集計
-      → アラート → メンバー推移 → AI要約 → CSV
 
 ### v3（P0/P1・本人専用トークンURL）残タスク
 
 - [ ] migration `0049_pulse_v3_p1.sql` / `0050_pulse_reminder_cron.sql` 適用（backend 担当分。
       `pulse_settings` / `pulse_target_exclusions` / `pulse_survey_bundle_for` 等・PULSE_V3_DESIGN.md §3）
 - [ ] Edge Function 3本を §0 のコマンドで（再）デプロイ：`pulse-summary` / `pulse-notify` /
-      **`pulse-answer`（`--no-verify-jwt` 必須）**
-- [ ] `PULSE_TOKEN_SECRET` を投入するか決める（§2-4）。投入するなら**初回一斉送信より前**に固定
+      **`pulse-answer`（verify_jwt=false・config.toml で固定）**
+- [ ] `PULSE_TOKEN_SECRET` を投入する（§2-4・必須）。**初回一斉送信より前**に固定
 - [ ] §3 の手動 pg_cron（`'pulse-due-reminders'`）を使っていた場合は 0050 適用前に unschedule
 - [ ] フロント（`src/`）が `pulse_survey_bundle_for` / `pulse_submit_response_for` 等の v3 RPC・
       `#/survey?t=` ルーティングに対応済みであること（frontend 担当分・別スレッド）

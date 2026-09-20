@@ -34,7 +34,11 @@
 //
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { type PulseTokenVerifyResult, verifyPulseTokenDetailed } from "../_shared/pulseToken.ts";
+import {
+  type PulseTokenVerifyResult,
+  TOKEN_SECRET_NOT_CONFIGURED,
+  verifyPulseTokenDetailed,
+} from "../_shared/pulseToken.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -146,7 +150,12 @@ Deno.serve(async (req: Request) => {
   try {
     verified = await verifyPulseTokenDetailed(token);
   } catch (e) {
-    console.error("pulse-answer: token verify internal error:", (e as Error).message);
+    const msg = (e as Error).message ?? "";
+    if (msg === TOKEN_SECRET_NOT_CONFIGURED) {
+      // 専用 secret 未投入＝トークンは一切検証できない。黙って invalid にせず明示する。
+      return json({ error: "token_secret_not_configured" }, 500);
+    }
+    console.error("pulse-answer: token verify internal error:", msg);
     return json({ error: "internal_error" }, 500);
   }
   if (!verified.ok) {

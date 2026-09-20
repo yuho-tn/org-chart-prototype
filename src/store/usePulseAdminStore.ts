@@ -384,7 +384,10 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
               reason: body.detail ?? "SLACK_BOT_TOKEN / RESEND_API_KEY のいずれも未設定です",
             };
           }
-          if (body?.error) return { ok: false, reason: String(body.error) };
+          if (body?.error === "token_secret_not_configured") {
+            return { ok: false, reason: body.detail ?? "PULSE_TOKEN_SECRET が未設定です（Runbook ①-1-6）" };
+          }
+          if (body?.error) return { ok: false, reason: String(body.detail ?? body.error) };
         } catch {
           // 本文がJSONでない等はフォールバックへ
         }

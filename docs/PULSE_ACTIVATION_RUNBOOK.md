@@ -14,7 +14,7 @@ pg_cron（任意）5分／管理画面操作 5分。
 
 ---
 
-## ① secrets 6種の投入
+## ① secrets 7種の投入
 
 先に鍵・トークンを揃えてから、まとめて投入する。
 
@@ -55,13 +55,23 @@ openssl rand -hex 16
 supabase secrets set PULSE_CRON_SECRET="<↑で出た値>" --project-ref kgofrmfsfnxbzqkfrkqo
 ```
 
+### 1-6. PULSE_TOKEN_SECRET（本人専用回答URLの署名鍵・必須・v3）
+
+```bash
+openssl rand -hex 32
+supabase secrets set PULSE_TOKEN_SECRET="<↑で出た値>" --project-ref kgofrmfsfnxbzqkfrkqo
+```
+
+> **初回の一斉送信より前に一度だけ決めて固定**する。後から変えると配布済みの回答URLが全員分無効になる。
+> 未投入の間は「文面と自分用URLを確認」「一斉送信」が「PULSE_TOKEN_SECRET が未設定です」で止まる。
+
 ### 確認
 
 ```bash
 supabase secrets list --project-ref kgofrmfsfnxbzqkfrkqo
 ```
 
-6つとも一覧に出ていればOK。値そのものは表示されない（ハッシュのみ）。
+7つとも一覧に出ていればOK。値そのものは表示されない（ハッシュのみ）。
 
 ---
 
@@ -115,7 +125,7 @@ select vault.create_secret('<anon key>', 'pulse_anon_key');
 secret が未投入の間は `pulse_cron_fire_reminders()` が何もせず `0` を返すだけ
 （migration 自体・cron 自体は secrets 未投入でも安全に動く＝休眠状態）。
 
-> ⚠️ pulse-notify は **verify_jwt=false**（デプロイ時に `--no-verify-jwt`）で運用する。
+> ⚠️ pulse-notify は **verify_jwt=false**（`supabase/config.toml` で固定）で運用する。
 > cron は JWT を持たず `x-cron-secret` だけで呼ぶため、verify_jwt=true に戻すと
 > `cron.job_run_details` は succeeded のまま自動リマインドが全滅する（下の `net._http_response` で気づく）。
 

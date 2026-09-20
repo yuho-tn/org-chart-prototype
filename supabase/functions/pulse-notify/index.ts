@@ -36,7 +36,7 @@
 //
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { expForCycle, signPulseToken } from "../_shared/pulseToken.ts";
+import { expForCycle, getDefaultKeyMaterial, signPulseToken } from "../_shared/pulseToken.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -170,6 +170,17 @@ Deno.serve(async (req: Request) => {
     return json(
       { error: "no_channel_configured", detail: "SLACK_BOT_TOKEN / RESEND_API_KEY のいずれも未設定です" },
       400,
+    );
+  }
+
+  // 本人専用URLの署名鍵（PULSE_TOKEN_SECRET）が無ければ、どのモードでも URL を作れない。
+  // no_channel_configured と同じく、認可の後で明示エラーにする（Runbook ①-1-6）。
+  try {
+    getDefaultKeyMaterial();
+  } catch {
+    return json(
+      { error: "token_secret_not_configured", detail: "PULSE_TOKEN_SECRET が未設定です（docs/PULSE_ACTIVATION_RUNBOOK.md ①-1-6）" },
+      500,
     );
   }
 

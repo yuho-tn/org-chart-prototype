@@ -37,21 +37,26 @@ export type PulseTokenVerifyResult =
   | { ok: true; payload: PulseTokenPayload }
   | { ok: false; reason: PulseTokenFailureReason };
 
+/** PULSE_TOKEN_SECRET 未設定時に投げる例外のマーカー（呼び出し元は明示エラーに変換する）。 */
+export const TOKEN_SECRET_NOT_CONFIGURED = "token_secret_not_configured";
+
 /**
- * 署名鍵の材料。PULSE_TOKEN_SECRET（任意 secret）があればそれ、無ければ
- * SUPABASE_SERVICE_ROLE_KEY（既定注入）にフォールバックする。
- * どちらも無い場合は例外を投げる（呼び出し元は 500 として扱うこと）。
+ * 署名鍵の材料 = 専用 secret `PULSE_TOKEN_SECRET`（必須）。
  *
- * 注意: PULSE_TOKEN_SECRET を後から設定・変更すると、既に配布済みの
- * トークンURLはすべて検証不能になる（署名鍵が変わるため）。運用上は
- * 初回配信より前に一度だけ決めて固定する（詳細は PULSE_PROVISIONING.md）。
+ * 当初は SUPABASE_SERVICE_ROLE_KEY へのフォールバックを持っていたが、2026-09-20 の実測で
+ * Edge Runtime が注入する SUPABASE_SERVICE_ROLE_KEY はプラットフォーム都合で値が変わる
+ * （legacy JWT → sb_secret_… へ切り替わっていた・CLI からは値を確認できない）ことが分かった。
+ * その鍵に依存すると、配布済みの本人専用URLが月の途中で黙って全滅し得るため、
+ * 用途専用で自分たちが管理する secret だけを材料にする。
+ *
+ * 注意: PULSE_TOKEN_SECRET を後から変更すると、既に配布済みのトークンURLはすべて
+ * 検証不能になる。初回配信より前に一度だけ決めて固定する（PULSE_PROVISIONING.md §2-4）。
+ * 未設定なら例外を投げる（呼び出し元は 500 `token_secret_not_configured` として返す）。
  */
 export function getDefaultKeyMaterial(): string {
-  const material = Deno.env.get("PULSE_TOKEN_SECRET") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!material) {
-    throw new Error(
-      "pulseToken: neither PULSE_TOKEN_SECRET nor SUPABASE_SERVICE_ROLE_KEY is set",
-    );
+  const material = Deno.env.get("PULSE_TOKEN_SECRET");
+  if (!material || material.trim().length < 16) {
+    throw new Error(TOKEN_SECRET_NOT_CONFIGURED);
   }
   return material;
 }

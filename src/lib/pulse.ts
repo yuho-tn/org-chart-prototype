@@ -155,7 +155,8 @@ export type PulseAnswerErrorCode =
   | "closed"
   | "not_target"
   | "not_found"
-  | "submit_failed";
+  | "submit_failed"
+  | "token_secret_not_configured";
 
 /** トークン回答画面のエラーコード → 日本語の案内文（設計書 §5-3）。 */
 export const PULSE_ANSWER_ERROR_MESSAGE: Record<PulseAnswerErrorCode, string> = {
@@ -165,6 +166,7 @@ export const PULSE_ANSWER_ERROR_MESSAGE: Record<PulseAnswerErrorCode, string> = 
   not_target: "回答対象として登録されていません。",
   not_found: "対象のサーベイが見つかりません。",
   submit_failed: "送信に失敗しました。",
+  token_secret_not_configured: "回答リンクの設定が完了していません（管理者に連絡してください）。",
 };
 
 /** 天気5段階（score 5=快晴 … 1=荒天）。絵文字＋短ラベル。 */

@@ -213,14 +213,14 @@ select cron.schedule('pulse-reminders', '0 0 * * *', $$select public.pulse_cron_
 
 ### 4-1. トークン（`_shared/pulseToken.ts`）
 
-- 鍵材料: `PULSE_TOKEN_SECRET`（任意 secret）があればそれ、無ければ `SUPABASE_SERVICE_ROLE_KEY`。**どちらも直接は使わず** `K = HMAC-SHA256(key=材料, msg="talenthub-pulse-answer-v1")` で派生鍵を作る（Web Crypto `crypto.subtle`）。
+- 鍵材料: 専用 secret `PULSE_TOKEN_SECRET`（**必須**・7種目の secret）。**直接は使わず** `K = HMAC-SHA256(key=材料, msg="talenthub-pulse-answer-v1")` で派生鍵を作る（Web Crypto `crypto.subtle`）。未設定なら両関数が 500 `token_secret_not_configured` を明示的に返す。※当初の `SUPABASE_SERVICE_ROLE_KEY` フォールバックは撤回（2026-09-20 実測: Runtime 注入値が legacy JWT → sb_secret に切り替わっており CLI から確認不能＝配布済みURLが月中に失効し得る）。
 - payload（UTF-8）: `v1|<cycle_id>|<employee_number>|<exp_unix>`。
 - token: `base64url(payload) + "." + base64url(HMAC-SHA256(K, payload))`。
 - `signPulseToken({cycleId, employeeNumber, exp})` / `verifyPulseToken(token) → {cycleId, employeeNumber, exp} | null`（`crypto.subtle.verify` で定数時間比較・形式不正/期限切れは null）。
 - `exp` = サイクル `due_date` の **23:59:59 JST**（due_date null なら send_date+31日、それも無ければ now+31日）。
 - 単体テスト `_shared/pulseToken_test.ts`（`deno test`）: 署名→検証／改竄→null／期限切れ→null／別鍵→null。
 
-### 4-2. `pulse-answer`（新設・**`--no-verify-jwt` でデプロイ**）
+### 4-2. `pulse-answer`（新設・**verify_jwt=false（config.toml で固定）でデプロイ**）
 
 - `POST { t: string, action: "get" | "submit", answers?: [{question_id, score, value_text}], comment?: string }`
 - 手順: token 検証（失敗→400 `invalid_token`／期限切れ→410 `expired`）→ service_role で `pulse_cycles` を取り `status='sent'` を確認（違えば 409 `closed`）→
@@ -248,11 +248,11 @@ select cron.schedule('pulse-reminders', '0 0 * * *', $$select public.pulse_cron_
 ### 4-5. デプロイ（コード変更時・許可済み）
 
 ```bash
-supabase functions deploy pulse-answer  --no-verify-jwt --project-ref kgofrmfsfnxbzqkfrkqo
-supabase functions deploy pulse-notify  --no-verify-jwt --project-ref kgofrmfsfnxbzqkfrkqo
+supabase functions deploy pulse-answer  --project-ref kgofrmfsfnxbzqkfrkqo
+supabase functions deploy pulse-notify  --project-ref kgofrmfsfnxbzqkfrkqo
 supabase functions deploy pulse-summary --project-ref kgofrmfsfnxbzqkfrkqo
 ```
-`PULSE_PROVISIONING.md` §0 に `pulse-answer`／`pulse-notify` の `--no-verify-jwt` を明記する（verify_jwt=true で上書きデプロイするとトークン回答・cron リマインドが全滅する。独立レビュー 2026-09-20 指摘）。0050 は保険として Vault `pulse_anon_key` があれば Authorization も付ける。
+verify_jwt は **`supabase/config.toml` で関数ごとに固定**（pulse-answer / pulse-notify / smarthr-sync / employees-export = false、pulse-summary = true）。デプロイ時のフラグ運用は廃止（付け忘れ1回でトークン回答・cron リマインドが全滅する構造だった＝独立レビュー 2026-09-20 指摘）。デプロイ後は `supabase functions list` で verify_jwt を目視する。0050 は保険として Vault `pulse_anon_key` があれば Authorization も付ける。
 
 ---
 
@@ -311,7 +311,7 @@ supabase functions deploy pulse-summary --project-ref kgofrmfsfnxbzqkfrkqo
 
 ## 6. 独立レビュー観点（自己PASS禁止・別エージェント）
 
-1. トークン署名: 鍵派生・定数時間比較・exp・payload の区切り文字衝突（employee_number に `|` が入る可能性→ base64url で個別エンコードしているか）・`--no-verify-jwt` 前提の入力検証。
+1. トークン署名: 鍵派生・定数時間比較・exp・payload の区切り文字衝突（employee_number に `|` が入る可能性→ base64url で個別エンコードしているか）・verify_jwt=false 前提の入力検証。
 2. RLS: 3テーブルの SELECT 締めで admin/pulse_access 保有者が壊れないか・回答者が直読に依存していないか・新テーブル（settings/exclusions/holidays）の default-deny。
 3. n<5 マスク: pulse-summary のコメント抑止・by_department masked 除外の維持。
 4. なりすまし耐性: preview が他人の URL を返さない・service_role 専用 RPC が authenticated から呼べない（`revoke`）・`pulse_submit_response_for` が `pulse_is_target` と status='sent' を守る・Edge が email 等を返さない。
@@ -321,8 +321,8 @@ supabase functions deploy pulse-summary --project-ref kgofrmfsfnxbzqkfrkqo
 
 ## 7. 運用手順の更新（docs）
 
-- `docs/PULSE_ACTIVATION_RUNBOOK.md`: ①secrets（`PULSE_TOKEN_SECRET` は任意・**初回配信前に決める**と明記）／④ pg_cron は `0050` が登録するので **Vault へ `pulse_cron_secret` を入れる SQL 1行**に置換／⑤ 5-1 は「既に有効化済（変更は複製→新版）」に改訂／5-3 に「文面と自分用URLを確認」を追加／対象者ルール（settings.target_employment_types・exclusions）の SQL 例を追加。
-- `supabase/functions/PULSE_PROVISIONING.md`: §0 に `pulse-answer --no-verify-jwt`、`_shared/pulseToken.ts` の鍵派生、preview モード、n<5 マスクを追記。
+- `docs/PULSE_ACTIVATION_RUNBOOK.md`: ①secrets（`PULSE_TOKEN_SECRET` を 7種目として追加・**初回配信前に決めて固定**と明記）／④ pg_cron は `0050` が登録するので **Vault へ `pulse_cron_secret` を入れる SQL 1行**に置換／⑤ 5-1 は「既に有効化済（変更は複製→新版）」に改訂／5-3 に「文面と自分用URLを確認」を追加／対象者ルール（settings.target_employment_types・exclusions）の SQL 例を追加。
+- `supabase/functions/PULSE_PROVISIONING.md`: §0 に config.toml による verify_jwt 固定、`_shared/pulseToken.ts` の鍵派生、preview モード、n<5 マスクを追記。
 
 ---
 
