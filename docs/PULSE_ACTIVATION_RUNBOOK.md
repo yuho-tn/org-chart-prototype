@@ -94,48 +94,48 @@ supabase secrets list --project-ref kgofrmfsfnxbzqkfrkqo
 
 ---
 
-## ④ pg_cron 登録SQL（任意・締切前リマインドの自動化）
+## ④ pg_cron リマインド自動化（Vault へ secret を投入するだけ）
 
-①-1-5 で `PULSE_CRON_SECRET` を投入済みであることが前提。
-Supabase ダッシュボード → **SQL Editor** で以下を実行（`<CRON_SECRET>` は①-1-5で生成した値に置換）。
+`0050_pulse_reminder_cron.sql` の適用（`supabase db push`）で pg_cron ジョブ
+`pulse-reminders`（毎日 09:00 JST = 00:00 UTC・営業日ベースで2営業日おき×最大4回
+リマインド＝決定9）は**自動登録済み**。pg_cron / pg_net 拡張の有効化・
+`pulse_cron_due_cycles()` / `pulse_cron_fire_reminders()` の作成・cron 登録は
+すべて migration 内で完結する（このセクションでSQLを手打ちする必要はない）。
+
+有効化に必要な作業は、①-1-5 で生成した `PULSE_CRON_SECRET` と**同じ値**を
+Supabase Vault へ入れる、この1回だけ。Supabase ダッシュボード → **SQL Editor** で:
 
 ```sql
--- 拡張（未有効なら）
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
+select vault.create_secret('<①-1-5で生成した値と同じもの>', 'pulse_cron_secret');
+```
 
--- 毎日 09:00 JST(=00:00 UTC) に、締切2日前以内の sent サイクルへリマインド
-select cron.schedule(
-  'pulse-due-reminders',
-  '0 0 * * *',
-  $$
-  select net.http_post(
-    url := 'https://kgofrmfsfnxbzqkfrkqo.supabase.co/functions/v1/pulse-notify',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'x-cron-secret', '<CRON_SECRET>'
-    ),
-    body := jsonb_build_object('cycle_id', c.id::text, 'mode', 'reminder')
-  )
-  from public.pulse_cycles c
-  where c.status = 'sent'
-    and c.due_date is not null
-    and c.due_date >= current_date
-    and c.due_date <= current_date + interval '2 days'
-  $$
-);
+secret が未投入の間は `pulse_cron_fire_reminders()` が何もせず `0` を返すだけ
+（migration 自体・cron 自体は secrets 未投入でも安全に動く＝休眠状態）。
+
+### 確認
+
+```sql
+-- 今日リマインド対象のサイクル（dry-run。実際には発火しない）
+select * from public.pulse_cron_due_cycles();
+
+-- cron 登録状況
+select jobname, schedule, active from cron.job where jobname = 'pulse-reminders';
+
+-- 直近の実行結果（実行後・Vault投入後の翌日以降に意味を持つ）
+select * from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'pulse-reminders')
+order by start_time desc limit 5;
+
+-- secret が入っているかだけを確認（値そのものは表示しない）
+select exists (
+  select 1 from vault.decrypted_secrets where name = 'pulse_cron_secret'
+) as pulse_cron_secret_set;
 ```
 
 解除したくなったら:
 
 ```sql
-select cron.unschedule('pulse-due-reminders');
-```
-
-登録済みcron一覧の確認:
-
-```sql
-select jobname, schedule, active from cron.job where jobname = 'pulse-due-reminders';
+select cron.unschedule('pulse-reminders');
 ```
 
 ---
@@ -146,15 +146,15 @@ select jobname, schedule, active from cron.job where jobname = 'pulse-due-remind
 **#/pulse/admin** で以下を順番に操作する（各ステップはダッシュボード上部の
 運用ステッパーにも同じ4段階で表示される）。
 
-### 5-1. 設問セットの最終編集 → 有効化
+### 5-1. 設問セット（有効化済・確認のみ）
 
-1. #/pulse/admin → 設問セット一覧から「月次パルスサーベイ v1」（draft）を開く
-2. 天気4問（仕事／対人／健康／評価）＋ eNPS 1問 ＋ 自由記述1問の文言を確認・必要なら編集
-3. 「有効化」ボタン → 確認ダイアログ「有効化後は設問を編集できません（修正は複製→新版）」
-   が出るので内容を確認して確定
+**月次パルスサーベイ v1**（天気4問〔仕事／対人／健康／評価〕＋ eNPS 1問 ＋
+自由記述1問）は **2026-07-31 に有効化済**（設問は凍結済み）。#/pulse/admin の
+設問セット一覧で status=active を確認できる。このステップで新たに操作することはない。
 
-> **有効化すると設問は凍結される**（後で文言を直したい場合は複製して新版を作り、
-> 新版を編集→有効化する運用になる）。
+> **文言を変更したい場合**は複製 → 新版（draft）を編集 → 新版を「有効化」する運用
+> （有効化済みの設問セットは直接編集できない）。新版を active にすると、以後の
+> サイクル作成で選べる設問セットも新版に切り替わる（旧版は archived のまま残る）。
 
 ### 5-2. サイクル作成 → 受付開始
 
@@ -189,3 +189,51 @@ select jobname, schedule, active from cron.job where jobname = 'pulse-due-remind
 | Slack DM が届かない | Bot Token の scope不足 / 対象者のメールがSlackアカウントと不一致 | ②のscope（`chat:write`,`users:read.email`）を確認。`employees.email` の値がSlackログインメールと一致しているか確認 |
 | メールが届かない（Resendの未検証ドメイン） | ドメイン未Verify | ③-3のDNS設定を確認、または `onboarding@resend.dev` で暫定運用 |
 | pg_cronが動いているか不安 | — | ④末尾の確認SQLで `active = true` を確認。`cron.job_run_details` で直近実行結果も見られる |
+
+---
+
+## ⑥ 対象者ルールの設定（雇用形態・個別除外）
+
+配信対象・対象人数（`pulse_target_count()`）は `pulse_settings.target_employment_types`
+（対象とする雇用形態の配列）と `pulse_target_exclusions`（個別除外）の2つで決まる。
+P0時点の既定値は「正社員・限定正社員」（`docs/PULSE_V3_DESIGN.md` §1 の実測に基づく推定値。
+Geppo対象66名 ≒ 正社員＋限定正社員−執行役員3名という概算で、確定にはGeppo名簿CSVとの
+突合が必要）。専用のUIはまだ無いため（P3で追加予定）、Supabase ダッシュボード →
+**SQL Editor** で直接操作する。
+
+### 対象の雇用形態を確認・変更する
+
+```sql
+-- 現在の設定を確認
+select target_employment_types from public.pulse_settings where id = 1;
+
+-- 変更する（例: 契約社員も対象に加える）
+update public.pulse_settings
+set target_employment_types = array['正社員','限定正社員','契約社員']
+where id = 1;
+
+-- 変更後の対象人数を確認
+select public.pulse_target_count();
+```
+
+### 特定の社員を個別に対象から除外する
+
+```sql
+-- 除外を追加（employee_number は employees.employee_number。既存なら reason を上書き）
+insert into public.pulse_target_exclusions (employee_number, reason, created_by_email)
+values ('10018', '休職中', 'yuho_tn@sho-san.co.jp')
+on conflict (employee_number) do update
+  set reason = excluded.reason, created_by_email = excluded.created_by_email;
+
+-- 除外を解除
+delete from public.pulse_target_exclusions where employee_number = '10018';
+
+-- 現在の除外一覧
+select * from public.pulse_target_exclusions order by created_at desc;
+```
+
+### 特定の社員が対象かどうかを確認する
+
+```sql
+select public.pulse_is_target('10018');
+```
