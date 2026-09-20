@@ -88,6 +88,85 @@ export type PulseMyResponse = {
   answers: PulseAnswerInput[];
 };
 
+// ── v3 P1: 回答 bundle（トークン経路とログイン経路で共通の形・設計書 §3-4） ──
+
+/** bundle.cycle（pulse_cycles の一部）。 */
+export type PulseSurveyBundleCycle = {
+  id: string;
+  period: string;
+  send_date: string | null;
+  due_date: string | null;
+  status: PulseCycleRow["status"];
+};
+
+/** bundle.questions の1件（PulseQuestionRow から is_active/タイムスタンプを除いた回答者向けの形）。 */
+export type PulseSurveyBundleQuestion = {
+  id: string;
+  sort_order: number;
+  label: string;
+  category: string | null;
+  type: PulseQuestionType;
+};
+
+/** bundle.response（本人の回答が既にあれば）。 */
+export type PulseSurveyBundleResponse = {
+  id: string;
+  answered_at: string | null;
+  comment: string | null;
+  updated_at: string;
+};
+
+/** bundle.viewers（決定1＝閲覧者の明示。回答画面冒頭に出す）。 */
+export type PulseSurveyViewers = {
+  notice: string;
+  manager_disclosure: boolean;
+  manager_names: string[];
+};
+
+/** bundle.previous（前回との比較用・カテゴリ別平均＋eNPS）。 */
+export type PulseSurveyPrevious = {
+  period: string;
+  by_category: Record<string, number>;
+  nps: number | null;
+  answered_at: string | null;
+};
+
+/**
+ * rpc('pulse_my_survey') / rpc('pulse_survey_bundle_for')（Edge Function `pulse-answer`
+ * 経由）が返す回答フォーム一式（設計書 §3-4）。受付中サイクルが無い場合は `{ cycle: null }`
+ * のみを持つ最小形で返るため、`cycle` 以外は任意（optional）にしている。
+ */
+export type PulseSurveyBundle = {
+  employee_number?: string;
+  display_name?: string;
+  is_target?: boolean;
+  cycle: PulseSurveyBundleCycle | null;
+  questions?: PulseSurveyBundleQuestion[];
+  response?: PulseSurveyBundleResponse | null;
+  answers?: PulseAnswerInput[];
+  viewers?: PulseSurveyViewers;
+  previous?: PulseSurveyPrevious | null;
+};
+
+/** Edge Function `pulse-answer` が非2xxで返すエラーコード（設計書 §4-2）。 */
+export type PulseAnswerErrorCode =
+  | "invalid_token"
+  | "expired"
+  | "closed"
+  | "not_target"
+  | "not_found"
+  | "submit_failed";
+
+/** トークン回答画面のエラーコード → 日本語の案内文（設計書 §5-3）。 */
+export const PULSE_ANSWER_ERROR_MESSAGE: Record<PulseAnswerErrorCode, string> = {
+  invalid_token: "このリンクは無効です。",
+  expired: "このリンクは期限切れです（締切を過ぎています）。",
+  closed: "この月の受付は終了しました。",
+  not_target: "回答対象として登録されていません。",
+  not_found: "対象のサーベイが見つかりません。",
+  submit_failed: "送信に失敗しました。",
+};
+
 /** 天気5段階（score 5=快晴 … 1=荒天）。絵文字＋短ラベル。 */
 export const WEATHER_SCALE: { score: number; emoji: string; label: string }[] = [
   { score: 5, emoji: "☀️", label: "快晴" },
@@ -137,6 +216,12 @@ export function periodLabel(period: string): string {
   const m = /^(\d{4})-(\d{2})$/.exec(period);
   if (!m) return period;
   return `${m[1]}年${Number(m[2])}月`;
+}
+
+/** "YYYY-MM" → "26/7"（グラフ・グリッドの軸ラベル用の短縮表記）。 */
+export function periodShort(period: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(period);
+  return m ? `${m[1].slice(2)}/${Number(m[2])}` : period;
 }
 
 // ── スライス4: アラート一覧＋対応管理 ─────────────────────────────

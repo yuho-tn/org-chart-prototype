@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
   CalendarClock,
   CheckCircle2,
+  Eye,
   Home,
   LogOut,
   MoonStar,
@@ -13,30 +17,33 @@ import { usePulseStore, type PulseMyHistoryPoint } from "../../store/usePulseSto
 import { useAuthStore } from "../../store/useAuthStore";
 import { useUiStore } from "../../store/useUiStore";
 import { canAccessPulse } from "../../lib/supabase";
-import { WEATHER_SCALE, periodLabel, type PulseQuestionRow } from "../../lib/pulse";
+import {
+  PULSE_ANSWER_ERROR_MESSAGE,
+  WEATHER_SCALE,
+  periodLabel,
+  periodShort,
+  weatherForScore,
+  type PulseAnswerInput,
+  type PulseSurveyBundleQuestion,
+  type PulseSurveyPrevious,
+  type PulseSurveyViewers,
+} from "../../lib/pulse";
 import { usePulseToast, PulseToast } from "./usePulseToast";
 
 /**
- * パルスサーベイ 回答画面（#/survey）。app シェル（SystemSwitcher /
- * GlobalHeader）を持たない chrome 無しルート。認証は必須（App.tsx の
- * session ゲート後に描画）だが、対象社員かどうかはサーバ側
- * （pulse_current_employee_number）が判定する。
+ * パルスサーベイ 回答画面（#/survey・#/survey?t=<token>）。app シェル（SystemSwitcher /
+ * GlobalHeader）を持たない chrome 無しルート。
  *
- * v2（設計書 §4）: 社員が触る唯一の画面なのでモバイル前提で作り込む。
- *   - scale 型専用UI（1〜5 数値セグメント）を weather5 と分離
- *   - 回答進捗バー＋未回答設問へのスムーズスクロール
- *   - 送信後サンクス画面に「マイパルス」（本人の推移）
- *   - ホーム / 管理ダッシュボード / サインアウトの導線を常設（行き止まり禁止）
+ * v3（設計書 §5-3）: `token` prop が渡されればログイン不要の本人専用トークン経路
+ * （App.tsx が認証ゲートより前で描画する）。渡されなければ従来どおりログイン必須
+ * （session ゲート後に描画・pulse_my_survey 経由）。どちらも usePulseStore が同じ
+ * bundle 形にまとめるので、このコンポーネント自体は表示ロジックのみに専念する。
+ *
+ * v2（設計書 §4）由来: モバイル前提の作り込み・scale型専用UI・進捗バー・マイパルス。
  */
 
 /** scale 型（5段階）の選択肢。1=そう思わない … 5=とてもそう思う。 */
 const SCALE_STEPS = [1, 2, 3, 4, 5];
-
-/** "YYYY-MM" → "26/7"（スパークラインの軸ラベル用の短縮表記）。 */
-function periodShort(period: string): string {
-  const m = /^(\d{4})-(\d{2})$/.exec(period);
-  return m ? `${m[1].slice(2)}/${Number(m[2])}` : period;
-}
 
 /** 締切日（YYYY-MM-DD）を「8/25（あと3日）」に整形。days<=1 は急ぎ扱い。 */
 function dueInfo(due: string | null): { text: string; urgent: boolean } | null {
@@ -54,16 +61,20 @@ function dueInfo(due: string | null): { text: string; urgent: boolean } | null {
   return { text: `${md}（締切超過）`, urgent: true };
 }
 
-export function SurveyPage() {
+export function SurveyPage({ token }: { token?: string } = {}) {
   const {
     loaded,
     error,
+    tokenErrorCode,
     cycle,
     questions,
     eligibility,
     alreadyAnswered,
     answers,
     comment,
+    displayName,
+    viewers,
+    previous,
     submitting,
     submitted,
     history,
@@ -76,6 +87,7 @@ export function SurveyPage() {
     submit,
   } = usePulseStore();
   const sessionEmail = useAuthStore((s) => s.session?.user?.email ?? null);
+  const hasSession = useAuthStore((s) => !!s.session);
   const role = useAuthStore((s) => s.currentUser?.role);
   const signOut = useAuthStore((s) => s.signOut);
   const navigate = useUiStore((s) => s.navigate);
@@ -87,13 +99,15 @@ export function SurveyPage() {
   const qRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
-    loadSurvey();
-  }, [loadSurvey]);
+    // token モードでは Edge Function 経由・セッションモードでは pulse_my_survey 経由。
+    loadSurvey({ token });
+  }, [loadSurvey, token]);
 
   // サンクス画面に入ったらマイパルスを取得（送信直後は historyLoaded=false）。
+  // token モードでは呼ばない（決定2＝履歴の閲覧はログイン必須・SurveyHistoryPage 参照）。
   useEffect(() => {
-    if (submitted && !historyLoaded) loadMyHistory();
-  }, [submitted, historyLoaded, loadMyHistory]);
+    if (!token && submitted && !historyLoaded) loadMyHistory();
+  }, [token, submitted, historyLoaded, loadMyHistory]);
 
   // スコア設問（天気・スケール・eNPS）は必須。free_text は任意なので進捗の分母から外す。
   const scoredQs = useMemo(
@@ -131,6 +145,9 @@ export function SurveyPage() {
 
   const due = dueInfo(cycle?.due_date ?? null);
   const showPulseAdminLink = canAccessPulse(role);
+  // token モードで「未ログイン」の場合のみ行き止まり回避のリンクを出す（既にログイン
+  // 済みでたまたま自分宛のリンクを開いた場合はセッションモードと同じ導線でよい）。
+  const showHomeLink = !token || hasSession;
 
   return (
     <div className="pulse">
@@ -149,8 +166,13 @@ export function SurveyPage() {
               </span>
             )}
           </div>
-          {sessionEmail && <div className="pulse__who">{sessionEmail}</div>}
+          {(sessionEmail || displayName) && (
+            <div className="pulse__who">{sessionEmail ?? displayName}</div>
+          )}
         </header>
+
+        {/* 閲覧者の明示（決定1）。bundle が cycle 付きで取れている間だけ表示。 */}
+        {viewers && <ViewerNotice viewers={viewers} tokenMode={!!token} />}
 
         {/* ── 各状態 ── */}
         {/* 初回マウントは loaded=false のあいだ必ずスケルトン（1フレームの空白を出さない）。 */}
@@ -172,7 +194,7 @@ export function SurveyPage() {
           </div>
         )}
 
-        {loaded && !error && !cycle && (
+        {loaded && !error && !cycle && eligibility !== "not_target" && !tokenErrorCode && (
           <div className="pulse__empty">
             <MoonStar className="pulse__empty-icon" size={40} aria-hidden />
             <p>いま回答受付中のサーベイはありません。</p>
@@ -180,17 +202,33 @@ export function SurveyPage() {
           </div>
         )}
 
-        {loaded && !error && cycle && eligibility === "not_target" && (
+        {/* token モードのエラー（改竄・期限切れ・受付終了・対象外・不明）。行き止まりにしない。 */}
+        {loaded && !error && token && tokenErrorCode && (
+          <div className="pulse__empty">
+            <ShieldAlert className="pulse__empty-icon" size={40} aria-hidden />
+            <p>{PULSE_ANSWER_ERROR_MESSAGE[tokenErrorCode]}</p>
+            <button
+              className="pulse__btn pulse__btn--ghost"
+              onClick={() => navigate({ name: "survey" })}
+            >
+              ログインして開く
+            </button>
+          </div>
+        )}
+
+        {loaded && !error && eligibility === "not_target" && (
           <div className="pulse__empty">
             <ShieldAlert className="pulse__empty-icon" size={40} aria-hidden />
             <p>このアカウントはサーベイの回答対象として登録されていません。</p>
             <p className="pulse__muted">
               社員メールでログインしているかご確認ください。心当たりがなければ人事までご連絡ください。
             </p>
-            <button className="pulse__btn pulse__btn--ghost" onClick={() => signOut()}>
-              <LogOut size={15} aria-hidden />
-              別のアカウントでログインする
-            </button>
+            {hasSession && (
+              <button className="pulse__btn pulse__btn--ghost" onClick={() => signOut()}>
+                <LogOut size={15} aria-hidden />
+                別のアカウントでログインする
+              </button>
+            )}
           </div>
         )}
 
@@ -205,7 +243,21 @@ export function SurveyPage() {
               回答を見直す
             </button>
 
-            <MyPulse history={history} />
+            <PreviousComparison previous={previous} questions={questions} answers={answers} />
+
+            <button
+              className="pulse__btn pulse__btn--ghost"
+              onClick={() => navigate({ name: "survey_history" })}
+            >
+              振り返りを見る
+            </button>
+            {!hasSession && (
+              <p className="pulse__muted pulse__compare-loginhint">
+                振り返りの閲覧にはログインが必要です
+              </p>
+            )}
+
+            {!token && <MyPulse history={history} />}
           </div>
         )}
 
@@ -291,12 +343,16 @@ export function SurveyPage() {
         )}
       </div>
 
-      {/* 行き止まり禁止: どの状態でもホーム（＋権限があれば管理）へ戻れる。 */}
+      {/* 行き止まり禁止: どの状態でもホーム（＋権限があれば管理）へ戻れる。
+          token モードでセッションが無い場合はホームへ戻ってもサインイン画面に
+          流れるだけなので、その場合は「ログインして開く」導線に一本化する。 */}
       <footer className="pulse__foot">
-        <button className="pulse__foot-link" onClick={() => navigate({ name: "home" })}>
-          <Home size={14} aria-hidden />
-          ホームへ
-        </button>
+        {showHomeLink && (
+          <button className="pulse__foot-link" onClick={() => navigate({ name: "home" })}>
+            <Home size={14} aria-hidden />
+            ホームへ
+          </button>
+        )}
         {showPulseAdminLink && (
           <button className="pulse__foot-link" onClick={() => navigate({ name: "pulse" })}>
             <Activity size={14} aria-hidden />
@@ -306,6 +362,27 @@ export function SurveyPage() {
       </footer>
 
       <PulseToast toast={toast} onDismiss={clearToast} className="pulse__toast" />
+    </div>
+  );
+}
+
+/**
+ * 閲覧者の明示（決定1）。回答画面冒頭で「誰がこの回答を見るか」を必ず提示する。
+ * token モードでは「このURLはあなた専用です」を小さく併記する。
+ */
+function ViewerNotice({ viewers, tokenMode }: { viewers: PulseSurveyViewers; tokenMode: boolean }) {
+  return (
+    <div className="pulse__viewers">
+      <Eye className="pulse__viewers-icon" size={15} aria-hidden />
+      <div className="pulse__viewers-text">
+        <p>
+          {viewers.notice}
+          {viewers.manager_disclosure && viewers.manager_names.length > 0 && (
+            <> 上長（{viewers.manager_names.join("・")}）も閲覧します。</>
+          )}
+        </p>
+        {tokenMode && <p className="pulse__viewers-token">このURLはあなた専用です（転送しないでください）。</p>}
+      </div>
     </div>
   );
 }
@@ -327,7 +404,7 @@ function QuestionCard({
   onText,
   registerRef,
 }: {
-  q: PulseQuestionRow;
+  q: PulseSurveyBundleQuestion;
   index: number;
   score: number | null;
   valueText: string;
@@ -426,7 +503,121 @@ function QuestionCard({
 }
 
 /**
- * マイパルス（サンクス画面）。本人の回答推移だけを描く。
+ * 前回との比較（送信後サンクス画面・設計書 §5-3）。カテゴリ別に前回→今回の天気を
+ * 矢印付きで並べ、eNPS も1行添える。previous が無ければ初回向けの案内文だけ出す。
+ */
+function PreviousComparison({
+  previous,
+  questions,
+  answers,
+}: {
+  previous: PulseSurveyPrevious | null;
+  questions: PulseSurveyBundleQuestion[];
+  answers: Record<string, PulseAnswerInput>;
+}) {
+  // 今回の回答をカテゴリ別平均に集計（weather5/scale のみ・nps/free_text は除く）。
+  const currentByCategory = useMemo(() => {
+    const sums: Record<string, { total: number; n: number }> = {};
+    for (const q of questions) {
+      if (!q.category || q.type === "free_text" || q.type === "nps") continue;
+      const score = answers[q.id]?.score;
+      if (score == null) continue;
+      const bucket = (sums[q.category] ??= { total: 0, n: 0 });
+      bucket.total += score;
+      bucket.n += 1;
+    }
+    const out: Record<string, number> = {};
+    for (const [cat, { total, n }] of Object.entries(sums)) out[cat] = total / n;
+    return out;
+  }, [questions, answers]);
+
+  const currentNps = useMemo(() => {
+    const q = questions.find((x) => x.type === "nps");
+    return q ? (answers[q.id]?.score ?? null) : null;
+  }, [questions, answers]);
+
+  if (!previous) {
+    return (
+      <section className="pulse__compare">
+        <h2 className="pulse__compare-title">前回との比較</h2>
+        <p className="pulse__muted">初回の回答です。来月から前回との比較が出ます。</p>
+      </section>
+    );
+  }
+
+  const categories = Object.keys(currentByCategory);
+
+  return (
+    <section className="pulse__compare">
+      <h2 className="pulse__compare-title">前回との比較（{periodLabel(previous.period)} → 今回）</h2>
+      <ul className="pulse__compare-list">
+        {categories.map((cat) => {
+          const prevScore = previous.by_category[cat];
+          const curScore = currentByCategory[cat];
+          return (
+            <li key={cat} className="pulse__compare-row">
+              <span className="pulse__compare-cat">{cat}</span>
+              <span className="pulse__compare-vals">
+                {prevScore != null ? (
+                  <>
+                    <WeatherMini score={prevScore} />
+                    <TrendArrow prev={prevScore} cur={curScore} />
+                  </>
+                ) : (
+                  <span className="pulse__muted">前回未回答</span>
+                )}
+                <WeatherMini score={curScore} />
+              </span>
+            </li>
+          );
+        })}
+        {previous.nps != null && currentNps != null && (
+          <li className="pulse__compare-row">
+            <span className="pulse__compare-cat">eNPS</span>
+            <span className="pulse__compare-vals">
+              <span className="pulse__compare-num">{previous.nps}</span>
+              <TrendArrow prev={previous.nps} cur={currentNps} />
+              <span className="pulse__compare-num">{currentNps}</span>
+            </span>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+function WeatherMini({ score }: { score: number }) {
+  const w = weatherForScore(score);
+  return (
+    <span className="pulse__compare-weather" title={w?.label} aria-label={w?.label}>
+      {w?.emoji ?? "—"}
+    </span>
+  );
+}
+
+function TrendArrow({ prev, cur }: { prev: number; cur: number }) {
+  if (cur - prev > 0.05)
+    return <ArrowUp className="pulse__compare-trend is-up" size={14} aria-label="改善" />;
+  if (prev - cur > 0.05)
+    return <ArrowDown className="pulse__compare-trend is-down" size={14} aria-label="低下" />;
+  return <ArrowRight className="pulse__compare-trend is-flat" size={14} aria-label="変化なし" />;
+}
+
+/** history 内で直近に by_category を持つ点を新しい方から探す（無ければ null）。 */
+function findLatestCategories(
+  history: PulseMyHistoryPoint[],
+): { period: string; entries: [string, number][] } | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const cats = history[i].by_category;
+    if (cats && Object.keys(cats).length > 0) {
+      return { period: history[i].period, entries: Object.entries(cats) };
+    }
+  }
+  return null;
+}
+
+/**
+ * マイパルス（サンクス画面・セッションモードのみ）。本人の回答推移だけを描く。
  * 総合スコアのスパークライン＋カテゴリ別最新値＋eNPS推移。履歴 0 件なら非表示。
  */
 function MyPulse({ history }: { history: PulseMyHistoryPoint[] }) {
@@ -444,15 +635,10 @@ function MyPulse({ history }: { history: PulseMyHistoryPoint[] }) {
         .map((h) => ({ period: h.period, value: h.nps as number })),
     [history],
   );
-  const latestCats = useMemo(() => {
-    for (let i = history.length - 1; i >= 0; i--) {
-      const cats = history[i].by_category;
-      if (cats && Object.keys(cats).length > 0) {
-        return { period: history[i].period, entries: Object.entries(cats) };
-      }
-    }
-    return null;
-  }, [history]);
+  // 素の計算に降格（useMemo 版は react-hooks/preserve-manual-memoization に
+  // 引っかかる＝ React Compiler がこのループ＋早期returnの形を保てず失敗する。
+  // history は数か月分程度の小配列なので毎レンダー再計算しても無視できるコスト）。
+  const latestCats = findLatestCategories(history);
 
   if (history.length === 0) return null;
 

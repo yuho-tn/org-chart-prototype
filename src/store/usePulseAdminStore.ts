@@ -37,13 +37,25 @@ export type PulseNotifyDetail = {
   channels: { slack: boolean; email: boolean };
 };
 
+/** pulse-notify mode:"preview" の戻り（設計書 §4-3・§5-5）。送信はしない。
+ *  my_url は「呼び出した管理者自身」が今回のサイクルの対象者の時だけ非null。 */
+export type PulseNotifyPreview = {
+  targets: number;
+  my_url: string | null;
+  text_broadcast: string;
+  text_reminder: string;
+  email_subject: string;
+};
+
 /** notifyCycle の戻り値。UI 側でトースト文言・行内結果・no_channel_configured 案内を組み立てる。 */
 export type NotifyResult = {
   ok: boolean;
   reason?: string;
-  /** SLACK_BOT_TOKEN / RESEND_API_KEY が両方未設定（Edge Function 400）。 */
+  /** SLACK_BOT_TOKEN / RESEND_API_KEY が両方未設定（Edge Function 400・broadcast/reminder のみ）。 */
   noChannelConfigured?: boolean;
   detail?: PulseNotifyDetail;
+  /** mode:"preview" 成功時のみ。 */
+  preview?: PulseNotifyPreview;
 };
 
 function guardMessage(message: string | undefined): string {
@@ -91,7 +103,7 @@ type PulseAdminState = {
   }) => Promise<Result>;
   sendCycle: (id: string) => Promise<Result>;
   closeCycle: (id: string) => Promise<Result>;
-  notifyCycle: (id: string, mode: "broadcast" | "reminder") => Promise<NotifyResult>;
+  notifyCycle: (id: string, mode: "broadcast" | "reminder" | "preview") => Promise<NotifyResult>;
 };
 
 export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
@@ -391,6 +403,19 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
       };
     }
     if (data?.error) return { ok: false, reason: String(data.error) };
+
+    if (mode === "preview") {
+      // 送信はされていない（設計書 §4-3）。secrets 未投入でも動くので
+      // no_channel_configured には該当しない。
+      const preview: PulseNotifyPreview = {
+        targets: data?.targets ?? 0,
+        my_url: data?.my_url ?? null,
+        text_broadcast: data?.text_broadcast ?? "",
+        text_reminder: data?.text_reminder ?? "",
+        email_subject: data?.email_subject ?? "",
+      };
+      return { ok: true, preview };
+    }
 
     const c = data?.counts;
     const detail: PulseNotifyDetail | undefined = c

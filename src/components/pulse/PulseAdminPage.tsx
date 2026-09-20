@@ -3,7 +3,12 @@ import { CheckCircle2, Copy } from "lucide-react";
 import "./pulse-shared.css";
 import "./admin.css";
 import "./alerts.css"; // .palert__field をサイクル作成フォームで再利用しているため
-import { usePulseAdminStore, type NotifyResult, type PulseCycleStats } from "../../store/usePulseAdminStore";
+import {
+  usePulseAdminStore,
+  type NotifyResult,
+  type PulseCycleStats,
+  type PulseNotifyPreview,
+} from "../../store/usePulseAdminStore";
 import { PulseSubnav } from "./PulseSubnav";
 import { usePulseToast, PulseToast, type PulseToastKind } from "./usePulseToast";
 import {
@@ -416,6 +421,10 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
   const [sendDate, setSendDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [notifyResults, setNotifyResults] = useState<Record<string, NotifyResult>>({});
+  // 直近の preview で分かった「自分用URL」。cycle id ごとに保持し、broadcast/reminder が
+  // no_channel_configured で失敗して notifyResults が上書きされた後もフォールバック先として
+  // 使えるようにする（notifyResults は最後に実行したアクションの結果で毎回上書きされるため）。
+  const [myUrls, setMyUrls] = useState<Record<string, string | null>>({});
 
   const onCreate = async () => {
     const res = await createCycle({
@@ -438,9 +447,13 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
   };
 
   const onNotify = async (c: PulseCycleRow, mode: "broadcast" | "reminder") => {
+    // 直前に「文面と自分用URLを確認」を実行していれば対象人数を確認ダイアログに出す
+    // （設計書 §5-5：「N は preview の targets を表示できれば表示」）。
+    const n = notifyResults[c.id]?.preview?.targets;
+    const targetPhrase = `対象者（雇用形態ルール適用${n != null ? `・${n}名` : ""}）`;
     const confirmMsg =
       mode === "broadcast"
-        ? `${periodLabel(c.period)} の一斉送信（Slack DM＋メール）を全在籍者へ実行します。よろしいですか？`
+        ? `${periodLabel(c.period)} の一斉送信（Slack DM＋メール）を${targetPhrase}へ実行します。よろしいですか？`
         : `${periodLabel(c.period)} の未回答者へリマインドを送信します。よろしいですか？`;
     if (!confirm(confirmMsg)) return;
     const res = await notifyCycle(c.id, mode);
@@ -448,12 +461,24 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
     onToast(res.noChannelConfigured ? "error" : res.ok ? "success" : "error", notifyResultToastText(mode, res));
   };
 
-  const onCopyUrl = async () => {
+  const onPreview = async (c: PulseCycleRow) => {
+    const res = await notifyCycle(c.id, "preview");
+    setNotifyResults((m) => ({ ...m, [c.id]: res }));
+    if (res.ok && res.preview) {
+      setMyUrls((m) => ({ ...m, [c.id]: res.preview!.my_url }));
+    }
+    onToast(
+      res.ok ? "success" : "error",
+      res.ok ? "文面と自分用URLを取得しました（送信はされていません）" : res.reason ?? "取得に失敗しました",
+    );
+  };
+
+  const onCopyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(SURVEY_URL);
-      onToast("success", "回答URLをコピーしました");
+      await navigator.clipboard.writeText(text);
+      onToast("success", "コピーしました");
     } catch {
-      onToast("error", `コピーに失敗しました。手動でコピーしてください：${SURVEY_URL}`);
+      onToast("error", `コピーに失敗しました。手動でコピーしてください：${text}`);
     }
   };
 
@@ -461,8 +486,8 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
     <section className="padm__section">
       <h2 className="pdash__h2">配信サイクル</h2>
       <p className="pdash__muted padm__note">
-        「受付開始」で回答フォーム（#/survey）が開きます（この時点では通知は送信されません）。続けて「一斉送信」を押すと全在籍者へ
-        Slack DM＋メールで案内が届きます。締切前は「リマインド」で未回答者のみへ再送できます。
+        「受付開始」で回答フォーム（#/survey）が開きます（この時点では通知は送信されません）。続けて「一斉送信」を押すと対象者（雇用形態ルール適用）へ
+        Slack DM＋メールで案内が届きます。送信前に「文面と自分用URLを確認」で内容を確認できます。締切前は「リマインド」で未回答者のみへ再送できます。
       </p>
 
       <div className="padm__cyclenew">
@@ -505,17 +530,19 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
             setLabel={setName(c.question_set_id)}
             stats={cycleStats[c.id]}
             notifyResult={notifyResults[c.id]}
+            myUrl={myUrls[c.id]}
             busy={busy}
             onSend={() => {
               if (confirm(`${periodLabel(c.period)} の受付を開始します（回答フォームが開きます）。よろしいですか？`))
                 run("受付を開始しました")(sendCycle(c.id));
             }}
             onNotify={(mode) => onNotify(c, mode)}
+            onPreview={() => onPreview(c)}
             onClose={() => {
               if (confirm(`${periodLabel(c.period)} を終了します（以降は回答不可）。よろしいですか？`))
                 run("終了しました")(closeCycle(c.id));
             }}
-            onCopyUrl={onCopyUrl}
+            onCopyText={onCopyText}
           />
         ))}
       </div>
@@ -534,21 +561,26 @@ function CycleRow({
   setLabel,
   stats,
   notifyResult,
+  myUrl,
   busy,
   onSend,
   onNotify,
+  onPreview,
   onClose,
-  onCopyUrl,
+  onCopyText,
 }: {
   c: PulseCycleRow;
   setLabel: string;
   stats: PulseCycleStats | undefined;
   notifyResult: NotifyResult | undefined;
+  /** 直近の preview で分かった自分用URL（未取得なら undefined／対象外なら null）。 */
+  myUrl: string | null | undefined;
   busy: boolean;
   onSend: () => void;
   onNotify: (mode: "broadcast" | "reminder") => void;
+  onPreview: () => void;
   onClose: () => void;
-  onCopyUrl: () => void;
+  onCopyText: (text: string) => void;
 }) {
   const rate = stats && stats.target > 0 ? stats.responses / stats.target : null;
 
@@ -570,10 +602,18 @@ function CycleRow({
           {c.status === "sent" && (
             <>
               <button
+                className="pdash__btn"
+                disabled={busy}
+                onClick={onPreview}
+                title="配信文面と自分用の回答URLを確認します（送信はされません）"
+              >
+                文面と自分用URLを確認
+              </button>
+              <button
                 className="pdash__btn pdash__btn--primary"
                 disabled={busy}
                 onClick={() => onNotify("broadcast")}
-                title="全在籍者へ Slack DM＋メールで案内を送信"
+                title="対象者（雇用形態ルール適用）へ Slack DM＋メールで案内を送信"
               >
                 一斉送信
               </button>
@@ -610,13 +650,18 @@ function CycleRow({
 
       {notifyResult && (
         <div className={"padm__notifyresult" + (notifyResult.ok ? "" : " padm__notifyresult--error")}>
-          {notifyResult.noChannelConfigured ? (
+          {notifyResult.preview ? (
+            <PreviewPanel preview={notifyResult.preview} onCopyText={onCopyText} />
+          ) : notifyResult.noChannelConfigured ? (
             <>
               <p className="padm__notifyresult-msg">
                 配信チャネル未設定です（Slack Bot Token／Resend API Key が両方とも未設定）。
                 docs/PULSE_ACTIVATION_RUNBOOK.md を参照して設定するか、回答URLを手動でSlackへ投稿してください。
               </p>
-              <button className="pdash__btn padm__copybtn" onClick={onCopyUrl}>
+              <button
+                className="pdash__btn padm__copybtn"
+                onClick={() => onCopyText(myUrl ?? SURVEY_URL)}
+              >
                 <Copy size={13} aria-hidden="true" /> 回答URLをコピー
               </button>
             </>
@@ -627,6 +672,55 @@ function CycleRow({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 「文面と自分用URLを確認」（mode:"preview"）の結果パネル。送信はしていない旨と、
+ * 対象人数・自分用URL・一斉送信/リマインドの文面・メール件名をそのまま見せる
+ * （設計書 §5-5）。my_url が null＝呼び出した管理者自身は今回の対象者ではない。
+ */
+function PreviewPanel({
+  preview,
+  onCopyText,
+}: {
+  preview: PulseNotifyPreview;
+  onCopyText: (text: string) => void;
+}) {
+  return (
+    <div className="padm__preview">
+      <p className="padm__preview-summary">
+        対象 {preview.targets}名（雇用形態ルール適用・未送信のプレビューです）
+      </p>
+      <div className="padm__preview-block">
+        <div className="padm__preview-label">自分用URL</div>
+        <div className="padm__preview-urlrow">
+          <code className="padm__preview-url">
+            {preview.my_url ?? "（あなたは今回のサイクルの対象者ではありません）"}
+          </code>
+          {preview.my_url && (
+            <button
+              className="pdash__btn padm__copybtn"
+              onClick={() => onCopyText(preview.my_url as string)}
+            >
+              <Copy size={13} aria-hidden="true" /> コピー
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="padm__preview-block">
+        <div className="padm__preview-label">一斉送信の文面</div>
+        <pre className="padm__preview-text">{preview.text_broadcast}</pre>
+      </div>
+      <div className="padm__preview-block">
+        <div className="padm__preview-label">リマインドの文面</div>
+        <pre className="padm__preview-text">{preview.text_reminder}</pre>
+      </div>
+      <div className="padm__preview-block">
+        <div className="padm__preview-label">メール件名</div>
+        <p className="padm__preview-text">{preview.email_subject}</p>
+      </div>
     </div>
   );
 }

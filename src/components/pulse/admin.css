@@ -87,6 +87,23 @@
 .padm__notifyresult--error .padm__notifyresult-msg { color: var(--danger); }
 .padm__copybtn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
+/* サイクル行: 「文面と自分用URLを確認」（mode:preview・未送信） */
+.padm__preview { flex: 1 1 100%; display: flex; flex-direction: column; gap: 10px; }
+.padm__preview-summary { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
+.padm__preview-block { display: flex; flex-direction: column; gap: 4px; }
+.padm__preview-label { font-size: 11px; font-weight: 700; color: var(--text-subtle); letter-spacing: 0.02em; }
+.padm__preview-urlrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.padm__preview-url {
+  flex: 1; min-width: 0; font-size: 12px; color: var(--text-strong); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px;
+  overflow-wrap: anywhere;
+}
+.padm__preview-text {
+  margin: 0; font-size: 12.5px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+  white-space: pre-wrap; line-height: 1.6; font-family: inherit;
+}
+
 @media (max-width: 720px) {
   .padm__qrow, .padm__qadd { grid-template-columns: 1fr; }
   .padm__qmove { flex-direction: row; }
