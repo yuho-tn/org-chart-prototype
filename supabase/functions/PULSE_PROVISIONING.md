@@ -32,11 +32,18 @@
 ```bash
 cd ~/projects/active/meta/org-chart-prototype
 supabase functions deploy pulse-summary --project-ref kgofrmfsfnxbzqkfrkqo
-supabase functions deploy pulse-notify  --project-ref kgofrmfsfnxbzqkfrkqo
+supabase functions deploy pulse-notify  --no-verify-jwt --project-ref kgofrmfsfnxbzqkfrkqo
 supabase functions deploy pulse-answer  --no-verify-jwt --project-ref kgofrmfsfnxbzqkfrkqo
 ```
 
 `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` は自動注入される。
+
+**`pulse-notify` も必ず `--no-verify-jwt` 付きでデプロイすること（v3 P1・独立レビュー指摘）**。
+pg_cron（0050 `pulse_cron_fire_reminders`）は `x-cron-secret` ヘッダだけで pulse-notify を呼ぶ
+（JWT を持たない）。verify_jwt=true で再デプロイするとゲートウェイの 401 で自動リマインドが黙って
+全滅する（`cron.job_run_details` は succeeded のまま・失敗は `net._http_response` にしか残らない）。
+本番の pulse-notify は 2026-09-20 時点で `verify_jwt:false`（v5）で稼働中＝その状態を維持する。
+保険として Vault に `pulse_anon_key`（公開 anon key）を入れておくと 0050 が Authorization も付ける（任意）。
 
 **`pulse-answer` は必ず `--no-verify-jwt` 付きでデプロイすること（v3 P1・重要）**。
 `pulse-answer` は `#/survey?t=<token>`（ログイン不要の本人専用URL）からの回答を

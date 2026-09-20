@@ -166,8 +166,11 @@ export function SurveyPage({ token }: { token?: string } = {}) {
               </span>
             )}
           </div>
-          {(sessionEmail || displayName) && (
-            <div className="pulse__who">{sessionEmail ?? displayName}</div>
+          {/* token モードの本人特定はトークン（bundle.display_name）。別人がログイン中の
+              ブラウザで転送リンクを開いた時にセッションのメールを出すと「誰として回答
+              しているか」が誤表示になるため、token 時は displayName を優先する。 */}
+          {(token ? displayName : (sessionEmail ?? displayName)) && (
+            <div className="pulse__who">{token ? displayName : (sessionEmail ?? displayName)}</div>
           )}
         </header>
 

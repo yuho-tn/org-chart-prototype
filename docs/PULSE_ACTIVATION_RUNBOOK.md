@@ -107,10 +107,17 @@ Supabase Vault へ入れる、この1回だけ。Supabase ダッシュボード 
 
 ```sql
 select vault.create_secret('<①-1-5で生成した値と同じもの>', 'pulse_cron_secret');
+-- 任意（保険）: 公開 anon key を入れておくと、pulse-notify が誤って verify_jwt=true で
+-- 再デプロイされてもゲートウェイの 401 にならない（値は Settings → API の anon key）
+select vault.create_secret('<anon key>', 'pulse_anon_key');
 ```
 
 secret が未投入の間は `pulse_cron_fire_reminders()` が何もせず `0` を返すだけ
 （migration 自体・cron 自体は secrets 未投入でも安全に動く＝休眠状態）。
+
+> ⚠️ pulse-notify は **verify_jwt=false**（デプロイ時に `--no-verify-jwt`）で運用する。
+> cron は JWT を持たず `x-cron-secret` だけで呼ぶため、verify_jwt=true に戻すと
+> `cron.job_run_details` は succeeded のまま自動リマインドが全滅する（下の `net._http_response` で気づく）。
 
 ### 確認
 
@@ -125,6 +132,11 @@ select jobname, schedule, active from cron.job where jobname = 'pulse-reminders'
 select * from cron.job_run_details
 where jobid = (select jobid from cron.job where jobname = 'pulse-reminders')
 order by start_time desc limit 5;
+
+-- pulse-notify が実際に何を返したか（cron 側が succeeded でも HTTP は失敗し得る。
+-- status_code 200 以外＝要調査。401 なら verify_jwt / x-cron-secret の不一致）
+select id, status_code, left(content::text, 200) as body, created
+from net._http_response order by created desc limit 5;
 
 -- secret が入っているかだけを確認（値そのものは表示しない）
 select exists (

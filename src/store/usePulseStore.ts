@@ -236,6 +236,8 @@ export const usePulseStore = create<PulseState>((set, get) => ({
           cycle: null,
           questions: [],
           eligibility: "unknown",
+          viewers: null,
+          previous: null,
           tokenErrorCode: code,
           error: code ? null : "サーベイの取得に失敗しました。時間をおいて再度お試しください。",
         });

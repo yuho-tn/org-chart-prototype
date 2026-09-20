@@ -249,10 +249,10 @@ select cron.schedule('pulse-reminders', '0 0 * * *', $$select public.pulse_cron_
 
 ```bash
 supabase functions deploy pulse-answer  --no-verify-jwt --project-ref kgofrmfsfnxbzqkfrkqo
-supabase functions deploy pulse-notify  --project-ref kgofrmfsfnxbzqkfrkqo
+supabase functions deploy pulse-notify  --no-verify-jwt --project-ref kgofrmfsfnxbzqkfrkqo
 supabase functions deploy pulse-summary --project-ref kgofrmfsfnxbzqkfrkqo
 ```
-`PULSE_PROVISIONING.md` §0 に `pulse-answer` の `--no-verify-jwt` を明記する（verify_jwt=true で上書きデプロイするとトークン回答が全滅する）。
+`PULSE_PROVISIONING.md` §0 に `pulse-answer`／`pulse-notify` の `--no-verify-jwt` を明記する（verify_jwt=true で上書きデプロイするとトークン回答・cron リマインドが全滅する。独立レビュー 2026-09-20 指摘）。0050 は保険として Vault `pulse_anon_key` があれば Authorization も付ける。
 
 ---
 
@@ -344,6 +344,6 @@ supabase functions deploy pulse-summary --project-ref kgofrmfsfnxbzqkfrkqo
 - **P2 アラート**: Geppo 互換3基準（荒天／2段階下落で雨以下／雨以下2項目）＋プリセット（主務組織変更・3か月同回答・全曇り・3か月未回答）・回答時自動判定・5状態（未対応/対応中/対応済/対応不要/保留(組織課題)）・一括更新・人事日次ダイジェスト（SOS/体調不安は即時）・振り返り・Claude コメント分類。
 - **P3 自動化・移行**: 月次サイクル自動生成（15日 9:00）・月末締切自動 close・翌1日ダイジェスト・Geppo CSV 取込（source=geppo_import・コメント含む）・対象者ルール UI。
 - **P4 レポート**: 従業員別（Geppo03型）・組織別（組織図階層＋偏差値）・分析クロス・ダッシュボード刷新。
-- **P5 権限**: 上長任命 UI（pulse_access scope=own_unit へ書く・組織図の版変更で見直し通知）・ナビ判定統一・`#/pulse/team`・RLS 締め直し。
+- **P5 権限**: 上長任命 UI（pulse_access scope=own_unit へ書く・組織図の版変更で見直し通知）・ナビ判定統一・`#/pulse/team`・RLS 締め直し。**制約（P1 レビュー由来）**: `pulse_access` に `scope='self' かつ can_manage_alert=true` の行を作らない（Edge の認可は通るが §3-10 の SELECT 述語で cycles/questions が読めず管理画面が壊れる）。任命 UI ではこの組み合わせを禁止する。
 - **P6**: Slack 内回答モーダル・経営閲覧ロール・PDF。
 - 分析原本: `~/_scratch/talenthub-pulse-v3/`（01 既存分析／02 Geppo 画面棚卸し／03 公開仕様／構想 HTML）。構想ページ: https://claude.ai/artifact/1oS9ufNjnDRjhju4SgzHrG

@@ -63,8 +63,9 @@ as $$
     and bd / interval_days <= max_count
 $$;
 
-revoke all on function public.pulse_cron_due_cycles(date) from public, anon;
-grant execute on function public.pulse_cron_due_cycles(date) to authenticated, service_role;
+-- dry-run は SQL Editor（postgres）から。authenticated へは渡さない。
+revoke all on function public.pulse_cron_due_cycles(date) from public, anon, authenticated;
+grant execute on function public.pulse_cron_due_cycles(date) to service_role;
 
 -- ══ 2. pulse_cron_fire_reminders: pg_cron 本体 ═══════════════════════
 -- Functions URL は secret ではないため関数内に定数で持つ（design書 §3-11）。
@@ -76,6 +77,8 @@ set search_path = public
 as $$
 declare
   v_secret text;
+  v_anon text;
+  v_headers jsonb;
   v_count integer := 0;
   v_cycle record;
   v_today date := current_date;
@@ -89,19 +92,35 @@ begin
     return 0;
   end if;
 
+  -- pulse-notify は verify_jwt=false でデプロイする前提（関数内で x-cron-secret を検証）だが、
+  -- 誤って verify_jwt=true で再デプロイされてもゲートウェイで 401 にならないよう、
+  -- Vault に 'pulse_anon_key'（公開 anon key）があれば Authorization も付ける（任意）。
+  select decrypted_secret into v_anon
+  from vault.decrypted_secrets
+  where name = 'pulse_anon_key'
+  limit 1;
+
+  v_headers := jsonb_build_object(
+    'Content-Type', 'application/json',
+    'x-cron-secret', v_secret
+  );
+  if v_anon is not null and btrim(v_anon) <> '' then
+    v_headers := v_headers || jsonb_build_object('Authorization', 'Bearer ' || btrim(v_anon));
+  end if;
+
   for v_cycle in
     select cycle_id from public.pulse_cron_due_cycles(v_today)
   loop
+    -- 未回答者 60 名超 × Slack lookup+post は 10〜20 秒かかるため、pg_net 既定 5 秒では
+    -- 先に切断される。60 秒に延ばす（結果は net._http_response で確認できる）。
     perform net.http_post(
       url := 'https://kgofrmfsfnxbzqkfrkqo.supabase.co/functions/v1/pulse-notify',
-      headers := jsonb_build_object(
-        'Content-Type', 'application/json',
-        'x-cron-secret', v_secret
-      ),
+      headers := v_headers,
       body := jsonb_build_object(
         'cycle_id', v_cycle.cycle_id::text,
         'mode', 'reminder'
-      )
+      ),
+      timeout_milliseconds := 60000
     );
     v_count := v_count + 1;
   end loop;

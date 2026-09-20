@@ -422,9 +422,6 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
   const [dueDate, setDueDate] = useState("");
   const [notifyResults, setNotifyResults] = useState<Record<string, NotifyResult>>({});
   // 直近の preview で分かった「自分用URL」。cycle id ごとに保持し、broadcast/reminder が
-  // no_channel_configured で失敗して notifyResults が上書きされた後もフォールバック先として
-  // 使えるようにする（notifyResults は最後に実行したアクションの結果で毎回上書きされるため）。
-  const [myUrls, setMyUrls] = useState<Record<string, string | null>>({});
 
   const onCreate = async () => {
     const res = await createCycle({
@@ -464,9 +461,6 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
   const onPreview = async (c: PulseCycleRow) => {
     const res = await notifyCycle(c.id, "preview");
     setNotifyResults((m) => ({ ...m, [c.id]: res }));
-    if (res.ok && res.preview) {
-      setMyUrls((m) => ({ ...m, [c.id]: res.preview!.my_url }));
-    }
     onToast(
       res.ok ? "success" : "error",
       res.ok ? "文面と自分用URLを取得しました（送信はされていません）" : res.reason ?? "取得に失敗しました",
@@ -530,7 +524,6 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
             setLabel={setName(c.question_set_id)}
             stats={cycleStats[c.id]}
             notifyResult={notifyResults[c.id]}
-            myUrl={myUrls[c.id]}
             busy={busy}
             onSend={() => {
               if (confirm(`${periodLabel(c.period)} の受付を開始します（回答フォームが開きます）。よろしいですか？`))
@@ -561,7 +554,6 @@ function CycleRow({
   setLabel,
   stats,
   notifyResult,
-  myUrl,
   busy,
   onSend,
   onNotify,
@@ -573,8 +565,6 @@ function CycleRow({
   setLabel: string;
   stats: PulseCycleStats | undefined;
   notifyResult: NotifyResult | undefined;
-  /** 直近の preview で分かった自分用URL（未取得なら undefined／対象外なら null）。 */
-  myUrl: string | null | undefined;
   busy: boolean;
   onSend: () => void;
   onNotify: (mode: "broadcast" | "reminder") => void;
@@ -656,13 +646,16 @@ function CycleRow({
             <>
               <p className="padm__notifyresult-msg">
                 配信チャネル未設定です（Slack Bot Token／Resend API Key が両方とも未設定）。
-                docs/PULSE_ACTIVATION_RUNBOOK.md を参照して設定するか、回答URLを手動でSlackへ投稿してください。
+                docs/PULSE_ACTIVATION_RUNBOOK.md を参照して設定するか、共通の回答URL（ログイン式 #/survey）を
+                手動でSlackへ投稿してください。本人専用URLは「文面と自分用URLを確認」から取得できます（他の人に配らない）。
               </p>
+              {/* ここで配るのは共通URL固定。本人専用トークンURLをチャンネルに貼ると
+                  クリックした全員が貼った人として回答してしまう（独立レビュー指摘）。 */}
               <button
                 className="pdash__btn padm__copybtn"
-                onClick={() => onCopyText(myUrl ?? SURVEY_URL)}
+                onClick={() => onCopyText(SURVEY_URL)}
               >
-                <Copy size={13} aria-hidden="true" /> 回答URLをコピー
+                <Copy size={13} aria-hidden="true" /> 共通の回答URLをコピー
               </button>
             </>
           ) : (

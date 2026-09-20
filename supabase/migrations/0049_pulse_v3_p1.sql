@@ -99,6 +99,9 @@ create policy "pulse_settings write (admin)"
   using (public.pulse_is_admin()) with check (public.pulse_is_admin());
 
 revoke all on public.pulse_settings from anon;
+-- 既定ACL（pg_default_acl）由来の delete/truncate 等を authenticated に残さない（0021 流儀）。
+-- シングルトン行が消えると pulse_is_target が全員対象外になるため delete は誰にも渡さない。
+revoke all on public.pulse_settings from authenticated;
 grant select, insert, update on public.pulse_settings to authenticated;
 
 -- ══ 3-2. pulse_target_exclusions（対象者の個別除外・決定3） ══════════
@@ -185,12 +188,14 @@ as $$
     )
 $$;
 
-revoke all on function public.pulse_is_target(text) from public, anon;
-revoke all on function public.pulse_target_count() from public, anon;
-revoke all on function public.pulse_target_employee_numbers() from public, anon;
-grant execute on function public.pulse_is_target(text) to authenticated, service_role;
-grant execute on function public.pulse_target_count() to authenticated, service_role;
-grant execute on function public.pulse_target_employee_numbers() to authenticated, service_role;
+-- 呼び出し元は SECURITY DEFINER の内部関数（owner 権限で実行）と Edge（service_role）のみ。
+-- authenticated へは渡さない（employees の差分から admin 専用の除外リストが推定できるため）。
+revoke all on function public.pulse_is_target(text) from public, anon, authenticated;
+revoke all on function public.pulse_target_count() from public, anon, authenticated;
+revoke all on function public.pulse_target_employee_numbers() from public, anon, authenticated;
+grant execute on function public.pulse_is_target(text) to service_role;
+grant execute on function public.pulse_target_count() to service_role;
+grant execute on function public.pulse_target_employee_numbers() to service_role;
 
 -- ══ 3-3b. 祝日テーブル＋営業日ヘルパー ════════════════════════════════
 create table if not exists public.pulse_holidays (

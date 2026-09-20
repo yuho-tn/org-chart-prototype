@@ -431,9 +431,28 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // 記録。broadcast のチャネル別スキップ・reminder の回数上限/同日重複防止は
+  // すべてこの行に依存するため、失敗を握りつぶさず record_failed として返す
+  // （送信自体は済んでいるので counts も返す。独立レビュー指摘）。
+  let recordFailed: string | null = null;
   if (notifRows.length > 0) {
-    // 記録（失敗しても配信自体は完了扱い）
-    await admin.from("pulse_notifications").insert(notifRows);
+    const { error: insErr } = await admin.from("pulse_notifications").insert(notifRows);
+    if (insErr) {
+      console.error("pulse-notify: pulse_notifications insert failed:", insErr.message);
+      recordFailed = insErr.message;
+    }
+  }
+
+  if (recordFailed) {
+    return json({
+      ok: false,
+      error: "record_failed",
+      detail: "配信は実行されましたが送信記録の保存に失敗しました（再実行すると重複送信になります）: " + recordFailed,
+      mode,
+      period,
+      channels: { slack: !!SLACK_BOT_TOKEN, email: !!RESEND_API_KEY },
+      counts,
+    }, 500);
   }
 
   return json({

@@ -146,7 +146,8 @@ Deno.serve(async (req: Request) => {
   try {
     verified = await verifyPulseTokenDetailed(token);
   } catch (e) {
-    return json({ error: "internal_error", detail: (e as Error).message }, 500);
+    console.error("pulse-answer: token verify internal error:", (e as Error).message);
+    return json({ error: "internal_error" }, 500);
   }
   if (!verified.ok) {
     if (verified.reason === "expired") return json({ error: "expired" }, 410);
@@ -162,7 +163,10 @@ Deno.serve(async (req: Request) => {
     .select("id, status")
     .eq("id", cycleId)
     .maybeSingle();
-  if (cErr) return json({ error: "internal_error", detail: cErr.message }, 500);
+  if (cErr) {
+    console.error("pulse-answer: cycle fetch failed:", cErr.message);
+    return json({ error: "internal_error" }, 500);
+  }
   if (!cycle) return json({ error: "not_found" }, 404);
   if (cycle.status !== "sent") return json({ error: "closed" }, 409);
 
@@ -171,7 +175,10 @@ Deno.serve(async (req: Request) => {
       p_emp: employeeNumber,
       p_cycle_id: cycleId,
     });
-    if (bErr) return json({ error: "internal_error", detail: bErr.message }, 500);
+    if (bErr) {
+      console.error("pulse-answer: bundle rpc failed:", bErr.message);
+      return json({ error: "internal_error" }, 500);
+    }
     if (!bundle) return json({ error: "not_found" }, 404);
     if (bundle.is_target === false) return json({ error: "not_target" }, 403);
     return json({ ok: true, bundle });
@@ -192,14 +199,25 @@ Deno.serve(async (req: Request) => {
   if (subErr) {
     const msg = subErr.message ?? "submit failed";
     if (msg.includes("not_target")) return json({ error: "not_target" }, 403);
-    return json({ error: "submit_failed", detail: msg }, 400);
+    if (msg.includes("not open for responses")) return json({ error: "closed" }, 409);
+    // detail はこちらの検証文言（pulse__submit_response: …）だけを返し、
+    // それ以外の DB 生エラーはログに回してクライアントへ出さない（独立レビュー指摘）。
+    console.error("pulse-answer: submit rpc failed:", msg);
+    const ours = msg.includes("pulse__submit_response:");
+    return json(
+      ours ? { error: "submit_failed", detail: msg.replace(/^.*pulse__submit_response:\s*/, "") } : { error: "submit_failed" },
+      400,
+    );
   }
 
   const { data: bundleAfter, error: bErr2 } = await admin.rpc("pulse_survey_bundle_for", {
     p_emp: employeeNumber,
     p_cycle_id: cycleId,
   });
-  if (bErr2) return json({ error: "internal_error", detail: bErr2.message }, 500);
+  if (bErr2) {
+    console.error("pulse-answer: bundle rpc (after submit) failed:", bErr2.message);
+    return json({ error: "internal_error" }, 500);
+  }
   if (!bundleAfter) return json({ error: "not_found" }, 404);
   return json({ ok: true, bundle: bundleAfter });
 });
