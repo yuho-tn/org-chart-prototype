@@ -267,7 +267,7 @@ export function SurveyPage({ token }: { token?: string } = {}) {
         {loaded && !error && cycle && eligibility === "eligible" && !submitted && (
           <>
             <p className="pulse__lead">
-              いまの調子を教えてください。所要 1 分・匿名集計されます。
+              いまの調子を教えてください。所要 1 分です。
               {alreadyAnswered && (
                 <span className="pulse__badge">回答済み（修正できます）</span>
               )}
