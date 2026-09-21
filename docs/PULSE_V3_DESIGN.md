@@ -347,3 +347,125 @@ verify_jwt は **`supabase/config.toml` で関数ごとに固定**（pulse-answe
 - **P5 権限**: 上長任命 UI（pulse_access scope=own_unit へ書く・組織図の版変更で見直し通知）・ナビ判定統一・`#/pulse/team`・RLS 締め直し。**制約（P1 レビュー由来）**: `pulse_access` に `scope='self' かつ can_manage_alert=true` の行を作らない（Edge の認可は通るが §3-10 の SELECT 述語で cycles/questions が読めず管理画面が壊れる）。任命 UI ではこの組み合わせを禁止する。
 - **P6**: Slack 内回答モーダル・経営閲覧ロール・PDF。
 - 分析原本: `~/_scratch/talenthub-pulse-v3/`（01 既存分析／02 Geppo 画面棚卸し／03 公開仕様／構想 HTML）。構想ページ: https://claude.ai/artifact/1oS9ufNjnDRjhju4SgzHrG
+
+---
+
+## 10. P2 アラート — 実装契約（branch `feat/pulse-v3-p2`・migration `0051_pulse_v3_p2.sql`・2026-09-21）
+
+決定5（人事管理者へ日次ダイジェスト・SOS/体調不安は即時・**上長には通知しない**・対応も人事）と決定1（上長に見せるアラートは仕事/健康/評価由来のみ）に従う。§8 と同じ分担（backend / edge / frontend）で、契約は本節が正。
+
+### 10-0. 用語・前提
+
+- **天気4カテゴリ**＝`pulse_questions.category` の `仕事`／`対人`／`健康`／`評価`（weather5・1..5、1=荒天・2=雨・3=くもり・4=晴れ・5=快晴）。
+- **合計スコア**＝天気4問の合計（20点満点）。**総合（overall）**＝天気4問の平均（既存の `avg_overall` と同義）。
+- **前回**＝本人が回答した直近の過去サイクル（period 昇順で直前・status in ('sent','closed')）。「3か月」＝本人回答があるサイクル直近3件が **period で暦月連続**していること（飛んだ月があれば不成立＝既存 `isConsecutiveDecline` と同じ）。
+- **人事管理者（通知先）**＝`pulse_settings.alert_digest_recipients text[]`（メール・既定 `{}`）。空なら通知はスキップし、管理画面に「通知先未設定」を出す。閲覧権限は従来どおり `pulse_can_manage_alert()`（admin または pulse_access.can_manage_alert）。
+- 上長（P5 で `pulse_access.scope='own_unit'` になる人）は **通知しない**。一覧 RPC は `disclose_to_manager=true` の行だけ返す（今は到達不能だが述語を先に入れる）。
+
+### 10-1. ルール（`pulse_alert_rules` 拡張・seed は code で冪等 upsert）
+
+追加列: `code text unique`／`label text`／`description text`／`source text check (score|behavior|comment) default 'score'`／`notify_immediately boolean default false`／`disclose_to_manager boolean default true`（規則として上長開示を許すか。実際の開示可否は 10-2 のアラート属性で決まる）／`sort_order int`。既存の `type` check（absolute/delta/custom）は **drop** し、`type` は `code` と同じ文字列を入れる（`pulse_alerts.type` も同様に check を drop・`unique(employee_number, cycle_id, type)` は維持＝type=code）。
+
+| code | label | source | params 既定 | 判定（本人×当サイクル） | active | 即時 |
+|---|---|---|---|---|---|---|
+| `geppo_stormy` | 荒天がある | score | `{"threshold":1}` | 天気4問のいずれかが ≤threshold | ✔ | — |
+| `geppo_drop2` | 2段階下落して雨以下 | score | `{"drop":2,"max_after":2}` | いずれかの項目が 前回比 −drop 以上 かつ 今回 ≤max_after | ✔ | — |
+| `geppo_rain2` | 雨以下が2項目 | score | `{"threshold":2,"min_items":2}` | ≤threshold の項目が min_items 以上 | ✔ | — |
+| `preset_all_cloudy` | 全項目くもり | score | `{"score":3}` | 天気4問すべて =score | ✔ | — |
+| `preset_decline_3m` | 3か月連続下降 | score | `{"months":3}` | 直近3回答が暦月連続かつ総合が単調減少（既存クライアント判定を DB 化） | ✔ | — |
+| `preset_same_3m` | 3か月同回答 | behavior | `{"months":3}` | 直近3回答が暦月連続かつ天気4問の値が全回同一 | ✔ | — |
+| `preset_org_change` | 主務組織の変更 | behavior | `{}` | 今回の `snap_department` ≠ 前回回答の `snap_department`（両方非null） | ✔ | — |
+| `preset_unanswered_3m` | 3か月未回答 | behavior | `{"months":3}` | **サイクル単位でのみ判定**: 対象者（pulse_is_target）で、当サイクル＋直前2サイクル（period 連続・いずれも sent/closed）に回答なし。当サイクルが closed か due_date < 今日 のときだけ | ✔ | — |
+| `legacy_absolute` | 総合平均が低い（旧） | score | `{"threshold":2}` | 既存 absolute（既存 seed 行を code 付与して更新） | **OFF** | — |
+| `legacy_delta` | 総合平均の急降下（旧） | score | `{"drop":1.5}` | 既存 delta（同上） | **OFF** | — |
+| `comment_sos` | SOS（自由記述） | comment | `{"category":"SOS"}` | 分類結果 categories に category を含む | ✔ | **✔** |
+| `comment_health` | 体調不安（自由記述） | comment | `{"category":"体調不安"}` | 同上 | ✔ | **✔** |
+| `comment_relationship` | 人間関係（自由記述） | comment | `{"category":"人間関係"}` | 同上 | ✔ | — |
+| `comment_org` | 組織課題（自由記述） | comment | `{"category":"組織課題"}` | 同上 | ✔ | — |
+| `comment_evaluation` | 評価（自由記述） | comment | `{"category":"評価"}` | 同上 | ✔ | — |
+| `comment_work` | 仕事（自由記述） | comment | `{"category":"仕事"}` | 同上 | OFF | — |
+| `comment_career` | キャリア（自由記述） | comment | `{"category":"キャリア"}` | 同上 | OFF | — |
+| `comment_private` | プライベート（自由記述） | comment | `{"category":"プライベート"}` | 同上 | OFF | — |
+| `comment_admin` | 総務（自由記述） | comment | `{"category":"総務"}` | 同上 | OFF | — |
+| `comment_request` | 要望・提言（自由記述） | comment | `{"category":"要望/提言"}` | 同上 | OFF | — |
+| `comment_unclassified` | 分類困難（自由記述） | comment | `{"category":"分類困難"}` | 同上 | OFF | — |
+
+- `disclose_to_manager` 既定: score 系＝true（ただし 10-2 の由来カテゴリ判定で最終決定）／behavior 系・comment 系＝**false**（決定1: 対人・コメント由来は人事のみ。主務変更・同回答・未回答は人事の運用情報）。
+- ON/OFF・params・notify_immediately・disclose_to_manager は RPC `pulse_update_alert_rule(p_id uuid, p_patch jsonb)`（admin のみ・params は code ごとにキーと型を検証・不正は例外）で変更。code/label/source は変更不可。
+- 既存 seed 2行（name `絶対値アラート（平均2以下）`／`変化量アラート（1.5以上の下落）`）は `code` を `legacy_absolute`／`legacy_delta` に付与し `is_active=false` へ更新（name で特定）。
+
+### 10-2. アラート（`pulse_alerts` 拡張）
+
+追加列: `categories text[] not null default '{}'`（判定の由来カテゴリ）／`disclose_to_manager boolean not null default false`／`severity text check (info|warn|critical) not null default 'warn'`／`notified_at timestamptz`／`notified_kind text check (immediate|digest)`／`updated_at timestamptz default now()`。
+
+- `reason` jsonb（ルール別）: 共通 `rule_code`,`rule`(label),`rule_id`。stormy `items:[{category,score}]`／drop2 `items:[{category,prev,cur,prev_period}]`／rain2 `items:[{category,score}]`／all_cloudy `{}`／decline_3m `series:[{period,overall}]`／same_3m `periods:[…],scores:{category:score}`／org_change `{prev_department,department,prev_period}`／unanswered_3m `periods:[…]`／legacy は既存キー維持／comment_* `{category,summary,severity}`（summary は分類の1行要約）。
+- **`disclose_to_manager`（行）** ＝ `rule.disclose_to_manager and source='score' and categories ⊆ {仕事,健康,評価}`（total/overall 由来＝4カテゴリ全部を categories に入れる → 対人を含むので false）。
+- `severity`: comment_sos/comment_health＝`critical`／stormy・drop2・rain2・decline_3m＝`warn`／その他＝`info`。
+- **冪等・再判定**: `on conflict (employee_number, cycle_id, type) do update set reason, categories, severity, disclose_to_manager, updated_at=now()`（status／notified_at／対応は保持）。再判定で **条件を満たさなくなった score/behavior 由来の行は、対応レコードが無く notified_at が null なら delete**（回答修正で消えた誤報を残さない）。comment 由来は分類が更新されるまで残す。
+
+### 10-3. 判定の実行経路（backend）
+
+- 内部 `pulse__evaluate_employee(p_emp text, p_cycle_id uuid) returns jsonb`（**内部専用**・全ロール revoke）: score/behavior/comment の全 active ルールを本人×当サイクルで判定し upsert/delete。返り値 `{"upserted":n,"deleted":n,"immediate_alert_ids":[uuid…]}`（immediate＝今回 **新規 insert** された行のうち rule.notify_immediately=true のもの。既存行の update は含めない）。
+- `pulse__submit_response` の末尾（answers 挿入後）で呼ぶ → immediate があれば `pulse__request_immediate(alert_ids)`（10-6）を呼ぶ。コメントが非空なら `pulse__request_classification(response_id)`（10-6）も呼ぶ。**これらは失敗しても回答保存を失敗させない**（`begin … exception when others then null; end` で握る）。
+- 公開 `pulse_evaluate_alerts(p_cycle_id uuid) returns integer`（既存シグネチャ・権限維持＝手動「再判定」ボタン）: 当サイクル回答者全員に `pulse__evaluate_employee` ＋ サイクル単位ルール `preset_unanswered_3m`（対象者全員を走査）。返り値＝upserted 合計。
+- サイクル単位ルールは日次ダイジェスト実行時（10-6 daily）にも当月 sent サイクルへ走らせる（`pulse_evaluate_cycle_rules(p_cycle_id)`・service_role 専用）。
+
+### 10-4. コメント分類（`pulse_comment_classifications` 新設）
+
+```sql
+create table if not exists public.pulse_comment_classifications (
+  response_id uuid primary key references public.pulse_responses(id) on delete cascade,
+  categories text[] not null default '{}',   -- 11分類の部分集合（1〜3件）
+  primary_category text,
+  severity text check (severity in ('low','mid','high')),
+  summary text,                               -- 60字以内の日本語1行（ダイジェスト用）
+  comment_hash text not null,                 -- md5(comment)。本文が変わったら再分類
+  model text, classified_at timestamptz not null default now(), error text
+);
+```
+- 11分類の値（固定文字列）: `SOS`・`体調不安`・`人間関係`・`仕事`・`評価`・`キャリア`・`プライベート`・`総務`・`要望/提言`・`組織課題`・`分類困難`。
+- RLS: SELECT＝`pulse_is_admin() or (pulse_can_manage_alert() and pulse_scope() = 'all')`。書込ポリシー無し＝service_role 専有（RPC）。**分類結果は人事のみ**（決定5・上長には返さない）。「人事」＝admin か can_manage_alert かつ scope='all' の保有者。scope='own_unit'（上長）は realname/can_manage_alert を持っていても読めない（本番 rollback 試走で own_unit が読める述語を検出して締めた・2026-09-21）。`pulse_list_alerts` の `comment_categories/comment_summary` も同じ条件（scope='all'）でのみ返す。
+- RPC（service_role 専用）: `pulse_pending_classifications(p_limit int default 50) returns table(response_id uuid, comment text, weather jsonb, nps int)`（コメント非空で、分類行が無いか comment_hash が不一致のもの。**氏名・社員番号・部署は返さない**）／`pulse_apply_classification(p_response_id uuid, p_categories text[], p_primary text, p_severity text, p_summary text, p_model text) returns jsonb`（upsert → 本人×当サイクルの `pulse__evaluate_employee` → immediate があれば `pulse__request_immediate` → `{"alerts_upserted":n,"immediate_alert_ids":[…]}`）。
+- **n<5 の作法**（pulse-summary と同じ趣旨の適用）: ①Claude へ送るのは本文＋天気4値＋eNPS のみ（識別子・部署・氏名を送らない）②分類結果を部署などで集計して見せる面は n<5 を必ずマスク（P2 ではそのような集計面は作らない）③閲覧は上記 RLS で人事のみ。
+
+### 10-5. 対応管理（`pulse_alert_actions` 拡張）
+
+- `state` check を `todo`(未対応)／`doing`(対応中)／`done`(対応済)／`not_needed`(対応不要)／`on_hold_org`(保留(組織課題)) の5値へ拡張。`title text`（対応名）を追加。
+- トリガ `pulse_alert_actions_sync_status`（after insert/update/delete）: 親 `pulse_alerts.status` を `state in ('done','not_needed')` なら `closed`、それ以外（行削除含む）なら `open` に同期。**未完了＝ status='open'**（KPI・ダイジェストの分母）。
+- RPC: `pulse_bulk_update_alert_actions(p_alert_ids uuid[], p_patch jsonb) returns integer`（最大50件・patch は `title/state/assignee_employee_number/due_date/note` の任意キーのみ反映・各 alert に `pulse_can_manage_alert() and pulse_can_view_employee(本人)` を要求・1行も無ければ upsert で新規作成）／`pulse_delete_alert_action(p_alert_id uuid)`（誤登録の削除＝対応レコードだけ消し、アラートは open に戻る。同じ権限）／`pulse_set_alert_status` は互換で残す（UI からは使わない）。
+- `pulse_list_alerts(p_cycle_id uuid)` は **返り値が変わるため drop→create**。`p_cycle_id is null` なら直近12サイクル分をまとめて返す。追加列: `period text`, `rule_code text`, `rule_label text`, `source text`, `categories text[]`, `severity text`, `disclose_to_manager boolean`, `notified_at timestamptz`, `comment_categories text[]`（分類・人事＝realname 権限が無ければ null）, `comment_summary text`（同）, `sum_score int`（当サイクル合計）, `prev_sum_score int`。`action` jsonb に `title` を追加。**呼び出し元が admin でなく `pulse_scope()='own_unit'` の場合は `disclose_to_manager=true` の行だけ**返す（決定1）。並び: open→closed、severity critical→warn→info、created_at desc。
+
+### 10-6. 通知（Edge `pulse-alert-digest`／`pulse-comment-classify`・cron・Vault）
+
+- `pulse_settings` 追加列: `alert_digest_recipients text[] not null default '{}'`／`alert_digest_enabled boolean not null default true`／`alert_immediate_enabled boolean not null default true`。RPC `pulse_update_alert_notify_settings(p_patch jsonb)`（admin のみ・メールは lower/trim・在籍 employees.email に無いものは例外）。
+- 内部 `pulse__request_classification(p_response_id uuid)`／`pulse__request_immediate(p_alert_ids uuid[])`（**内部専用**）: Vault `pulse_cron_secret` が無ければ何もしない。あれば `net.http_post` で各 Edge へ（URL は 0050 と同じく関数内定数・`x-cron-secret`・Vault `pulse_anon_key` があれば Authorization も・timeout 60s）。body: classify `{"response_id":…}`／digest `{"mode":"immediate","alert_ids":[…]}`。
+- `pulse_cron_fire_alert_digest()`（0050 と同型）: `pulse-alert-digest` へ `{"mode":"daily"}`。`cron.schedule('pulse-alert-digest','10 0 * * *', …)`＝毎日 **09:10 JST**（決定9 の朝の枠。翌1日のサイクル要約は P3 で同じ枠に足す）。
+- service_role 専用 RPC: `pulse_alert_digest_batch(p_alert_ids uuid[] default null) returns jsonb`＝`{"recipients":[{"email","name"}],"digest_enabled","immediate_enabled","alerts":[{id,period,employee_number,name,department,rule_code,rule_label,severity,categories,reason,comment_summary,created_at}],"open_total":n,"by_state":{todo,doing,on_hold_org,done,not_needed}}`。`p_alert_ids` null なら `status='open' and notified_at is null` の全件（period 降順）。`pulse_mark_alerts_notified(p_alert_ids uuid[], p_kind text)`。
+- **Edge `pulse-alert-digest`**（verify_jwt=false・config.toml）: POST `{mode:"daily"|"immediate"|"preview", alert_ids?}`。認可＝`x-cron-secret` か JWT(`pulse_can_manage_alert`)。preview は JWT のみ（送らずに本文を返す）。
+  - daily: ①`pulse-comment-classify` を `{mode:"batch"}` で HTTP 呼び出し（x-cron-secret・取りこぼしの追い付き。失敗しても続行）②当月 sent サイクルに `pulse_evaluate_cycle_rules` ③`pulse_alert_digest_batch()` → alerts 0件なら `{ok, sent:0}` で終了 ④本文を組む（severity 順→ルール別に「氏名（部署）｜由来｜1行理由｜コメント要約」・末尾に「未完了 N件（未対応 a／対応中 b／保留 c）」＋`{APP_URL}/#/pulse/alerts`）⑤recipients へ Slack DM（`_shared/slack.ts`・users.lookupByEmail→chat.postMessage）⑥送信成功が1人以上なら `pulse_mark_alerts_notified(ids,'digest')`。
+  - immediate: `pulse_alert_digest_batch(alert_ids)` → `immediate_enabled` が false なら `{ok, sent:0, skipped:"disabled"}`（notified は付けず daily に回す）→ 「【即時】」冒頭で DM → mark 'immediate'。
+  - `SLACK_BOT_TOKEN` 未設定＝400 `no_channel_configured`（notified は付けない）。recipients 空＝`{ok, sent:0, skipped:"no_recipients"}`。
+- **Edge `pulse-comment-classify`**（verify_jwt=false）: POST `{response_id}` または `{mode:"batch", limit?}`。認可＝`x-cron-secret` か JWT(`pulse_can_manage_alert`)。`ANTHROPIC_API_KEY` 無し＝500 `anthropic_not_configured`。`claude-sonnet-5`・JSON 出力（`{"categories":[…],"primary":"…","severity":"low|mid|high","summary":"…"}`・categories は 11分類の部分集合 1〜3件・不正値は `分類困難` に丸める）→ `pulse_apply_classification`。**識別子を送らない**（10-4）。応答 `{ok, classified:n, alerts_upserted:n, immediate:n}`。
+
+### 10-7. 振り返り・KPI（RPC・authenticated・`pulse_can_manage_alert` ゲート）
+
+- `pulse_alert_kpis(p_period text) returns jsonb`: `{"alerted_employees":n（当月アラートの distinct 本人数）,"open_total":n（全期間 status=open）,"my_open":n（open かつ assignee=呼び出し本人）,"by_state":{…5値・open/closed 問わず当月},"trend":[{period,alerted_employees}]（直近12 period）}`。権限が無ければ `null`。
+- `pulse_alert_review(p_period text) returns table(employee_number, name, department, alert_types text[], base_period, base_sum int, latest_period, latest_sum int, delta int, series jsonb, action_state text, action_title text)`: 当月にアラートがある本人ごとに、当月の合計（base）と **その後に回答がある直近サイクル（+3 か月以内）** の合計（latest）・差分。`series`＝base の前後（−2…+3）の `[{period,sum}]`。並び＝delta desc nulls last。name は realname 権限が無ければ null。（Geppo 02 同等・個人詳細（面談ログ・時系列）は既存 `#/pulse/members/:num` へリンク）
+
+### 10-8. フロントエンド
+
+- `src/lib/pulse.ts`: `PulseActionState` 5値＋`ACTION_STATE_LABEL`／`ALERT_RULE_LABEL`（code→label）／`ALERT_SEVERITY_LABEL`／`COMMENT_CATEGORY_LABEL`（11）／`alertReasonSummary(code, reason)` をルール別に整形／`PulseAlertRow` を 10-5 の列へ更新。
+- `#/pulse/alerts`（`PulseAlertsPage` 全面改修・`usePulseAlertsStore`）: 期間セレクタに「すべて（直近12か月）」を追加／フィルタ（状態5値・ルール・担当・重要度）／行＝チェックボックス・氏名（部署）・期間・ルール・理由1行・コメント要約チップ（人事）・severity・「上長開示可」バッジ・対応（対応名/状態/担当/期日/メモ）のインライン編集／**一括更新バー**（選択件数・状態/担当/期日/対応名 を入れて「一括更新」）／行の「対応を削除」（誤登録）／「再判定」／CSV（列に rule_label・severity・categories・comment_summary・action title/state を追加）／タブ「振り返り」（`pulse_alert_review`・delta 降順・6点スパークライン・個人詳細リンク）。
+- `#/pulse`（ダッシュボード）: 「アラート」パネルを追加（`pulse_alert_kpis`）＝ 4 KPI（アラート発生者数（当月）／組織の対応未完了／あなたの対応未完了／対応状況＝5値の内訳バー）＋12か月の発生者数バー。既存「未対応アラート」カードは `open_total` に置換。
+- `#/pulse/admin`（設定）: 「アラートルール」セクション（表: ON/OFF トグル・ラベル・説明・params の数値入力・即時・上長開示 → `pulse_update_alert_rule`）／「アラート通知」セクション（通知先メールのチップ入力・日次 ON/OFF・即時 ON/OFF → `pulse_update_alert_notify_settings`。「ダイジェストを確認」＝Edge preview・「今すぐ送る」＝daily）。
+- `#/pulse/comments`: 行にコメント分類チップ（`pulse_comment_classifications` を response_id で直読・RLS で人事以外は 0 行＝チップ非表示）。
+- `#/pulse/members/:num`: タイムラインが新 type のラベルを表示できること（`ALERT_RULE_LABEL` フォールバック）。
+
+### 10-9. 受入条件・レビュー観点
+
+- `npx tsc -b` / `npx vite build` green。0051 は本番 DB で `begin; … rollback;` の試走（判定 SQL をテストデータで実行）を通してから push。
+- 判定の正しさ: 各ルールを SQL で単体確認（前回の取り方・暦月連続・境界値 ≤/≥・回答修正時の delete）。
+- 決定5 準拠: 通知先＝settings の人事メールのみ。上長へ DM する経路が無いこと。`pulse_list_alerts` の own_unit 述語。
+- n<5: 分類 RPC が識別子を返さない・分類テーブルの RLS。
+- RLS/権限: 新テーブル default-deny・内部関数の revoke・service_role 専用 RPC が authenticated から呼べない。
+- 冪等: 再判定の upsert・delete 条件・digest の notified_at・immediate の二重送信防止・cron 登録の `where not exists`・pg_net 失敗が回答保存を巻き込まない。

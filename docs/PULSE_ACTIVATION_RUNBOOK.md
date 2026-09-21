@@ -160,6 +160,27 @@ select exists (
 select cron.unschedule('pulse-reminders');
 ```
 
+### 確認（P2・アラート日次ダイジェスト cron）
+
+`0051_pulse_v3_p2.sql` の適用（`supabase db push`）で pg_cron ジョブ
+`pulse-alert-digest`（毎日 09:10 JST = 00:10 UTC・reminder の 09:00 と10分ずらして
+競合を避ける）も自動登録される。**新しい secret は不要**（上記 `pulse_cron_secret` /
+`pulse_anon_key` を pulse-notify と共用する）。
+
+```sql
+-- cron 登録状況
+select jobname, schedule, active from cron.job where jobname = 'pulse-alert-digest';
+
+-- 直近の実行結果
+select * from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'pulse-alert-digest')
+order by start_time desc limit 5;
+
+-- pulse-alert-digest が実際に何を返したか（status_code 200 以外は要調査）
+select id, status_code, left(content::text, 200) as body, created
+from net._http_response order by created desc limit 5;
+```
+
 ---
 
 ## ⑤ 管理画面での運用開始操作
@@ -259,3 +280,46 @@ select * from public.pulse_target_exclusions order by created_at desc;
 ```sql
 select public.pulse_is_target('10018');
 ```
+
+---
+
+## ⑦ アラート通知先の設定（P2）
+
+アラートの日次ダイジェスト・即時通知（SOS/体調不安）は `pulse_settings.alert_digest_recipients`
+（人事管理者のメールの配列）に届く。空のままだと Edge Function は `{"ok":true,"sent":0,"skipped":"no_recipients"}`
+を返すだけで誰にも通知されない。**上長には一切通知しない**（決定5）。
+
+### 管理画面から設定する（推奨）
+
+`#/pulse/admin` の「アラート通知」セクションで通知先メールの追加/削除・日次/即時の
+ON-OFF を切り替えられる（`pulse_update_alert_notify_settings` 経由）。
+
+### SQL で直接設定する場合
+
+```sql
+-- 現在の設定を確認
+select alert_digest_recipients, alert_digest_enabled, alert_immediate_enabled
+from public.pulse_settings where id = 1;
+
+-- 通知先を設定（在籍 employees.email に登録されているアドレスのみ・
+-- SQL 直接更新の場合はこのチェックは効かない＝pulse_update_alert_rule 系RPCの
+-- ような email 存在検証は management RPC 経由でのみ行われる点に注意）
+update public.pulse_settings
+set alert_digest_recipients = array['yuho_tn@sho-san.co.jp','ikki_takatani@sho-san.co.jp']
+where id = 1;
+
+-- 日次/即時のON・OFF
+update public.pulse_settings
+set alert_digest_enabled = true, alert_immediate_enabled = true
+where id = 1;
+```
+
+### 動作確認
+
+```sql
+-- 「今送るとどうなるか」を送信せずに確認（管理画面「ダイジェストを確認」と同じ）
+-- ＝ Edge Function pulse-alert-digest を mode:"preview" で呼ぶ（JWT必須・SQLからは呼べない）
+```
+
+管理画面の「ダイジェストを確認」ボタン、または SOS/体調不安を含むテスト回答を送信して
+即時通知が届くかを確認する（`supabase/functions/PULSE_PROVISIONING.md` のチェックリスト参照）。
