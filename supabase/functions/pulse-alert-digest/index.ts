@@ -100,6 +100,12 @@ async function authorize(req: Request, mode: Mode, env: AuthEnv): Promise<AuthRe
   const { data: canManage, error: permErr } = await asUser.rpc("pulse_can_manage_alert");
   if (permErr) return { ok: false, status: 500, body: { error: "permission check failed: " + permErr.message } };
   if (!canManage) return { ok: false, status: 403, body: { error: "permission denied" } };
+  // JWT 経路は「人事」（admin または scope='all'）に限る。ダイジェスト本文は全社の
+  // 実名＋対人由来＋コメント要約を含むため、上長（own_unit）に preview/手動送信を
+  // 許すと決定1/5 の穴になる（独立レビュー 2026-09-21 指摘#3）。cron 経路は上で return 済み。
+  const { data: scope, error: scopeErr } = await asUser.rpc("pulse_scope");
+  if (scopeErr) return { ok: false, status: 500, body: { error: "scope check failed: " + scopeErr.message } };
+  if (scope !== "all") return { ok: false, status: 403, body: { error: "permission denied (hr only)" } };
   return { ok: true };
 }
 
@@ -242,16 +248,18 @@ Deno.serve(async (req: Request) => {
     classifyResult = { ok: false, error: (e as Error).message };
   }
 
-  // ② 当月(JST) status='sent' の各サイクルへ pulse_evaluate_cycle_rules
-  //    （preset_unanswered_3m 等のサイクル単位ルール・失敗しても続行）。
-  const currentPeriod = jstPeriodStr(new Date());
+  // ② 直近3サイクル（sent/closed・period 降順）へ pulse_evaluate_cycle_rules
+  //    （preset_unanswered_3m は「closed か due_date 経過」で初めて成立する。月末締切だと
+  //    経過＝翌月なので「当月 period の sent サイクル」だけでは永久に選ばれない＝
+  //    独立レビュー 2026-09-21 指摘#2。冪等なので複数サイクルへ毎日回してよい・失敗しても続行）。
   const { data: sentCycles, error: cyclesErr } = await admin
     .from("pulse_cycles")
-    .select("id")
-    .eq("period", currentPeriod)
-    .eq("status", "sent");
+    .select("id, period, status")
+    .in("status", ["sent", "closed"])
+    .order("period", { ascending: false })
+    .limit(3);
   if (cyclesErr) {
-    console.error("pulse-alert-digest: sent cycles fetch failed:", cyclesErr.message);
+    console.error("pulse-alert-digest: cycles fetch failed:", cyclesErr.message);
   } else {
     for (const c of (sentCycles ?? []) as { id: string }[]) {
       const { error: evalErr } = await admin.rpc("pulse_evaluate_cycle_rules", { p_cycle_id: c.id });

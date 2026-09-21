@@ -817,7 +817,8 @@ function AlertRuleRow({
             <span>{f.label}</span>
             <input
               type="number"
-              step="0.1"
+              step="1"
+              min={1}
               value={params[f.key] ?? ""}
               disabled={busy}
               onChange={(e) => setParams((p) => ({ ...p, [f.key]: e.target.value }))}

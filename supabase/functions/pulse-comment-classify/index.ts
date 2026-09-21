@@ -163,8 +163,11 @@ Deno.serve(async (req: Request) => {
     limit = Math.min(Math.max(n, 1), MAX_LIMIT);
   }
 
+  // 単発指定は RPC 側で p_response_id に絞る（バックログの後方に埋もれても拾える＝
+  // 独立レビュー 2026-09-21 指摘#9。フィルタは保険として残す）。
   const { data: pendingRaw, error: pendErr } = await admin.rpc("pulse_pending_classifications", {
     p_limit: limit,
+    p_response_id: singleResponseId ?? null,
   });
   if (pendErr) return json({ error: "pending_lookup_failed", detail: pendErr.message }, 500);
   const pending = (pendingRaw ?? []) as PendingRow[];
@@ -220,7 +223,13 @@ Deno.serve(async (req: Request) => {
       } catch {
         console.error("pulse-comment-classify: unparseable model output for", row.response_id, text.slice(0, 200));
       }
-      // parsed が null/不正でも normalizeClassification は例外を投げず「分類困難」に丸める。
+      // モデル出力が JSON として読めない時は保存しない（「分類困難」で保存すると comment_hash が
+      // 一致して二度と再分類されず SOS を取りこぼす＝独立レビュー 2026-09-21 指摘#6）。
+      // pending に残るので次回（日次バッチ）に再試行される。
+      if (parsed === null || typeof parsed !== "object") {
+        errors++;
+        return;
+      }
       const norm = normalizeClassification(parsed);
 
       const { data: applyResult, error: applyErr } = await admin.rpc("pulse_apply_classification", {

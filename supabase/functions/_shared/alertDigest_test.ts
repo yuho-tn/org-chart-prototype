@@ -242,9 +242,11 @@ Deno.test("composeDailyDigest: includes each alert's 4-field line and the footer
   const text = composeDailyDigest(batch, "https://shosan-talent-hub.vercel.app");
 
   assert(text.includes("山田太郎（マーケティング部）｜荒天がある｜健康＝荒天"), "row1 fields present: " + text);
+  // comment_* は理由行に要約が入るので、要約を二重に並べない（独立レビュー 2026-09-21 軽微指摘）
   assert(
-    text.includes("鈴木花子（開発部）｜SOS（自由記述）｜[SOS] 強いSOSシグナル｜強いSOSシグナル"),
-    "row2 fields incl. comment summary present: " + text,
+    text.includes("鈴木花子（開発部）｜SOS（自由記述）｜[SOS] 強いSOSシグナル") &&
+      !text.includes("[SOS] 強いSOSシグナル｜強いSOSシグナル"),
+    "row2 fields incl. comment summary present exactly once: " + text,
   );
   assert(text.includes("未完了 3件（未対応 2／対応中 1／保留 0）"), "footer counts present: " + text);
   assert(text.includes("https://shosan-talent-hub.vercel.app/#/pulse/alerts"), "footer url present: " + text);

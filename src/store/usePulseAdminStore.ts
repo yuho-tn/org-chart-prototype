@@ -557,7 +557,13 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
     if (res.data.skipped === "no_recipients") {
       return { ok: true, reason: "通知先が未設定のため送信していません。「アラート通知」で追加してください" };
     }
+    if (res.data.skipped === "disabled") {
+      return { ok: true, reason: "日次ダイジェストが OFF のため送信していません" };
+    }
+    if (res.data.skipped === "no_alerts" || res.data.alerts === 0) {
+      return { ok: true, reason: "未通知の新規アラートが無いため送信していません" };
+    }
     const sent = res.data.sent;
-    return { ok: true, reason: typeof sent === "number" ? `${sent}件を送信しました` : "送信しました" };
+    return { ok: true, reason: typeof sent === "number" ? `${sent}名へ送信しました` : "送信しました" };
   },
 }));

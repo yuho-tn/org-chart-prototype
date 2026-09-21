@@ -184,6 +184,113 @@ create trigger pulse_alerts_touch_updated_at
   before update on public.pulse_alerts
   for each row execute function public.touch_updated_at();
 
+-- ── 10-2b. 決定1 の own_unit ガードを RLS と個人詳細 RPC にも適用 ──────────
+-- RPC 内（pulse_list_alerts / kpis / review）だけで絞っても、0021 の SELECT ポリシー
+-- は pulse_alerts / pulse_alert_actions の直読を can_manage_alert＋scope で許すため、
+-- P5 で own_unit（上長）が生まれた瞬間に非開示アラートが直読で漏れる
+-- （独立レビュー 2026-09-21 指摘#3）。テーブル側の述語にも同じ条件を入れる。
+drop policy if exists "pulse_alerts read (manage_alert+scope)" on public.pulse_alerts;
+create policy "pulse_alerts read (manage_alert+scope)"
+  on public.pulse_alerts for select to authenticated
+  using (
+    public.pulse_can_manage_alert()
+    and public.pulse_can_view_employee(employee_number)
+    and (public.pulse_scope() <> 'own_unit' or disclose_to_manager)
+  );
+
+drop policy if exists "pulse_alert_actions read (manage_alert+scope)" on public.pulse_alert_actions;
+create policy "pulse_alert_actions read (manage_alert+scope)"
+  on public.pulse_alert_actions for select to authenticated
+  using (exists (
+    select 1 from public.pulse_alerts al
+    where al.id = alert_id
+      and public.pulse_can_manage_alert()
+      and public.pulse_can_view_employee(al.employee_number)
+      and (public.pulse_scope() <> 'own_unit' or al.disclose_to_manager)
+  ));
+drop policy if exists "pulse_alert_actions insert (manage_alert+scope)" on public.pulse_alert_actions;
+create policy "pulse_alert_actions insert (manage_alert+scope)"
+  on public.pulse_alert_actions for insert to authenticated
+  with check (exists (
+    select 1 from public.pulse_alerts al
+    where al.id = alert_id
+      and public.pulse_can_manage_alert()
+      and public.pulse_can_view_employee(al.employee_number)
+      and (public.pulse_scope() <> 'own_unit' or al.disclose_to_manager)
+  ));
+drop policy if exists "pulse_alert_actions update (manage_alert+scope)" on public.pulse_alert_actions;
+create policy "pulse_alert_actions update (manage_alert+scope)"
+  on public.pulse_alert_actions for update to authenticated
+  using (exists (
+    select 1 from public.pulse_alerts al
+    where al.id = alert_id
+      and public.pulse_can_manage_alert()
+      and public.pulse_can_view_employee(al.employee_number)
+      and (public.pulse_scope() <> 'own_unit' or al.disclose_to_manager)
+  ))
+  with check (exists (
+    select 1 from public.pulse_alerts al
+    where al.id = alert_id
+      and public.pulse_can_manage_alert()
+      and public.pulse_can_view_employee(al.employee_number)
+      and (public.pulse_scope() <> 'own_unit' or al.disclose_to_manager)
+  ));
+
+-- 個人詳細のアラート履歴（0031）も同じ述語＋対応名（title）を返す。返り値の型は不変。
+create or replace function public.pulse_person_alerts(p_employee_number text)
+returns table (
+  alert_id uuid,
+  period text,
+  type text,
+  reason jsonb,
+  status text,
+  created_at timestamptz,
+  action jsonb
+)
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  v_scope text := public.pulse_scope();
+begin
+  if not (
+    public.pulse_can_manage_alert()
+    and public.pulse_can_view_employee(p_employee_number)
+  ) then
+    raise exception 'pulse_person_alerts: permission denied';
+  end if;
+
+  return query
+  select
+    al.id,
+    c.period,
+    al.type,
+    al.reason,
+    al.status,
+    al.created_at,
+    case when ac.id is null then null else jsonb_build_object(
+      'id', ac.id,
+      'title', ac.title,
+      'assignee_employee_number', ac.assignee_employee_number,
+      'assignee_name', case when ase.employee_number is null then null
+        else coalesce(ase.display_name, ase.full_name, ase.employee_number) end,
+      'state', ac.state,
+      'due_date', ac.due_date,
+      'note', ac.note,
+      'updated_at', ac.updated_at
+    ) end
+  from public.pulse_alerts al
+  join public.pulse_cycles c on c.id = al.cycle_id
+  left join public.pulse_alert_actions ac on ac.alert_id = al.id
+  left join public.employees ase on ase.employee_number = ac.assignee_employee_number
+  where al.employee_number = p_employee_number
+    and (v_scope <> 'own_unit' or al.disclose_to_manager)
+  order by al.created_at desc;
+end;
+$$;
+
 -- ══ 10-4. pulse_comment_classifications 新設 ═══════════════════════════
 create table if not exists public.pulse_comment_classifications (
   response_id uuid primary key references public.pulse_responses(id) on delete cascade,
@@ -391,7 +498,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -442,7 +549,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -482,7 +589,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -520,7 +627,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -584,7 +691,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -646,7 +753,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -681,7 +788,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -720,7 +827,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -765,7 +872,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -781,15 +888,27 @@ begin
     end if;
   end if;
 
-  -- ── comment_*（分類が既にあれば全 active ルールと突合。無ければ skip。
-  --     comment 由来は「分類が更新されるまで残す」＝条件を満たさなくなっても
-  --     delete しない） ──────────────────────────────────────────────
+  -- ── comment_*（分類が既にあれば全 active ルールと突合。無ければ skip＝
+  --     分類が更新されるまで既存の comment 由来は残す）。分類が存在する時は、
+  --     現在の分類に含まれない category の comment 由来アラートを（未通知かつ
+  --     対応レコード無しに限り）delete する＝再分類で SOS→仕事 に変わった場合に
+  --     旧 comment_sos を残さない（独立レビュー 2026-09-21 指摘#5）。 ─────
   select categories, summary, severity
     into v_comment_categories, v_comment_summary, v_comment_severity
   from public.pulse_comment_classifications
   where response_id = v_response_id;
 
   if v_comment_categories is not null then
+    delete from public.pulse_alerts al
+    using public.pulse_alert_rules ar
+    where ar.code = al.type and ar.source = 'comment'
+      and al.employee_number = p_emp and al.cycle_id = p_cycle_id
+      and not ((ar.params->>'category') = any(v_comment_categories))
+      and al.notified_at is null
+      and not exists (select 1 from public.pulse_alert_actions ac where ac.alert_id = al.id);
+    get diagnostics v_del = row_count;
+    v_deleted := v_deleted + v_del;
+
     for v_rule in
       select * from public.pulse_alert_rules
       where is_active and source = 'comment'
@@ -806,7 +925,7 @@ begin
         v_categories, v_severity, v_disclose, 'open')
       on conflict (employee_number, cycle_id, type) do update
         set reason = excluded.reason, categories = excluded.categories, severity = excluded.severity,
-            disclose_to_manager = excluded.disclose_to_manager, status = 'open', updated_at = now()
+            disclose_to_manager = excluded.disclose_to_manager, updated_at = now()
       returning id, (xmax = 0) into v_alert_id, v_is_new;
       v_upserted := v_upserted + 1;
       if v_is_new and v_rule.notify_immediately then
@@ -841,6 +960,7 @@ declare
   v_months int;
   v_periods text[] := array[]::text[];
   v_cycle_ids uuid[];
+  v_window_start date;
   v_ok boolean;
   v_count int := 0;
   v_emp record;
@@ -867,8 +987,9 @@ begin
       to_date(v_cycle.period||'-01','YYYY-MM-DD') - (i || ' months')::interval, 'YYYY-MM');
   end loop;
 
-  select (count(*) = v_months) and bool_and(c.status in ('sent','closed')), array_agg(c.id)
-    into v_ok, v_cycle_ids
+  select (count(*) = v_months) and bool_and(c.status in ('sent','closed')), array_agg(c.id),
+         min(coalesce(c.send_date, to_date(c.period||'-01','YYYY-MM-DD')))
+    into v_ok, v_cycle_ids, v_window_start
   from public.pulse_cycles c
   where c.period = any(v_periods);
 
@@ -876,11 +997,14 @@ begin
     return 0;
   end if;
 
+  -- 入社が window の初回配信日より後の人（入社1〜2か月）は「3か月未回答」に
+  -- なり得ないので除外（独立レビュー 2026-09-21 指摘#8）。hired_at 不明は従来どおり対象。
   for v_emp in
     select e.employee_number
     from public.employees e
     where e.left_at is null
       and public.pulse_is_target(e.employee_number)
+      and (e.hired_at is null or e.hired_at <= v_window_start)
       and not exists (
         select 1 from public.pulse_responses r
         where r.employee_number = e.employee_number and r.cycle_id = any(v_cycle_ids)
@@ -893,7 +1017,7 @@ begin
         'periods', to_jsonb(v_periods)),
       array[]::text[], 'info', false, 'open')
     on conflict (employee_number, cycle_id, type) do update
-      set reason = excluded.reason, status = 'open', updated_at = now();
+      set reason = excluded.reason, updated_at = now();
     v_count := v_count + 1;
   end loop;
 
@@ -1142,16 +1266,26 @@ begin
     values (v_response_id, v_qid::uuid, v_score, v_value_text);
   end loop;
 
-  -- ── P2: 判定 ＋ 通知要求（失敗しても回答保存は失敗させない） ──────────
+  -- ── P2: 判定 ＋ 通知要求（失敗しても回答保存は失敗させない）。
+  --     判定と通知要求は別ブロックで握る＝通知要求（pg_net）の例外で判定の
+  --     upsert まで巻き戻さない（独立レビュー 2026-09-21 指摘#4）。 ──────
   begin
     v_eval := public.pulse__evaluate_employee(p_emp, p_cycle_id);
+  exception when others then
+    v_eval := null;
+  end;
 
+  begin
     if v_eval is not null and jsonb_array_length(coalesce(v_eval->'immediate_alert_ids', '[]'::jsonb)) > 0 then
       select array_agg(x::uuid) into v_immediate_ids
       from jsonb_array_elements_text(v_eval->'immediate_alert_ids') x;
       perform public.pulse__request_immediate(v_immediate_ids);
     end if;
+  exception when others then
+    null;
+  end;
 
+  begin
     if p_comment is not null and btrim(p_comment) <> '' then
       perform public.pulse__request_classification(v_response_id);
     end if;
@@ -1166,7 +1300,11 @@ $$;
 revoke all on function public.pulse__submit_response(text, uuid, jsonb, text) from public, anon, authenticated, service_role;
 
 -- ══ 10-4b. コメント分類 RPC（service_role 専用・識別子を返さない） ═══════
-create or replace function public.pulse_pending_classifications(p_limit int default 50)
+-- p_response_id 指定＝その1件だけ（回答直後の即時分類）。無指定＝新着順（answered_at desc）。
+-- native 回答のみ（P3 の Geppo 取込 source=geppo_import は過去データ＝分類・アラート対象外）。
+-- 旧シグネチャ (int) は再実行時の重複オーバーロード防止のため drop。
+drop function if exists public.pulse_pending_classifications(int);
+create or replace function public.pulse_pending_classifications(p_limit int default 50, p_response_id uuid default null)
 returns table (response_id uuid, comment text, weather jsonb, nps int)
 language sql
 security definer
@@ -1193,13 +1331,15 @@ as $$
   from public.pulse_responses r
   left join public.pulse_comment_classifications pc on pc.response_id = r.id
   where r.comment is not null and btrim(r.comment) <> ''
+    and r.source = 'native'
+    and (p_response_id is null or r.id = p_response_id)
     and (pc.response_id is null or pc.comment_hash <> md5(r.comment))
-  order by r.answered_at asc nulls last
+  order by r.answered_at desc nulls last
   limit greatest(1, least(coalesce(p_limit, 50), 200))
 $$;
 
-revoke all on function public.pulse_pending_classifications(int) from public, anon, authenticated;
-grant execute on function public.pulse_pending_classifications(int) to service_role;
+revoke all on function public.pulse_pending_classifications(int, uuid) from public, anon, authenticated;
+grant execute on function public.pulse_pending_classifications(int, uuid) to service_role;
 
 create or replace function public.pulse_apply_classification(
   p_response_id uuid,
@@ -1410,8 +1550,10 @@ begin
     -- 分類・要約は人事（admin/scope=all）のみ。上長（own_unit）には出さない（決定1/5）
     case when v_scope = 'all' then cc.categories else null end,
     case when v_scope = 'all' then cc.summary else null end,
-    ss.sum_score::integer,
-    ps.sum_score::integer,
+    -- 合計（4項目）は対人を含む＝上長（own_unit）には出さない（開示3値との差で対人が逆算できる・
+    -- 独立レビュー 2026-09-21 指摘#10）
+    case when v_scope = 'all' then ss.sum_score::integer else null end,
+    case when v_scope = 'all' then ps.sum_score::integer else null end,
     case when ac.id is null then null else jsonb_build_object(
       'id', ac.id,
       'title', ac.title,
@@ -1517,8 +1659,11 @@ begin
   left join public.pulse_alert_rules ar on ar.code = al.type
   left join public.pulse_responses r on r.cycle_id = al.cycle_id and r.employee_number = al.employee_number
   left join public.pulse_comment_classifications cc on cc.response_id = r.id
-  where (p_alert_ids is not null and al.id = any(p_alert_ids))
-     or (p_alert_ids is null and al.status = 'open' and al.notified_at is null);
+  -- ids 指定（即時）でも notified_at is null に限る＝同 id の再呼出で二重 DM しない
+  -- （独立レビュー 2026-09-21 指摘#11）
+  where al.notified_at is null
+    and ((p_alert_ids is not null and al.id = any(p_alert_ids))
+      or (p_alert_ids is null and al.status = 'open'));
 
   select count(*) into v_open_total from public.pulse_alerts where status = 'open';
 
@@ -1661,7 +1806,15 @@ begin
       if not (v_key = any(v_allowed)) then
         raise exception 'invalid_params: % is not editable for rule %', v_key, v_code;
       end if;
+      if jsonb_typeof(p_patch->'params'->v_key) <> 'number' then
+        raise exception 'invalid_params: % must be a number', v_key;
+      end if;
       v_num := (p_patch->'params'->>v_key)::numeric;
+      -- 全キー整数のみ（判定側が ::int でキャストするため 2.5 等は判定停止を招く＝
+      -- 独立レビュー 2026-09-21 指摘#7）
+      if v_num <> floor(v_num) then
+        raise exception 'invalid_params: % must be an integer', v_key;
+      end if;
       case v_key
         when 'threshold' then
           if v_num < 1 or v_num > 5 then raise exception 'invalid_params: threshold must be 1..5'; end if;
@@ -1681,7 +1834,10 @@ begin
     end loop;
 
     update public.pulse_alert_rules
-      set params = coalesce(params, '{}'::jsonb) || (p_patch->'params')
+      set params = coalesce(params, '{}'::jsonb) || (
+        select coalesce(jsonb_object_agg(k, to_jsonb((v)::numeric::int)), '{}'::jsonb)
+        from jsonb_each_text(p_patch->'params') as t(k, v)
+      )
     where id = p_id;
   end if;
 
@@ -1884,11 +2040,12 @@ begin
     e.department,
     b.alert_types,
     p_period,
-    bs.sum_score::integer,
+    -- 合計系は対人を含む＝上長（own_unit）には null（指摘#10）
+    case when v_scope = 'all' then bs.sum_score::integer else null end,
     lt.period,
-    lt.sum_score::integer,
-    case when lt.sum_score is not null and bs.sum_score is not null then (lt.sum_score - bs.sum_score)::integer else null end,
-    coalesce(sr.series, '[]'::jsonb),
+    case when v_scope = 'all' then lt.sum_score::integer else null end,
+    case when v_scope = 'all' and lt.sum_score is not null and bs.sum_score is not null then (lt.sum_score - bs.sum_score)::integer else null end,
+    case when v_scope = 'all' then coalesce(sr.series, '[]'::jsonb) else '[]'::jsonb end,
     act.state,
     act.title
   from (

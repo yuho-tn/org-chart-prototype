@@ -461,6 +461,15 @@ create table if not exists public.pulse_comment_classifications (
 - `#/pulse/comments`: 行にコメント分類チップ（`pulse_comment_classifications` を response_id で直読・RLS で人事以外は 0 行＝チップ非表示）。
 - `#/pulse/members/:num`: タイムラインが新 type のラベルを表示できること（`ALERT_RULE_LABEL` フォールバック）。
 
+### 10-8b. 独立レビュー（Opus・2026-09-21）反映後の契約差分
+
+- 再判定の upsert は **status を保持**（closed のまま）。comment 由来も、現在の分類に含まれない category の行は「未通知かつ対応無し」に限り delete（再分類で SOS→仕事 に変わった旧行を残さない）。
+- `preset_unanswered_3m` は `hired_at <= window 初回配信日` の人だけ（入社1〜2か月を誤検知しない）。Edge daily は **直近3サイクル（sent/closed）** へ `pulse_evaluate_cycle_rules` を回す（月末締切→翌月経過のため「当月 sent」では永久に成立しない）。
+- 決定1の own_unit ガードは RPC 内だけでなく **`pulse_alerts`／`pulse_alert_actions` の RLS と `pulse_person_alerts`** にも同じ述語 `(pulse_scope() <> 'own_unit' or disclose_to_manager)` を入れる。own_unit には合計スコア（4項目和＝対人が逆算できる）を返さない（list/review とも null）。Edge の JWT 経路（preview／手動 daily・immediate）は **admin か scope='all'** に限る。
+- `pulse_pending_classifications(p_limit, p_response_id default null)`: native 回答のみ・新着順（answered_at desc）・単発は id で絞る。モデル出力が JSON として読めない件は保存せず pending に残す（分類困難で保存すると hash 一致で再分類されない）。
+- `pulse_alert_digest_batch(p_alert_ids)` は ids 指定でも `notified_at is null` に限る（同 id 再呼出で二重 DM しない）。`pulse__submit_response` は判定と通知要求を別の exception ブロックで握る。
+- `pulse_update_alert_rule` の params は整数のみ（判定側 `::int` の例外で全員の判定が止まるのを防ぐ）。
+
 ### 10-9. 受入条件・レビュー観点
 
 - `npx tsc -b` / `npx vite build` green。0051 は本番 DB で `begin; … rollback;` の試走（判定 SQL をテストデータで実行）を通してから push。

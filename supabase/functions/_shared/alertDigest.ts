@@ -275,7 +275,8 @@ function formatAlertLine(a: AlertDigestAlert): string {
   const reason = reasonLine(a.rule_code, a.reason);
   const parts = [`${name}（${dept}）`, ruleLabel, reason];
   const summary = a.comment_summary && a.comment_summary.trim();
-  if (summary) parts.push(summary);
+  // comment_* の理由行には要約が既に入っている（reasonLine）ので二重に並べない
+  if (summary && !a.rule_code.startsWith("comment_") && !reason.includes(summary)) parts.push(summary);
   return "• " + parts.join("｜");
 }
 

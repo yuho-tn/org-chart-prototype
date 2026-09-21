@@ -253,7 +253,7 @@ export type PulseAlertAction = {
 };
 
 /** rpc('pulse_list_alerts') の1行（設計書 §10-5）。subject_name は実名非公開なら null。
- *  comment_categories/comment_summary は人事（realname権限）以外は null。 */
+ *  comment_categories/comment_summary は人事（admin または scope='all'）以外は null。 */
 export type PulseAlertRow = {
   alert_id: string;
   employee_number: string;
