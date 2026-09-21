@@ -30,3 +30,14 @@ verify_jwt = true
 # x-export-secret ヘッダで自前認可（予実アプリのサーバから呼ぶ）。2026-09-20 時点の本番も false。
 [functions.employees-export]
 verify_jwt = false
+
+# P2 アラート（PULSE_V3_DESIGN.md §10-6）。どちらも pulse-notify と同型:
+#   pulse-alert-digest     … pg_cron（0051 の日次ダイジェスト起動）が x-cron-secret だけで呼ぶ。
+#                             関数内で cron secret／JWT(pulse_can_manage_alert) を自前検証する。
+#   pulse-comment-classify … pulse-alert-digest（daily モード）が x-cron-secret 付きでHTTP起動する
+#                             ほか、pulse__request_classification（DB内部関数）からも起動され得る。
+[functions.pulse-alert-digest]
+verify_jwt = false
+
+[functions.pulse-comment-classify]
+verify_jwt = false
