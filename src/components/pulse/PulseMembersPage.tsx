@@ -13,7 +13,7 @@ import {
   memberTrend,
   isConsecutiveDecline,
   alertReasonSummary,
-  ALERT_TYPE_LABEL,
+  alertTypeLabel,
   ACTION_STATE_LABEL,
   CARE_KIND_LABEL,
   type PulseMemberSummary,
@@ -419,7 +419,7 @@ function CareTimeline({
               <li key={`a-${it.alert.alert_id}`} className="pcare__item pcare__item--alert">
                 <div className="pcare__meta">
                   <span className="pcare__badge pcare__badge--alert">
-                    アラート（{ALERT_TYPE_LABEL[it.alert.type]}）
+                    アラート（{alertTypeLabel(it.alert.type)}）
                   </span>
                   <span className="pcare__who">{periodLabel(it.alert.period)}</span>
                   <span className="pcare__at">{fmtDateTime(it.alert.created_at)}</span>

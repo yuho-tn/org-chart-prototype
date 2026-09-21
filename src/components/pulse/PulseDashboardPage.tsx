@@ -20,8 +20,11 @@ import {
   periodLabel,
   CYCLE_STATUS_LABEL,
   DIMENSION_LABEL,
+  ACTION_STATE_LABEL,
+  ACTION_STATE_ORDER,
   type PulseAggregateRow,
   type PulseCycleRow,
+  type PulseAlertKpis,
 } from "../../lib/pulse";
 import { buildCsv, downloadCsv } from "../../lib/pulseCsv";
 
@@ -54,7 +57,7 @@ export function PulseDashboardPage() {
     summary,
     summaryError,
     cycleStats,
-    openAlerts,
+    alertKpis,
     activeSetCount,
     lastNotify,
     loadDashboard,
@@ -297,13 +300,16 @@ export function PulseDashboardPage() {
             />
             <Stat
               label="未対応アラート"
-              value={openAlerts != null ? String(openAlerts) : "—"}
-              sub={openAlerts != null ? "クリックで一覧へ" : "閲覧権限がありません"}
+              value={alertKpis?.open_total != null ? String(alertKpis.open_total) : "—"}
+              sub={alertKpis != null ? "クリックで一覧へ" : "閲覧権限がありません"}
               icon={<Bell size={14} aria-hidden />}
-              warn={openAlerts != null && openAlerts > 0}
-              onClick={openAlerts != null ? () => navigate({ name: "pulse_alerts" }) : undefined}
+              warn={alertKpis != null && alertKpis.open_total > 0}
+              onClick={alertKpis != null ? () => navigate({ name: "pulse_alerts" }) : undefined}
             />
           </section>
+
+          {/* ── アラート（設計書 §10-7・rpc pulse_alert_kpis） ── */}
+          <AlertPanel kpis={alertKpis} onOpenAlerts={() => navigate({ name: "pulse_alerts" })} />
 
           {/* ── AI要約（Claude・Edge Function） ── */}
           <section className="pdash__panel pdash__summary">
@@ -636,6 +642,87 @@ function Stat({
     );
   }
   return <div className={cls}>{body}</div>;
+}
+
+// ── アラートパネル（設計書 §10-7・#/pulse） ────────────────────────────
+
+/**
+ * 「アラート」パネル：当月発生者数・組織/自分の対応未完了・対応状況5値の内訳バー・
+ * 直近12か月の発生者数推移（Sparklineを流用）。rpc('pulse_alert_kpis') が権限なしで
+ * null を返した場合は行き止まりにせず、案内文のみ表示する。
+ */
+function AlertPanel({ kpis, onOpenAlerts }: { kpis: PulseAlertKpis | null; onOpenAlerts: () => void }) {
+  if (!kpis) {
+    return (
+      <section className="pdash__panel">
+        <h2 className="pdash__h2">アラート</h2>
+        <p className="pdash__muted">閲覧権限がありません（アラート管理権限が必要です）。</p>
+      </section>
+    );
+  }
+
+  const trend = kpis.trend.map((t) => ({ period: t.period, value: t.alerted_employees }));
+  const trendMax = Math.max(3, ...kpis.trend.map((t) => t.alerted_employees), 0);
+  const byStateMax = Math.max(1, ...ACTION_STATE_ORDER.map((s) => kpis.by_state[s] ?? 0));
+
+  return (
+    <section className="pdash__panel">
+      <div className="pdash__summary-head">
+        <h2 className="pdash__h2">アラート</h2>
+        <button className="pdash__btn" onClick={onOpenAlerts}>
+          <ArrowUpRight size={13} aria-hidden /> アラート一覧へ
+        </button>
+      </div>
+
+      <div className="palrp__stats">
+        <div className="palrp__stat">
+          <span className="palrp__stat-label">アラート発生者数（当月）</span>
+          <span className="palrp__stat-value">{kpis.alerted_employees}</span>
+        </div>
+        <div className="palrp__stat">
+          <span className="palrp__stat-label">組織の対応未完了</span>
+          <span className="palrp__stat-value">{kpis.open_total}</span>
+        </div>
+        <div className="palrp__stat">
+          <span className="palrp__stat-label">あなたの対応未完了</span>
+          <span className="palrp__stat-value">{kpis.my_open}</span>
+        </div>
+      </div>
+
+      <div className="palrp__bystate">
+        {ACTION_STATE_ORDER.map((s) => {
+          const c = kpis.by_state[s] ?? 0;
+          return (
+            <div key={s} className="palrp__byrow">
+              <span className="palrp__bylabel">{ACTION_STATE_LABEL[s]}</span>
+              <div className="palrp__bytrack">
+                <div
+                  className={`palrp__bybar palrp__bybar--${s}`}
+                  style={{ width: `${(c / byStateMax) * 100}%` }}
+                />
+              </div>
+              <span className="palrp__bycount">{c}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <h3 className="palrp__subh">発生者数の推移（直近12か月）</h3>
+      {trend.length > 0 ? (
+        <Sparkline
+          data={trend}
+          min={0}
+          max={trendMax}
+          guides={[0, Math.ceil(trendMax / 2), trendMax]}
+          format={(v) => `${Math.round(v)}人`}
+          formatAxis={(v) => String(Math.round(v))}
+          ariaLabel="アラート発生者数の推移"
+        />
+      ) : (
+        <p className="pdash__muted">データなし</p>
+      )}
+    </section>
+  );
 }
 
 // ── チャート ─────────────────────────────────────────────────────────

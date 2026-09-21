@@ -7,6 +7,8 @@ import type {
   PulseQuestionRow,
   PulseCycleRow,
   PulseQuestionType,
+  PulseAlertRule,
+  PulseAlertNotifySettings,
 } from "../lib/pulse";
 
 /**
@@ -66,6 +68,46 @@ function guardMessage(message: string | undefined): string {
   return message;
 }
 
+/** アラートルール patch（設計書 §10-1）。含めたキーだけをRPC側が反映する。 */
+export type AlertRulePatch = Partial<{
+  is_active: boolean;
+  notify_immediately: boolean;
+  disclose_to_manager: boolean;
+  params: Record<string, number>;
+}>;
+
+function digestErrorMessage(raw: string | undefined): string {
+  if (raw && /no_channel_configured/i.test(raw)) {
+    return "Slack未設定です（Runbookを参照してください）。";
+  }
+  if (raw && /permission denied/i.test(raw)) {
+    return "ダイジェストを送信する権限がありません（管理者のみ）。";
+  }
+  if (raw) return `ダイジェストの取得に失敗しました：${raw}`;
+  return "ダイジェストの取得に失敗しました（Edge Function 未デプロイの可能性）";
+}
+
+/** pulse-alert-digest Edge Function 呼び出しの共通ハンドラ（notifyCycle と同じ FunctionsHttpError 読解パターン）。 */
+async function invokeAlertDigest(
+  mode: "preview" | "daily",
+): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; reason: string }> {
+  if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+  const { data, error } = await supabase.functions.invoke("pulse-alert-digest", { body: { mode } });
+  if (error) {
+    if (error instanceof FunctionsHttpError) {
+      try {
+        const body = (await error.context.json()) as { error?: string; detail?: string };
+        return { ok: false, reason: digestErrorMessage(body?.error ?? body?.detail) };
+      } catch {
+        // 本文がJSONでない等はフォールバックへ
+      }
+    }
+    return { ok: false, reason: digestErrorMessage(undefined) };
+  }
+  if (data?.error) return { ok: false, reason: digestErrorMessage(String(data.error)) };
+  return { ok: true, data: (data ?? {}) as Record<string, unknown> };
+}
+
 type PulseAdminState = {
   loaded: boolean;
   loading: boolean;
@@ -77,6 +119,13 @@ type PulseAdminState = {
   cycles: PulseCycleRow[];
   /** pulse_admin_cycle_stats() の結果。cycle_id → {responses, target}。取得失敗時は空のまま（非致命）。 */
   cycleStats: Record<string, PulseCycleStats>;
+  /** pulse_alert_rules（設計書 §10-1・sort_order順）。取得失敗時は空のまま（非致命）。 */
+  alertRules: PulseAlertRule[];
+  /** pulse_settings のアラート通知欄（設計書 §10-6）。取得失敗時は null（非致命）。 */
+  notifySettings: PulseAlertNotifySettings | null;
+  digestBusy: boolean;
+  /** 直近の「ダイジェストを確認」結果本文（送信はしていない）。 */
+  digestPreviewText: string | null;
 
   load: () => Promise<void>;
 
@@ -104,6 +153,13 @@ type PulseAdminState = {
   sendCycle: (id: string) => Promise<Result>;
   closeCycle: (id: string) => Promise<Result>;
   notifyCycle: (id: string, mode: "broadcast" | "reminder" | "preview") => Promise<NotifyResult>;
+
+  updateAlertRule: (id: string, patch: AlertRulePatch) => Promise<Result>;
+  updateAlertNotifySettings: (patch: Partial<PulseAlertNotifySettings>) => Promise<Result>;
+  /** 「ダイジェストを確認」（mode:preview）。送信はしない。 */
+  previewDigest: () => Promise<Result>;
+  /** 「今すぐ送る」（mode:daily）。 */
+  sendDigestNow: () => Promise<Result>;
 };
 
 export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
@@ -115,6 +171,10 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
   questionsBySet: {},
   cycles: [],
   cycleStats: {},
+  alertRules: [],
+  notifySettings: null,
+  digestBusy: false,
+  digestPreviewText: null,
 
   load: async () => {
     if (!isSupabaseConfigured || !supabase) {
@@ -123,11 +183,17 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
     }
     set({ loading: true, error: null });
 
-    const [setsRes, qRes, , statsRes] = await Promise.all([
+    const [setsRes, qRes, , statsRes, rulesRes, settingsRes] = await Promise.all([
       supabase.from("pulse_question_sets").select("*").order("name").order("version", { ascending: false }),
       supabase.from("pulse_questions").select("*").order("sort_order", { ascending: true }),
       usePulseCyclesStore.getState().loadCycles(),
       supabase.rpc("pulse_admin_cycle_stats"),
+      supabase.from("pulse_alert_rules").select("*").order("sort_order", { ascending: true }),
+      supabase
+        .from("pulse_settings")
+        .select("alert_digest_recipients, alert_digest_enabled, alert_immediate_enabled")
+        .eq("id", 1)
+        .maybeSingle(),
     ]);
 
     if (setsRes.error) {
@@ -158,7 +224,26 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
       }
     }
 
-    set({ loading: false, loaded: true, error: null, sets, questionsBySet, cycles, cycleStats });
+    // アラートルール／通知設定（P2・migration 0051）も同様に非致命：未適用/権限なしは
+    // 空/null のままにし、各セクション側で案内文を出す（画面全体は止めない）。
+    const alertRules =
+      !rulesRes.error && Array.isArray(rulesRes.data) ? (rulesRes.data as PulseAlertRule[]) : [];
+    const notifySettings =
+      !settingsRes.error && settingsRes.data
+        ? (settingsRes.data as PulseAlertNotifySettings)
+        : null;
+
+    set({
+      loading: false,
+      loaded: true,
+      error: null,
+      sets,
+      questionsBySet,
+      cycles,
+      cycleStats,
+      alertRules,
+      notifySettings,
+    });
   },
 
   createSet: async (name) => {
@@ -432,5 +517,47 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
         }
       : undefined;
     return { ok: true, detail };
+  },
+
+  updateAlertRule: async (id, patch) => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    set({ busy: true });
+    const { error } = await supabase.rpc("pulse_update_alert_rule", { p_id: id, p_patch: patch });
+    set({ busy: false });
+    if (error) return { ok: false, reason: guardMessage(error.message) };
+    await get().load();
+    return { ok: true };
+  },
+
+  updateAlertNotifySettings: async (patch) => {
+    if (!supabase) return { ok: false, reason: "Supabase未設定です" };
+    set({ busy: true });
+    const { error } = await supabase.rpc("pulse_update_alert_notify_settings", { p_patch: patch });
+    set({ busy: false });
+    if (error) return { ok: false, reason: guardMessage(error.message) };
+    await get().load();
+    return { ok: true };
+  },
+
+  previewDigest: async () => {
+    set({ digestBusy: true, digestPreviewText: null });
+    const res = await invokeAlertDigest("preview");
+    set({ digestBusy: false });
+    if (!res.ok) return { ok: false, reason: res.reason };
+    const text = typeof res.data.text === "string" ? res.data.text : "";
+    set({ digestPreviewText: text });
+    return { ok: true };
+  },
+
+  sendDigestNow: async () => {
+    set({ digestBusy: true });
+    const res = await invokeAlertDigest("daily");
+    set({ digestBusy: false });
+    if (!res.ok) return { ok: false, reason: res.reason };
+    if (res.data.skipped === "no_recipients") {
+      return { ok: true, reason: "通知先が未設定のため送信していません。「アラート通知」で追加してください" };
+    }
+    const sent = res.data.sent;
+    return { ok: true, reason: typeof sent === "number" ? `${sent}件を送信しました` : "送信しました" };
   },
 }));

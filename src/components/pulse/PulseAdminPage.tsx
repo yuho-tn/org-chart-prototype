@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Copy } from "lucide-react";
+import { CheckCircle2, Copy, X } from "lucide-react";
 import "./pulse-shared.css";
 import "./admin.css";
 import "./alerts.css"; // .palert__field をサイクル作成フォームで再利用しているため
@@ -8,6 +8,7 @@ import {
   type NotifyResult,
   type PulseCycleStats,
   type PulseNotifyPreview,
+  type AlertRulePatch,
 } from "../../store/usePulseAdminStore";
 import { PulseSubnav } from "./PulseSubnav";
 import { usePulseToast, PulseToast, type PulseToastKind } from "./usePulseToast";
@@ -16,10 +17,14 @@ import {
   QUESTION_TYPE_LABEL,
   SET_STATUS_LABEL,
   CYCLE_STATUS_LABEL,
+  ALERT_SOURCE_LABEL,
+  ALERT_RULE_PARAM_FIELDS,
   type PulseQuestionSetRow,
   type PulseQuestionRow,
   type PulseQuestionType,
   type PulseCycleRow,
+  type PulseAlertRule,
+  type PulseAlertNotifySettings,
 } from "../../lib/pulse";
 
 /** #/survey の回答フォームURL。no_channel_configured 時の手動案内用（設計書 §6）。 */
@@ -58,6 +63,8 @@ export function PulseAdminPage() {
           <OperationStepper sets={sets} cycles={cycles} />
           <QuestionSets onToast={showToast} />
           <Cycles onToast={showToast} />
+          <AlertRulesSection onToast={showToast} />
+          <AlertNotifySection onToast={showToast} />
         </>
       )}
 
@@ -715,6 +722,271 @@ function PreviewPanel({
         <p className="padm__preview-text">{preview.email_subject}</p>
       </div>
     </div>
+  );
+}
+
+// ── P2: アラートルール（設計書 §10-1・#/pulse/admin） ────────────────
+
+/**
+ * アラートルール一覧。ON/OFF・即時通知・上長開示はチェックボックスで即時保存、
+ * params の数値項目は QRow と同じ流儀（ローカル state で編集し onBlur で変更時のみ保存）。
+ */
+function AlertRulesSection({ onToast }: { onToast: (kind: PulseToastKind, m: string) => void }) {
+  const { alertRules, updateAlertRule, busy } = usePulseAdminStore();
+
+  return (
+    <section className="padm__section">
+      <h2 className="pdash__h2">アラートルール</h2>
+      <p className="pdash__muted padm__note">
+        ON/OFFとしきい値・即時通知（SOS/体調不安向け）・上長開示可否を設定します。上長開示は「仕事・健康・評価」由来のスコア系ルールのみ実際に許可されます（設計書
+        §10-2）。
+      </p>
+      {alertRules.length === 0 ? (
+        <p className="pdash__muted">アラートルールが見つかりません。supabase/migrations/0051 を適用してください。</p>
+      ) : (
+        <div className="padm__rulelist">
+          {alertRules.map((r) => (
+            <AlertRuleRow
+              key={`${r.id}:${r.is_active}:${r.notify_immediately}:${r.disclose_to_manager}`}
+              rule={r}
+              busy={busy}
+              onSave={(patch) => updateAlertRule(r.id, patch)}
+              onToast={onToast}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AlertRuleRow({
+  rule,
+  busy,
+  onSave,
+  onToast,
+}: {
+  rule: PulseAlertRule;
+  busy: boolean;
+  onSave: (patch: AlertRulePatch) => Promise<{ ok: boolean; reason?: string }>;
+  onToast: (kind: PulseToastKind, m: string) => void;
+}) {
+  const fields = ALERT_RULE_PARAM_FIELDS[rule.code] ?? [];
+  const [params, setParams] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const f of fields) init[f.key] = String(rule.params?.[f.key] ?? "");
+    return init;
+  });
+
+  const run = async (patch: AlertRulePatch, okMsg: string) => {
+    const res = await onSave(patch);
+    onToast(res.ok ? "success" : "error", res.ok ? okMsg : res.reason ?? "更新に失敗しました");
+  };
+
+  const onParamBlur = (key: string) => {
+    const raw = (params[key] ?? "").trim();
+    const orig = rule.params?.[key];
+    const num = Number(raw);
+    if (raw === "" || Number.isNaN(num)) {
+      setParams((p) => ({ ...p, [key]: String(orig ?? "") }));
+      return;
+    }
+    if (num === orig) return;
+    run({ params: { [key]: num } }, "しきい値を更新しました");
+  };
+
+  return (
+    <div className={"padm__rulerow" + (rule.is_active ? "" : " is-off")}>
+      <div className="padm__ruletop">
+        <label className="padm__ruletoggle">
+          <input
+            type="checkbox"
+            checked={rule.is_active}
+            disabled={busy}
+            onChange={(e) => run({ is_active: e.target.checked }, e.target.checked ? "有効化しました" : "無効化しました")}
+          />
+          <span className="padm__ruletitle">{rule.label}</span>
+        </label>
+        <span className="padm__rulesource">{ALERT_SOURCE_LABEL[rule.source] ?? rule.source}</span>
+        <span className="padm__rulecode">{rule.code}</span>
+      </div>
+      {rule.description && <p className="padm__ruledesc">{rule.description}</p>}
+      <div className="padm__ruleparams">
+        {fields.map((f) => (
+          <label key={f.key} className="palert__field padm__ruleparam">
+            <span>{f.label}</span>
+            <input
+              type="number"
+              step="0.1"
+              value={params[f.key] ?? ""}
+              disabled={busy}
+              onChange={(e) => setParams((p) => ({ ...p, [f.key]: e.target.value }))}
+              onBlur={() => onParamBlur(f.key)}
+            />
+          </label>
+        ))}
+        <label className="padm__rulecheck">
+          <input
+            type="checkbox"
+            checked={rule.notify_immediately}
+            disabled={busy}
+            onChange={(e) => run({ notify_immediately: e.target.checked }, "即時通知の設定を更新しました")}
+          />
+          即時通知
+        </label>
+        <label className="padm__rulecheck">
+          <input
+            type="checkbox"
+            checked={rule.disclose_to_manager}
+            disabled={busy}
+            onChange={(e) => run({ disclose_to_manager: e.target.checked }, "上長開示の設定を更新しました")}
+          />
+          上長開示を許可
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// ── P2: アラート通知（設計書 §10-6・#/pulse/admin） ──────────────────
+
+/** 通知先メール・日次/即時ON-OFF・ダイジェストのプレビュー/即時送信。 */
+function AlertNotifySection({ onToast }: { onToast: (kind: PulseToastKind, m: string) => void }) {
+  const {
+    notifySettings,
+    updateAlertNotifySettings,
+    previewDigest,
+    sendDigestNow,
+    digestBusy,
+    digestPreviewText,
+    busy,
+  } = usePulseAdminStore();
+  const [emailInput, setEmailInput] = useState("");
+
+  if (!notifySettings) {
+    return (
+      <section className="padm__section">
+        <h2 className="pdash__h2">アラート通知</h2>
+        <p className="pdash__muted">通知設定が見つかりません。supabase/migrations/0051 を適用してください。</p>
+      </section>
+    );
+  }
+
+  const recipients = notifySettings.alert_digest_recipients;
+
+  const addRecipient = async () => {
+    const email = emailInput.trim().toLowerCase();
+    if (!email) return;
+    if (recipients.includes(email)) {
+      setEmailInput("");
+      return;
+    }
+    const res = await updateAlertNotifySettings({ alert_digest_recipients: [...recipients, email] });
+    onToast(res.ok ? "success" : "error", res.ok ? "通知先を追加しました" : res.reason ?? "追加に失敗しました");
+    if (res.ok) setEmailInput("");
+  };
+
+  const removeRecipient = async (email: string) => {
+    const res = await updateAlertNotifySettings({
+      alert_digest_recipients: recipients.filter((e) => e !== email),
+    });
+    onToast(res.ok ? "success" : "error", res.ok ? "通知先を削除しました" : res.reason ?? "削除に失敗しました");
+  };
+
+  const toggle = async (
+    key: keyof Pick<PulseAlertNotifySettings, "alert_digest_enabled" | "alert_immediate_enabled">,
+    value: boolean,
+  ) => {
+    const res = await updateAlertNotifySettings({ [key]: value });
+    onToast(res.ok ? "success" : "error", res.ok ? "設定を更新しました" : res.reason ?? "更新に失敗しました");
+  };
+
+  const onPreview = async () => {
+    const res = await previewDigest();
+    onToast(
+      res.ok ? "success" : "error",
+      res.ok ? "ダイジェストを取得しました（送信はされていません）" : res.reason ?? "取得に失敗しました",
+    );
+  };
+
+  const onSendNow = async () => {
+    if (!confirm("通知先へアラートダイジェストを今すぐ送信します。よろしいですか？")) return;
+    const res = await sendDigestNow();
+    onToast(res.ok ? "success" : "error", res.reason ?? (res.ok ? "送信しました" : "送信に失敗しました"));
+  };
+
+  return (
+    <section className="padm__section">
+      <h2 className="pdash__h2">アラート通知</h2>
+      {recipients.length === 0 && (
+        <p className="padm__notifywarn">通知先未設定です。追加するまでダイジェストは送信されません。</p>
+      )}
+      {recipients.length > 0 && (
+        <div className="padm__notifyrecipients">
+          {recipients.map((email) => (
+            <span key={email} className="padm__chip">
+              {email}
+              <button type="button" onClick={() => removeRecipient(email)} disabled={busy} aria-label={`${email}を削除`}>
+                <X size={11} aria-hidden />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="padm__newrow">
+        <input
+          className="padm__input"
+          type="email"
+          placeholder="通知先メールアドレス（在籍者のメールのみ）"
+          value={emailInput}
+          onChange={(e) => setEmailInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addRecipient();
+            }
+          }}
+        />
+        <button className="pdash__btn" onClick={addRecipient} disabled={busy || !emailInput.trim()}>
+          追加
+        </button>
+      </div>
+
+      <div className="padm__notifytoggles">
+        <label className="padm__rulecheck">
+          <input
+            type="checkbox"
+            checked={notifySettings.alert_digest_enabled}
+            disabled={busy}
+            onChange={(e) => toggle("alert_digest_enabled", e.target.checked)}
+          />
+          日次ダイジェストを送る（毎朝9:10・未完了アラートをまとめて通知）
+        </label>
+        <label className="padm__rulecheck">
+          <input
+            type="checkbox"
+            checked={notifySettings.alert_immediate_enabled}
+            disabled={busy}
+            onChange={(e) => toggle("alert_immediate_enabled", e.target.checked)}
+          />
+          SOS・体調不安は検知次第すぐ通知する
+        </label>
+      </div>
+
+      <div className="padm__digestactions">
+        <button className="pdash__btn" onClick={onPreview} disabled={digestBusy}>
+          {digestBusy ? "取得中…" : "ダイジェストを確認"}
+        </button>
+        <button className="pdash__btn pdash__btn--primary" onClick={onSendNow} disabled={digestBusy}>
+          {digestBusy ? "処理中…" : "今すぐ送る"}
+        </button>
+      </div>
+      {digestPreviewText != null && (
+        <pre className="padm__preview-text padm__digestpreview">
+          {digestPreviewText || "（現在、未通知の未完了アラートはありません）"}
+        </pre>
+      )}
+    </section>
   );
 }
 

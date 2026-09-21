@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePulseCyclesStore } from "./usePulseCyclesStore";
-import type { PulseCycleRow, PulseAggregateRow, PulseAlertRow } from "../lib/pulse";
+import type { PulseCycleRow, PulseAggregateRow, PulseAlertKpis } from "../lib/pulse";
 
 /**
  * パルスサーベイ 管理ダッシュボード（#/pulse）用ストア。
@@ -16,7 +16,8 @@ import type { PulseCycleRow, PulseAggregateRow, PulseAlertRow } from "../lib/pul
  * v2 追加（設計書 §5）:
  *   • cycleStats … rpc('pulse_admin_cycle_stats')。ヒーローバーの「回答 N/M」。
  *     集計（aggregates）を計算していないサイクルでも回答数が出せる。
- *   • openAlerts … 選択サイクルの未対応アラート数（指標カード4枚目）。
+ *   • alertKpis … rpc('pulse_alert_kpis')（設計書 §10-7）。指標カード4枚目（open_total）と
+ *     「アラート」パネル（当月発生者数・組織/自分の未完了・対応状況5値内訳・12か月推移）に使う。
  *   • 自動集計 … 集計が無い or サイクルが受付中(sent)なら compute を自動実行して
  *     silent 再取得する。権限エラー（pulse_access のみの閲覧者など）は黙って無視し、
  *     既存の集計だけを表示する（行き止まりを作らない）。
@@ -88,8 +89,8 @@ type PulseDashState = {
 
   /** cycle_id → 回答数/対象数（権限が無ければ空のまま）。 */
   cycleStats: Record<string, PulseCycleStat>;
-  /** 選択サイクルの未対応アラート数（権限が無い/未判定なら null）。 */
-  openAlerts: number | null;
+  /** 選択期間のアラートKPI（rpc('pulse_alert_kpis')・権限が無ければ null）。 */
+  alertKpis: PulseAlertKpis | null;
   /** status='active' の設問セット数（オンボーディングの現在地判定用・不明なら null）。 */
   activeSetCount: number | null;
   /** 直近のリマインド配信の内訳（ヒーローバーに行内表示）。 */
@@ -153,12 +154,12 @@ async function fetchCycleStats(): Promise<Record<string, PulseCycleStat>> {
   return map;
 }
 
-/** 未対応（status='open'）アラート数。権限が無ければ null。 */
-async function fetchOpenAlerts(cycleId: string): Promise<number | null> {
+/** アラートKPI（設計書 §10-7）。権限が無ければ RPC が null を返す。 */
+async function fetchAlertKpis(period: string): Promise<PulseAlertKpis | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.rpc("pulse_list_alerts", { p_cycle_id: cycleId });
+  const { data, error } = await supabase.rpc("pulse_alert_kpis", { p_period: period });
   if (error) return null;
-  return ((data ?? []) as PulseAlertRow[]).filter((a) => a.status === "open").length;
+  return (data ?? null) as PulseAlertKpis | null;
 }
 
 /** status='active' の設問セット数。権限が無い/未適用なら null（＝判定不能）。 */
@@ -196,7 +197,7 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
   summary: null,
   summaryError: null,
   cycleStats: {},
-  openAlerts: null,
+  alertKpis: null,
   activeSetCount: null,
   lastNotify: null,
 
@@ -232,7 +233,7 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
 
     let aggregates: PulseAggregateRow[] = [];
     let summary: PulseSummary | null = null;
-    let openAlerts: number | null = null;
+    let alertKpis: PulseAlertKpis | null = null;
     if (period) {
       try {
         aggregates = await fetchAggregates(period);
@@ -241,13 +242,12 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
         return;
       }
       summary = await fetchSummary(period);
-      const cycleId = cycles.find((c) => c.period === period)?.id ?? null;
-      if (cycleId) openAlerts = await fetchOpenAlerts(cycleId);
+      alertKpis = await fetchAlertKpis(period);
     }
 
-    // 上の await 群（fetchAggregates/fetchSummary/fetchOpenAlerts）の実行中に
+    // 上の await 群（fetchAggregates/fetchSummary/fetchAlertKpis）の実行中に
     // selectPeriod() が別期間へ切替えていた場合、period依存の値（selectedPeriod/
-    // aggregates/summary/openAlerts）はここで上書きしない（古い期間のデータで
+    // aggregates/summary/alertKpis）はここで上書きしない（古い期間のデータで
     // ユーザーの選択を巻き戻すバグを防ぐ）。cycles/trend/cycleStats/activeSetCount
     // は期間非依存なので常に反映してよい。
     const stillCurrent = usePulseCyclesStore.getState().selectedPeriod === period;
@@ -260,7 +260,7 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
       trend,
       cycleStats,
       activeSetCount,
-      ...(stillCurrent ? { selectedPeriod: period, aggregates, summary, openAlerts } : {}),
+      ...(stillCurrent ? { selectedPeriod: period, aggregates, summary, alertKpis } : {}),
     });
 
     // ── 自動集計（設計書 §5）──
@@ -307,9 +307,8 @@ export const usePulseDashStore = create<PulseDashState>((set, get) => ({
     try {
       const aggregates = await fetchAggregates(period);
       const summary = await fetchSummary(period);
-      const cycleId = get().cycles.find((c) => c.period === period)?.id ?? null;
-      const openAlerts = cycleId ? await fetchOpenAlerts(cycleId) : null;
-      set({ aggregates, summary, openAlerts, loading: false });
+      const alertKpis = await fetchAlertKpis(period);
+      set({ aggregates, summary, alertKpis, loading: false });
     } catch (e) {
       set({ loading: false, error: (e as Error).message });
     }
