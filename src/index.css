@@ -7803,6 +7803,19 @@ body.is-dragging .dept-card__add-child {
 .blockview__link {
   color: var(--primary);
 }
+/* 長いURLは途中で折らないと 375px で右に食み出して読めなくなる
+   （実測：example.com の長いパスで right=435px・60px はみ出し）。
+   white-space:pre-wrap のままなので、折り返しは overflow-wrap で許可する。 */
+.blockview__text,
+.blockview__text a,
+.blockview__list,
+.blockview__list a,
+.blockview__linkTitle,
+.blockview__linkDesc,
+.blockview__linkUrl {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .blockview__text strong,
 .blockview__list strong {
   color: var(--text-strong);
