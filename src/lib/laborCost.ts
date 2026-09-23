@@ -12,7 +12,10 @@
  *   - コーポレートは按分せずコーポレート費として出力
  *   - 途中入社/退職は smoothSalary で扱いが変わる:
  *       OFF = 在籍月（金額が入っている月）のみ計上＝月次データそのまま
- *       ON  = 当該半期の給与合計を半期の全月へ均等ならし（凸凹から個人給与を隠す・金額保存）
+ *       ON  = 当該半期に各計上先（DIV/TM/プール）へ入る金額の合計を、半期の全6ヶ月へ均等ならし
+ *             （＝半期内でDIV・TM毎の月額が一定。Q異動・入退社・休職があっても6ヶ月で均す・金額保存）
+ *   - TMを持つDIVでTM未割当の人は、そのDIVの各TMへTM売上目標比で按分する（ALLOC_TMと同じ扱い）
+ *   - 同一人物が同じTM/プールに複数区間（1Q・2Q）で計上される場合は1行にまとめる
  *
  * Q（3ヶ月）単位の所属変更（0047）:
  *   - labor_assignments は半期(H1/H2)をさらに前半3ヶ月(quarter=1)/後半3ヶ月(quarter=2)に分けて持つ
@@ -280,6 +283,18 @@ type Inputs = {
   smoothSalary?: boolean;
 };
 
+type MemberRow = TmBreakdown["members"][number];
+
+/** 同一人物の明細を1行にまとめて追加する（1Q/2Qで同じTM・プールに入る場合の2行化を防ぐ）。
+ *  share は半期に対する実効配分率（区間の月数で加重）。 */
+function addMember(list: MemberRow[], row: MemberRow) {
+  const cur = list.find((x) => x.personId === row.personId);
+  if (!cur) { list.push(row); return; }
+  cur.share += row.share;
+  cur.bonus += row.bonus;
+  for (const [m, v] of Object.entries(row.months)) cur.months[m] = (cur.months[m] ?? 0) + v;
+}
+
 export function computeHalf(inp: Inputs): HalfComputation {
   const { term, half, people, assignments, amounts } = inp;
   const months = half === "H1" ? H1_MONTHS : H2_MONTHS;
@@ -382,14 +397,22 @@ export function computeHalf(inp: Inputs): HalfComputation {
     }
 
     for (const { a, segMonths, segBonus } of segments) {
-      // 給与の区間内均等ならし: この人のこの区間の給与合計を区間の全月へ均等割り。
-      // 例: 10月退職で7〜9月しか計上のない人も、その合計を7〜12月の6ヶ月へ均等計上。
-      // 区間合計は不変（Σ=元の合計）＝金額保存。ボーナスは区間の月数に応じて 半期÷6 を維持。
+      // 計上する月と月額。
+      //   smoothSalary ON : この区間の給与合計・ボーナスを「半期の全6ヶ月」へ均等割り。
+      //     例: 3ヶ月在籍で月30万 → 90万÷6＝月15万を6ヶ月。1Q=SNS/2Q=マーケの異動者も、
+      //     各計上先へ入る半期合計を6ヶ月で均すので、DIV・TM毎の月額が半期内で一定になる。
+      //   OFF : 区間の月だけに実額（ボーナスは 半期÷6 を区間の月へ）。
+      // どちらも区間合計は不変（金額保存）。
       const segTotal = segMonths.reduce((s, m) => s + monthAmtRaw(m), 0);
+      const postMonths: readonly string[] = inp.smoothSalary ? months : segMonths;
       const monthAmt = inp.smoothSalary
-        ? (_m: string) => segTotal / segMonths.length
+        ? (_m: string) => segTotal / months.length
         : monthAmtRaw;
-      const bonusPerMonth = segBonus / segMonths.length; // 常に bonus/6 と一致
+      const bonusPerMonth = inp.smoothSalary
+        ? segBonus / months.length
+        : segBonus / segMonths.length; // OFF時も常に bonus/6 と一致
+      // 半期に対するこの区間の重み（明細の実効配分率に使う）
+      const segWeight = segMonths.length / months.length;
 
       // 配分先: 所属(1-rate) + 兼務先(rate)。所属側は tm、兼務先側は kenmu_tm を使う（0042）。
       // 元シート仕様: 兼務先が空欄でも兼務率>0なら所属から差し引く
@@ -408,28 +431,31 @@ export function computeHalf(inp: Inputs): HalfComputation {
           const group: AllocGroup = map.alloc_group ?? "overhead";
           const pool = ensurePool(poolName, group);
           const monthsRec: Record<string, number> = {};
-          for (const m of segMonths) {
+          for (const m of postMonths) {
             const v = monthAmt(m) * t.share;
             monthsRec[m] = v;
             pool.salary[m] += v;
             pool.bonus[m] += bonusPerMonth * t.share;
           }
-          pool.members.push({
-            personId: p.id, name: p.name, share: t.share,
+          addMember(pool.members, {
+            personId: p.id, name: p.name, share: t.share * segWeight,
             months: monthsRec, bonus: segBonus * t.share,
           });
           continue;
         }
         if (map.treatment === "corporate") {
-          for (const m of segMonths) corpSalary[m] += monthAmt(m) * t.share;
-          for (const m of segMonths) corpBonus[m] += bonusPerMonth * t.share;
+          for (const m of postMonths) corpSalary[m] += monthAmt(m) * t.share;
+          for (const m of postMonths) corpBonus[m] += bonusPerMonth * t.share;
           continue;
         }
         // product
         const div = map.div ?? t.dept;
         // TM: 所属側は tm、兼務先側は kenmu_tm（各ターゲットが自分のTMを持つ・0042）
         const assignedTm = t.tm ?? null;
-        const isAlloc = assignedTm === ALLOC_TM;
+        // TMを持つDIVでTM未割当なら、ALLOC_TM と同様に TM売上目標比で按分する
+        // （未割当のまま「（TM未割当）」に積むとTM別P/Lへ送り先が無くなるため）。
+        const isAlloc =
+          assignedTm === ALLOC_TM || (!assignedTm && divsWithTms.has(div));
         // TM割当が別DIVのTMなら、そのTMのDIVを優先（マッピングより実割当）。
         // ALLOC_TM は実TMではないのでDIV解決には使わない（所属DIVで按分）。
         const tmDiv = assignedTm && !isAlloc ? tmDivOf.get(assignedTm) : undefined;
@@ -439,14 +465,14 @@ export function computeHalf(inp: Inputs): HalfComputation {
         const pushMember = (tdiv: string, tmName: string, effShare: number) => {
           const b = ensureTm(tdiv, tmName);
           const monthsRec: Record<string, number> = {};
-          for (const m of segMonths) {
+          for (const m of postMonths) {
             const v = monthAmt(m) * effShare;
             monthsRec[m] = v;
             b.salaryByMonth[m] += v;
             b.bonusByMonth[m] += bonusPerMonth * effShare;
           }
-          b.members.push({
-            personId: p.id, name: p.name, share: effShare,
+          addMember(b.members, {
+            personId: p.id, name: p.name, share: effShare * segWeight,
             months: monthsRec, bonus: segBonus * effShare,
           });
         };

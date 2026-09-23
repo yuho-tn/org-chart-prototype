@@ -43,6 +43,8 @@ export type GridRow = {
   className?: string;
 };
 
+export type GridSort = { key: string; dir: "asc" | "desc" };
+
 export type GridEdit = { rowId: string; colKey: string; value: GridCellValue };
 
 type Props = {
@@ -55,6 +57,10 @@ type Props = {
   cellClassName?: (rowId: string, colKey: string) => string | undefined;
   /** 表示フォーマッタ（未指定は素通し） */
   formatCell?: (value: GridCellValue, col: GridColumn, rowId: string) => string;
+  /** 現在の並び替え（ヘッダーに▲▼を出す・並び替え自体は親が rows を並べて渡す） */
+  sort?: GridSort | null;
+  /** 列ヘッダーのクリック（指定時のみヘッダーがクリック可能になる） */
+  onHeaderClick?: (colKey: string) => void;
 };
 
 type CellPos = { r: number; c: number };
@@ -114,6 +120,8 @@ export function LaborGrid({
   onRedo,
   cellClassName,
   formatCell,
+  sort,
+  onHeaderClick,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -506,10 +514,17 @@ export function LaborGrid({
                 className={[
                   col.sticky ? "lg-sticky" : "",
                   col.type === "readonly" ? "lg-col-ro" : "",
+                  onHeaderClick ? "lg-sortable" : "",
+                  sort?.key === col.key ? "lg-sorted" : "",
                 ].filter(Boolean).join(" ") || undefined}
                 style={col.sticky ? { left: stickyLefts[c] } : undefined}
+                onClick={onHeaderClick ? () => onHeaderClick(col.key) : undefined}
+                title={onHeaderClick ? "クリックで並び替え（昇順→降順→解除）" : undefined}
               >
                 {col.title}
+                {sort?.key === col.key && (
+                  <span className="lg-sortmark">{sort.dir === "asc" ? "▲" : "▼"}</span>
+                )}
               </th>
             ))}
           </tr>
