@@ -23,3 +23,10 @@ https://shosan-talent-hub.vercel.app （2026-07-07 org-chart-prototype→talent-
 - **所属割当はQ（3ヶ月）単位（migration 0047）**。`labor_assignments` の主キーは (person_id, term, half, quarter)。個人別シートは 1Q/2Q（3Q/4Q）を別々に持ち、期中の異動を月次で正しく振り分ける。1Q=2Qが大多数のため「1Q→2Q一括コピー」ボタンあり。計算エンジン(`src/lib/laborCost.ts` computeHalf)は1Q/2Qが同一なら半期一括、異なれば3ヶ月ずつ別所属として計上（ボーナスは半期÷6を維持）。
 - **DIV別アクセス限定ページ（#/labor/div/:target・migration 0048）**。全従業員データを見せず、指定した1DIV/プール（SNS DIV・マーケティングDIV・制作DIV・AI DIV・フロントDIV・HR TM・コーポレートTM・開発TM）だけをメールアドレス単位で見せる。付与は「アクセス管理」タブ下部の「DIV別アクセス」（owner限定）。認可判定と集計は `api/labor-div-report.ts`（Vercel serverless・service_role・呼び出し本人のJWT検証）で行い、他DIVのデータはレスポンスに一切含めない（フロントの useLaborCostStore/useEmployeesStore は使わない＝全社データへ触れない設計）。
 - 給与seedデータは**絶対にリポジトリへ入れない**（scratchpad/SQLコンソールのみ）。詳細は memory [[project_shosan_labor_cost_tool]]。
+
+## ブランチ運用（2026-09-23〜）
+**main = 本番で動いているもの**。作業は `feat/` `fix/` 等のブランチ → PR → main の順。
+**本番デプロイ（`vercel --prod` / `supabase functions deploy`）は main から行い、
+ブランチから先に打った場合は同日中に main へマージする**。
+migration の採番は `origin/main` の最大値+1（作業ブランチ基準で取ると番号が衝突して取り込めなくなる）。
+詳細・経緯 → [docs/BRANCHING.md](docs/BRANCHING.md)
