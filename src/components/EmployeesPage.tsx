@@ -54,6 +54,7 @@ export function EmployeesPage() {
   const setSheetCsvUrl = useEmployeesStore((s) => s.setSheetCsvUrl);
   const syncFromSmartHr = useEmployeesStore((s) => s.syncFromSmartHr);
   const smartHrState = useEmployeesStore((s) => s.smartHrState);
+  const smartHrHealth = useEmployeesStore((s) => s.smartHrHealth);
   const loadSmartHrState = useEmployeesStore((s) => s.loadSmartHrState);
   const currentUser = useAuthStore((s) => s.currentUser);
   const setToast = useOrgStore((s) => s.setToast);
@@ -316,14 +317,32 @@ export function EmployeesPage() {
     }
   }
 
-  /** 最終同期の相対表示（例: "3分前 / 2026-07-15 06:00"）。 */
+  /** 最終同期の表示（例: "最終同期 07/15 06:00"）。 */
   function lastSyncLabel(): string | null {
     const at = smartHrState?.last_run_at;
     if (!at) return null;
     const d = new Date(at);
-    const badge = smartHrState?.last_status === "error" ? "⚠ " : "";
-    return `${badge}最終同期 ${d.toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
+    return `最終同期 ${d.toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
   }
+
+  /** 同期が壊れている時だけ出す赤バッジ（migration 0052 smarthr_sync_health）。
+   *  改称事故（2026-09-23）では失敗が「最終同期」チップ先頭の小さな ⚠ でしか
+   *  表現されず、7件ズレるまで誰も気づかなかった。状態と次の一手を面に出す。
+   *  null を返す＝正常、または 0052 未適用（従来表示のまま）。 */
+  const syncAlert = ((): { text: string; title: string } | null => {
+    const st = smartHrHealth?.state;
+    if (!st || st === "ok") return null;
+    const label =
+      st === "never"
+        ? "SmartHR同期 未実行"
+        : st === "stale"
+          ? `SmartHR同期 停止中${smartHrHealth?.age_hours != null ? `（${Math.round(smartHrHealth.age_hours)}時間）` : ""}`
+          : "SmartHR同期 失敗";
+    return {
+      text: `⚠ ${label}`,
+      title: `${smartHrHealth?.detail ?? ""}\n\n「⟳ SmartHR同期」を手動実行すると詳細なエラーが出ます。`,
+    };
+  })();
 
   return (
     <main className="page">
@@ -339,6 +358,15 @@ export function EmployeesPage() {
           </p>
         </div>
         <div className="page__actions">
+          {isMaster && syncAlert && (
+            <span
+              className="emppage__chip emppage__chip--alert"
+              title={syncAlert.title}
+              style={{ alignSelf: "center" }}
+            >
+              {syncAlert.text}
+            </span>
+          )}
           {isMaster && lastSyncLabel() && (
             <span
               className="emppage__chip"
