@@ -18,7 +18,10 @@
 //   削除しない（退職者は left_at で表現）
 //
 // 必要な secret（`supabase secrets set`）:
-//   SMARTHR_SUBDOMAIN     … 例 "sho-san20220722mk"（https://<sub>.smarthr.jp）
+//   SMARTHR_SUBDOMAIN     … 現行 "sho-san"（https://<sub>.smarthr.jp）
+//     ※ SmartHR 側でサブドメインを改称すると旧名は「inactive」になり API が
+//        400 を返す（ブラウザは新名へ 302 されるが API は追従しない）。
+//        2026-09-23: "sho-san20220722mk" → "sho-san" の改称で実際に停止した。
 //   SMARTHR_ACCESS_TOKEN  … SmartHR アクセストークン（Bearer）
 //   SMARTHR_CRON_SECRET   … cron 自動起動の共有シークレット
 // SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY は既定注入。
@@ -100,7 +103,14 @@ Deno.serve(async (req: Request) => {
       });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        throw new Error(`SmartHR API ${res.status}: ${body.slice(0, 200)}`);
+        // よくある2つの詰まりは原因を名指しする（生JSONだけだと調査が要る）
+        let hint = "";
+        if (res.status === 400 && /inactive/i.test(body)) {
+          hint = `（サブドメイン "${SUBDOMAIN}" は SmartHR 側で無効です。改称されていないか確認し、secret SMARTHR_SUBDOMAIN を更新してください）`;
+        } else if (res.status === 401) {
+          hint = "（アクセストークンが無効または失効しています。secret SMARTHR_ACCESS_TOKEN を更新してください）";
+        }
+        throw new Error(`SmartHR API ${res.status}: ${body.slice(0, 200)}${hint}`);
       }
       if (page === 1) {
         const tc = Number(res.headers.get("x-total-count"));
