@@ -76,8 +76,12 @@ type State = {
   undo: () => void;
   redo: () => void;
 
-  addPerson: (name: string) => Promise<LaborPersonRow | null>;
-  updatePerson: (id: string, patch: Partial<Pick<LaborPersonRow, "name" | "departed" | "employee_number" | "hired_at" | "incentive_rate">>) => Promise<void>;
+  /** 行を追加。extra 無し＝見立て行（手動）／employee_number 付き＝マスター同期で追加する社員行。 */
+  addPerson: (
+    name: string,
+    extra?: Partial<Pick<LaborPersonRow, "employee_number" | "hired_at" | "departed">>,
+  ) => Promise<LaborPersonRow | null>;
+  updatePerson: (id: string, patch: Partial<Pick<LaborPersonRow, "name" | "departed" | "employee_number" | "hired_at" | "incentive_rate" | "is_manual">>) => Promise<void>;
   /** 手動行の削除（マスター連携行=employee_number有は削除不可）。金額/割当はCASCADEで削除。 */
   deletePerson: (id: string) => Promise<{ ok: boolean; reason?: string }>;
 
@@ -402,14 +406,19 @@ export const useLaborCostStore = create<State>((set, get) => ({
     }));
   },
 
-  addPerson: async (name) => {
+  addPerson: async (name, extra) => {
     if (!supabase) return null;
     const trimmed = name.trim();
     if (!trimmed) return null;
     const maxSort = Math.max(0, ...get().people.map((p) => p.sort_order));
     const { data, error } = await supabase
       .from("labor_people")
-      .insert({ name: trimmed, sort_order: maxSort + 10, is_manual: true })
+      .insert({
+        name: trimmed,
+        sort_order: maxSort + 10,
+        ...(extra ?? {}),
+        is_manual: !extra?.employee_number,
+      })
       .select()
       .single();
     if (error || !data) {

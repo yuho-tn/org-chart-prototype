@@ -38,7 +38,7 @@ function bonusRowLabel(label: string, members: { bonus: number }[]): string {
 export function LaborDivTab({ term }: { term: TermCode }) {
   const store = useLaborCostStore();
   const employees = useEmployeesStore((s) => s.employees);
-  const [half, setHalf] = useState<Half>("H1");
+  const [half, setHalf] = useState<Half | "FY">("H1");
 
   const termRow = store.terms.find((t) => t.code === term);
 
@@ -54,11 +54,11 @@ export function LaborDivTab({ term }: { term: TermCode }) {
     };
   }, [employees, store.people]);
 
-  const comp: HalfComputation | null = useMemo(() => {
+  const compOf = (h: Half): HalfComputation | null => {
     if (!termRow) return null;
     return computeHalf({
       term: termRow,
-      half,
+      half: h,
       people: store.people,
       assignments: store.assignments,
       amounts: store.amounts,
@@ -69,9 +69,52 @@ export function LaborDivTab({ term }: { term: TermCode }) {
       insuranceRate: store.insuranceRate,
       smoothSalary: true, // DIV按分は給与を半期内均等ならし（個人の凸凹を隠す）
     });
-  }, [termRow, half, store.people, store.assignments, store.amounts, store.deptMap, store.tms, store.frontTargets, store.tmTargets, store.insuranceRate]);
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const compH1 = useMemo(() => compOf("H1"), [termRow, store.people, store.assignments, store.amounts, store.deptMap, store.tms, store.frontTargets, store.tmTargets, store.insuranceRate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const compH2 = useMemo(() => compOf("H2"), [termRow, store.people, store.assignments, store.amounts, store.deptMap, store.tms, store.frontTargets, store.tmTargets, store.insuranceRate]);
 
-  if (!termRow || !comp) return null;
+  if (!termRow || !compH1 || !compH2) return null;
+
+  const halfSwitch = (
+    <div className="labor-halfswitch">
+      <button
+        className={"labor-btn" + (half === "H1" ? " labor-btn--on" : "")}
+        onClick={() => setHalf("H1")}
+      >
+        上期（{termRow.start_year}/7〜12）
+      </button>
+      <button
+        className={"labor-btn" + (half === "H2" ? " labor-btn--on" : "")}
+        onClick={() => setHalf("H2")}
+      >
+        下期（{termRow.start_year + 1}/1〜6）
+      </button>
+      <button
+        className={"labor-btn" + (half === "FY" ? " labor-btn--on" : "")}
+        onClick={() => setHalf("FY")}
+      >
+        通期（上期・下期の比較）
+      </button>
+    </div>
+  );
+
+  if (half === "FY") {
+    return (
+      <div className="labor-div">
+        <div className="labor-toolbar">
+          {halfSwitch}
+          <span className="labor-note">
+            月額＝半期内で一定（在籍・異動・休職は6ヶ月で均した値）／ 増減＝下期計 − 上期計
+          </span>
+        </div>
+        <FullYearTable h1={compH1} h2={compH2} nameOf={nameOf} />
+      </div>
+    );
+  }
+
+  const comp = half === "H1" ? compH1 : compH2;
 
   const months = comp.months;
   const yearOf = () =>
@@ -102,20 +145,7 @@ export function LaborDivTab({ term }: { term: TermCode }) {
   return (
     <div className="labor-div">
       <div className="labor-toolbar">
-        <div className="labor-halfswitch">
-          <button
-            className={"labor-btn" + (half === "H1" ? " labor-btn--on" : "")}
-            onClick={() => setHalf("H1")}
-          >
-            上期（{termRow.start_year}/7〜12）
-          </button>
-          <button
-            className={"labor-btn" + (half === "H2" ? " labor-btn--on" : "")}
-            onClick={() => setHalf("H2")}
-          >
-            下期（{termRow.start_year + 1}/1〜6）
-          </button>
-        </div>
+        {halfSwitch}
         <span className="labor-note">
           社保 {Math.round(store.insuranceRate * 1000) / 10}% ／ ボーナスは半期6ヶ月按分 ／
           按分（フロント・間接費）は売上目標比（
@@ -365,5 +395,173 @@ function TmBlock({
         </>
       )}
     </>
+  );
+}
+
+// ── 通期（上期・下期を1画面で比較） ─────────────────────────────────
+
+export type FyLine = {
+  key: string;
+  label: string;
+  kind: "div" | "tm" | "member" | "sub" | "pool" | "grand";
+  h1: number;
+  h2: number;
+  /** 半期内の月額（一定）。上期6ヶ月・下期6ヶ月 */
+  h1m: number;
+  h2m: number;
+  parent?: string;
+};
+
+const sumRec = (rec: Record<string, number> | undefined) =>
+  rec ? Object.values(rec).reduce((s, v) => s + v, 0) : 0;
+
+type FyLineFn = (
+  key: string, label: string, kind: FyLine["kind"],
+  a: Record<string, number> | undefined, b: Record<string, number> | undefined, parent?: string,
+) => void;
+
+const fyLineCollector = (lines: FyLine[]): FyLineFn => (key, label, kind, a, b, parent) => {
+  const s1 = sumRec(a), s2 = sumRec(b);
+  lines.push({ key, label, kind, h1: s1, h2: s2, h1m: s1 / 6, h2m: s2 / 6, parent });
+};
+
+const uniqMembers = (ms: { personId: string; name: string }[]) =>
+  ms.map((m) => ({ id: m.personId, name: m.name }))
+    .filter((v, i, a) => a.findIndex((x) => x.id === v.id) === i);
+
+type DivB = HalfComputation["divs"][number];
+type PoolB = HalfComputation["pools"][number];
+
+/** 1DIV分の通期行（DIV合計・TM・メンバー・プロダクト計/按分）。DIV別ページと共用。 */
+export function buildDivFyLines(div: string, d1: DivB | undefined, d2: DivB | undefined, nameOf: NameResolver): FyLine[] {
+  const lines: FyLine[] = [];
+  const line = fyLineCollector(lines);
+  line(`div:${div}`, `${div}（DIV合計）`, "div", d1?.totalByMonth, d2?.totalByMonth);
+  const tmNames = [...(d1?.tms ?? []), ...(d2?.tms ?? [])].map((t) => t.tm)
+    .filter((v, i, a) => a.indexOf(v) === i);
+  for (const tm of tmNames) {
+    const t1 = d1?.tms.find((t) => t.tm === tm);
+    const t2 = d2?.tms.find((t) => t.tm === tm);
+    const tkey = `tm:${div}:${tm}`;
+    line(tkey, tm, "tm", t1?.totalByMonth, t2?.totalByMonth, `div:${div}`);
+    for (const m of uniqMembers([...(t1?.members ?? []), ...(t2?.members ?? [])])) {
+      line(`${tkey}:${m.id}`, nameOf(m.id, m.name), "member",
+        t1?.members.find((x) => x.personId === m.id)?.months,
+        t2?.members.find((x) => x.personId === m.id)?.months, tkey);
+    }
+  }
+  line(`sub:${div}:product`, "プロダクト計（スタッフ人件費）", "sub", d1?.productByMonth, d2?.productByMonth, `div:${div}`);
+  line(`sub:${div}:front`, "フロント按分", "sub", d1?.frontAllocByMonth, d2?.frontAllocByMonth, `div:${div}`);
+  line(`sub:${div}:overhead`, "HR/開発/コーポ・その他按分", "sub", d1?.overheadAllocByMonth, d2?.overheadAllocByMonth, `div:${div}`);
+  return lines;
+}
+
+/** 1プール分の通期行（按分原資・メンバー）。DIV別ページと共用。 */
+export function buildPoolFyLines(name: string, p1: PoolB | undefined, p2: PoolB | undefined, nameOf: NameResolver): FyLine[] {
+  const lines: FyLine[] = [];
+  const line = fyLineCollector(lines);
+  const pkey = `pool:${name}`;
+  line(pkey, `${name}（按分原資）`, "pool", p1?.totalByMonth, p2?.totalByMonth);
+  for (const m of uniqMembers([...(p1?.members ?? []), ...(p2?.members ?? [])])) {
+    line(`${pkey}:${m.id}`, nameOf(m.id, m.name), "member",
+      p1?.members.find((x) => x.personId === m.id)?.months,
+      p2?.members.find((x) => x.personId === m.id)?.months, pkey);
+  }
+  return lines;
+}
+
+function buildFyLines(h1: HalfComputation, h2: HalfComputation, nameOf: NameResolver): FyLine[] {
+  const lines: FyLine[] = [];
+  const line = fyLineCollector(lines);
+  const divNames = [...h1.divs.map((d) => d.div), ...h2.divs.map((d) => d.div)]
+    .filter((v, i, a) => a.indexOf(v) === i);
+  for (const div of divNames) {
+    lines.push(...buildDivFyLines(div, h1.divs.find((d) => d.div === div), h2.divs.find((d) => d.div === div), nameOf));
+  }
+  const poolNames = [...h1.pools.map((p) => p.name), ...h2.pools.map((p) => p.name)]
+    .filter((v, i, a) => a.indexOf(v) === i);
+  for (const name of poolNames) {
+    lines.push(...buildPoolFyLines(name, h1.pools.find((p) => p.name === name), h2.pools.find((p) => p.name === name), nameOf));
+  }
+  if (sumRec(h1.corporateByMonth) !== 0 || sumRec(h2.corporateByMonth) !== 0) {
+    line("corp", "コーポレート（按分対象外）", "pool", h1.corporateByMonth, h2.corporateByMonth);
+  }
+  line("grand", "全社人件費 総計（社保込み）", "grand", h1.grandTotalByMonth, h2.grandTotalByMonth);
+  return lines;
+}
+
+function FullYearTable({ h1, h2, nameOf }: { h1: HalfComputation; h2: HalfComputation; nameOf: NameResolver }) {
+  const lines = useMemo(() => buildFyLines(h1, h2, nameOf), [h1, h2, nameOf]);
+  return <FyTable lines={lines} />;
+}
+
+/** 通期表の描画本体（行の組み立ては呼び出し側）。DIV別ページと共用。 */
+export function FyTable({ lines }: { lines: FyLine[] }) {
+  // 既定: DIV・プールは開いてTMまで見せる／TM・プールのメンバーは閉じる
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const isOpen = (key: string, kind: FyLine["kind"]) => open[key] ?? kind === "div";
+  const byKey = new Map(lines.map((l) => [l.key, l]));
+  const visible = (l: FyLine): boolean => {
+    if (!l.parent) return true;
+    const p = byKey.get(l.parent);
+    return !!p && isOpen(p.key, p.kind) && visible(p);
+  };
+  const hasChildren = new Set(lines.map((l) => l.parent).filter(Boolean) as string[]);
+  const rowClass: Record<FyLine["kind"], string> = {
+    div: "labor-divhead", pool: "labor-divhead", grand: "labor-grand",
+    tm: "labor-tmhead", member: "labor-member", sub: "labor-sub",
+  };
+  const indent: Record<FyLine["kind"], string> = {
+    div: "", pool: "", grand: "", tm: "labor-indent", sub: "labor-indent", member: "labor-indent2",
+  };
+  const strong = (k: FyLine["kind"]) => k === "div" || k === "pool" || k === "grand";
+  const diffCell = (v: number) => {
+    const r = round1(v);
+    return (
+      <td className={"labor-num" + (r > 0 ? " labor-fy-diff--up" : r < 0 ? " labor-fy-diff--down" : "")}>
+        {r > 0 ? "+" : ""}{fmtMan(r)}
+      </td>
+    );
+  };
+  return (
+    <table className="labor-divtable labor-fytable">
+      <thead>
+        <tr>
+          <th className="labor-head-item" rowSpan={2}>項目</th>
+          <th className="labor-fy-group labor-fy-sep" colSpan={2}>上期（7〜12月）</th>
+          <th className="labor-fy-group labor-fy-sep" colSpan={2}>下期（1〜6月）</th>
+          <th className="labor-fy-group labor-fy-sep" colSpan={2}>通期</th>
+        </tr>
+        <tr>
+          <th className="labor-fy-sep">月額</th><th>上期計</th>
+          <th className="labor-fy-sep">月額</th><th>下期計</th>
+          <th className="labor-fy-sep">通期計</th><th>増減（下−上）</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.filter(visible).map((l) => {
+          const canToggle = hasChildren.has(l.key);
+          const o = isOpen(l.key, l.kind);
+          const S = strong(l.kind) ? " labor-strong" : "";
+          return (
+            <tr
+              key={l.key}
+              className={rowClass[l.kind] + (canToggle ? " labor-clickable" : "")}
+              onClick={canToggle ? () => setOpen((cur) => ({ ...cur, [l.key]: !o })) : undefined}
+            >
+              <td className={indent[l.kind]}>
+                {canToggle && <span className="labor-caret">{o ? "▾" : "▸"}</span>} {l.label}
+              </td>
+              <td className={"labor-num labor-fy-sep" + S}>{fmtMan(l.h1m)}</td>
+              <td className={"labor-num" + S}>{fmtMan(l.h1)}</td>
+              <td className={"labor-num labor-fy-sep" + S}>{fmtMan(l.h2m)}</td>
+              <td className={"labor-num" + S}>{fmtMan(l.h2)}</td>
+              <td className={"labor-num labor-fy-sep labor-strong"}>{fmtMan(l.h1 + l.h2)}</td>
+              {diffCell(l.h2 - l.h1)}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

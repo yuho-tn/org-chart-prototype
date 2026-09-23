@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useLaborCostStore } from "../../store/useLaborCostStore";
 import { useEmployeesStore } from "../../store/useEmployeesStore";
 import { LaborGrid } from "./LaborGrid";
-import type { GridColumn, GridEdit, GridRow } from "./LaborGrid";
+import type { GridColumn, GridEdit, GridRow, GridSort } from "./LaborGrid";
 import type { Half, QuarterPart, Slot, TermCode } from "../../lib/laborCost";
 import { amountKey, assignKey, ALLOC_TM } from "../../lib/laborCost";
 
@@ -57,6 +57,18 @@ const QUARTER_LABEL: Record<Half, [string, string]> = {
 };
 
 const TOTAL_ROW_ID = "__total__";
+/** 合計行で足す列（金額・半期計・年計） */
+const TOTAL_KEYS = [...AMOUNT_KEYS, "H1:total", "H2:total", "y_total"];
+/** TM絞り込みの「未割当」 */
+const UNASSIGNED_FILTER = "（TM未割当）";
+
+type FilterQ = "H1:1" | "H1:2" | "H2:1" | "H2:2";
+const FILTER_Q_LABEL: Record<FilterQ, string> = {
+  "H1:1": "1Q（7〜9月）",
+  "H1:2": "2Q（10〜12月）",
+  "H2:1": "3Q（1〜3月）",
+  "H2:2": "4Q（4〜6月）",
+};
 
 /**
  * 従業員マスターの部署パス（例「マーケティング DIV/広告 TM」「AI DIV/プロダクト TM/BAA ユニット」）
@@ -99,11 +111,20 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
   const saveState = useLaborCostStore((s) => s.saveState);
   const flushNow = useLaborCostStore((s) => s.flushNow);
   const employees = useEmployeesStore((s) => s.employees);
+  const refreshEmployees = useEmployeesStore((s) => s.refresh);
+  const terms = useLaborCostStore((s) => s.terms);
 
   const [newName, setNewName] = useState("");
   const [showAll, setShowAll] = useState(true);
   // 退職者を非表示（デフォルトON）。当期に金額計上のある退職者は残す。
   const [hideDeparted, setHideDeparted] = useState(true);
+  // 絞り込み: どのQの所属で見るか × 所属 × TM（空=すべて）
+  const [filterQ, setFilterQ] = useState<FilterQ>("H1:1");
+  const [filterDept, setFilterDept] = useState("");
+  const [filterTm, setFilterTm] = useState("");
+  // 列の並び替え（ヘッダークリックで 昇順→降順→解除）
+  const [sort, setSort] = useState<GridSort | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const empByNum = useMemo(
     () => new Map(employees.map((e) => [e.employee_number, e])),
@@ -202,7 +223,6 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
   const rows: GridRow[] = useMemo(() => {
     const sorted = [...people].sort((a, b) => a.sort_order - b.sort_order);
     const out: GridRow[] = [];
-    const colTotals: Record<string, number> = {};
     for (const p of sorted) {
       // 未連携かつ手動でない行（旧退職者等のノイズ）は非表示（req: 社員でないため除く）
       if (!p.employee_number && !p.is_manual) continue;
@@ -252,38 +272,160 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
       for (const c of H1_AMOUNT_COLS) {
         const v = amt(c.key);
         cells[c.key] = v;
-        if (v != null) { h1 += v; hasData = true; colTotals[c.key] = (colTotals[c.key] ?? 0) + v; }
+        if (v != null) { h1 += v; hasData = true; }
       }
       for (const c of H2_AMOUNT_COLS) {
         const v = amt(c.key);
         cells[c.key] = v;
-        if (v != null) { h2 += v; hasData = true; colTotals[c.key] = (colTotals[c.key] ?? 0) + v; }
+        if (v != null) { h2 += v; hasData = true; }
       }
       cells["H1:total"] = hasData ? h1 : null;
       cells["H2:total"] = hasData ? h2 : null;
       cells["y_total"] = hasData ? h1 + h2 : null;
-      if (hasData) {
-        colTotals["H1:total"] = (colTotals["H1:total"] ?? 0) + h1;
-        colTotals["H2:total"] = (colTotals["H2:total"] ?? 0) + h2;
-        colTotals["y_total"] = (colTotals["y_total"] ?? 0) + h1 + h2;
-      }
       // 退職者非表示: 当期（上期＋下期）で計上ゼロの退職者のみ隠す。
       // 例: 10月退社は上期計上あり→hasData=true→残る。
       if (hideDeparted && p.departed && !hasData) continue;
       if (!showAll && !hasData && !a1q1 && !a1q2 && !a2q1 && !a2q2) continue;
+      // 絞り込み（選択Qの所属・TMで判定）
+      if (filterDept) {
+        const [fh, fq] = filterQ.split(":");
+        if (cells[`${fh}:${fq}:dept`] !== filterDept) continue;
+        if (filterTm) {
+          const tmv = cells[`${fh}:${fq}:tm`] ?? null;
+          if (filterTm === UNASSIGNED_FILTER ? tmv != null : tmv !== filterTm) continue;
+        }
+      }
       out.push({
         id: p.id,
         cells,
         className: p.departed ? "lg-departed" : undefined,
       });
     }
+    if (sort) {
+      const dir = sort.dir === "asc" ? 1 : -1;
+      out.sort((a, b) => {
+        const va = a.cells[sort.key] ?? null;
+        const vb = b.cells[sort.key] ?? null;
+        // 空欄は昇順・降順どちらでも末尾
+        if (va == null || va === "") return vb == null || vb === "" ? 0 : 1;
+        if (vb == null || vb === "") return -1;
+        if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+        return String(va).localeCompare(String(vb), "ja", { numeric: true }) * dir;
+      });
+    }
+    // 合計行は絞り込み後の表示行だけを足す
+    const colTotals: Record<string, number> = {};
+    for (const r of out) {
+      for (const k of TOTAL_KEYS) {
+        const v = r.cells[k];
+        if (typeof v === "number") colTotals[k] = (colTotals[k] ?? 0) + v;
+      }
+    }
     out.push({
       id: TOTAL_ROW_ID,
-      cells: { name: "合計", ...colTotals },
+      cells: { name: `合計（${out.length}名）`, ...colTotals },
       className: "lg-total-row",
     });
     return out;
-  }, [people, assignments, amounts, term, showAll, hideDeparted, empByNum]);
+  }, [people, assignments, amounts, term, showAll, hideDeparted, empByNum, filterQ, filterDept, filterTm, sort]);
+
+  // 絞り込みの選択肢: 所属＝当期の dept 候補／TM＝選んだ所属DIVのTM＋未割当
+  const filterTmOptions = useMemo(() => {
+    if (!filterDept) return [];
+    const div = divByDept.get(filterDept) ?? filterDept;
+    const list = tmNamesByDiv.get(div) ?? [];
+    return list.length > 0 ? [...list, ...(list.length >= 2 ? [ALLOC_TM] : []), UNASSIGNED_FILTER] : [];
+  }, [filterDept, divByDept, tmNamesByDiv]);
+
+  const onHeaderClick = (key: string) => {
+    setSort((cur) =>
+      !cur || cur.key !== key
+        ? { key, dir: "asc" }
+        : cur.dir === "asc"
+          ? { key, dir: "desc" }
+          : null,
+    );
+  };
+
+  // TalentHub 従業員マスターとの同期:
+  //   ①マスターにいるが人件費シートに無い人を追加（アルバイト・パートは対象外）
+  //   ②同名の見立て行（手動）があれば新規追加せず社員番号を紐づけ
+  //   ③連携済みメンバーの入社日・退職フラグをマスターに合わせる
+  const syncFromMaster = async () => {
+    setSyncing(true);
+    try {
+      await refreshEmployees({ silent: true });
+      const emps = useEmployeesStore.getState().employees;
+      const linked = new Set(people.map((p) => p.employee_number).filter(Boolean));
+      const termRow = terms.find((t) => t.code === term);
+      const termStart = termRow ? `${termRow.start_year}-07-01` : "0000-01-01";
+      const today = new Date().toISOString().slice(0, 10);
+      const norm = (s: string | null | undefined) => (s ?? "").replace(/[\s\u3000]/g, "");
+      const manual = people.filter((p) => p.is_manual && !p.employee_number);
+      const toLink: { personId: string; label: string; emp: (typeof emps)[number] }[] = [];
+      const toAdd: (typeof emps)[number][] = [];
+      for (const e of emps) {
+        if (!e.employee_number || linked.has(e.employee_number)) continue;
+        if (/アルバイト|パート/.test(e.employment_type ?? "")) continue;
+        if (e.left_at && e.left_at < termStart) continue; // 当期より前の退職者は不要
+        const full = norm(e.full_name);
+        const disp = norm(e.display_name);
+        const m = manual.find((p) => {
+          const n = norm(p.name);
+          return n && (n === full || n === disp || (full.startsWith(n) && n.length >= 2));
+        });
+        if (m) toLink.push({ personId: m.id, label: `${m.name} → ${e.full_name}（${e.employee_number}）`, emp: e });
+        else toAdd.push(e);
+      }
+      const toUpdate: { id: string; label: string; patch: { hired_at?: string | null; departed?: boolean } }[] = [];
+      for (const p of people) {
+        if (!p.employee_number) continue;
+        const e = emps.find((x) => x.employee_number === p.employee_number);
+        if (!e) continue;
+        const patch: { hired_at?: string | null; departed?: boolean } = {};
+        if (e.hired_at && e.hired_at !== p.hired_at) patch.hired_at = e.hired_at;
+        const departed = !!e.left_at && e.left_at < today;
+        if (departed !== p.departed) patch.departed = departed;
+        if (Object.keys(patch).length > 0) {
+          toUpdate.push({
+            id: p.id,
+            label: `${e.full_name}: ` +
+              [patch.hired_at ? `入社日 ${patch.hired_at}` : "", patch.departed != null ? (patch.departed ? "退職に変更" : "在籍に変更") : ""]
+                .filter(Boolean).join("・"),
+            patch,
+          });
+        }
+      }
+      if (toAdd.length + toLink.length + toUpdate.length === 0) {
+        alert("従業員マスターと差分はありませんでした。");
+        return;
+      }
+      const lines = [
+        toAdd.length ? `■ 追加 ${toAdd.length}名\n` + toAdd.map((e) => `・${e.full_name}（${e.employee_number}／${e.employment_type ?? "—"}／入社 ${e.hired_at ?? "—"}）`).join("\n") : "",
+        toLink.length ? `■ 見立て行を社員に紐づけ ${toLink.length}名\n` + toLink.map((x) => `・${x.label}`).join("\n") : "",
+        toUpdate.length ? `■ 入社日・退職の更新 ${toUpdate.length}名\n` + toUpdate.map((x) => `・${x.label}`).join("\n") : "",
+      ].filter(Boolean);
+      if (!window.confirm(`従業員マスターと同期します（アルバイト・パートは対象外）。\n\n${lines.join("\n\n")}\n\n追加した人の所属・金額は空欄で入ります。よろしいですか？`)) return;
+      for (const e of toAdd) {
+        await addPerson(e.full_name ?? e.employee_number, {
+          employee_number: e.employee_number,
+          hired_at: e.hired_at,
+          departed: !!e.left_at && e.left_at < today,
+        });
+      }
+      for (const x of toLink) {
+        await updatePerson(x.personId, {
+          employee_number: x.emp.employee_number,
+          hired_at: x.emp.hired_at ?? null,
+          is_manual: false,
+        });
+      }
+      for (const x of toUpdate) await updatePerson(x.id, x.patch);
+      alert(`同期しました（追加 ${toAdd.length}名・紐づけ ${toLink.length}名・更新 ${toUpdate.length}名）`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const onEdits = (edits: GridEdit[], label: string) => {
     const amountEdits: { personId: string; term: TermCode; slot: Slot; amount: number }[] = [];
@@ -356,24 +498,6 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
       Object.values(amounts).filter((a) => a.term === term && a.is_forecast).length,
     [amounts, term],
   );
-
-  // 連携済みメンバーの入社日をマスター(hired_at)から一括取込。
-  const syncHiredFromMaster = () => {
-    let n = 0;
-    for (const p of people) {
-      if (!p.employee_number) continue;
-      const emp = empByNum.get(p.employee_number);
-      if (emp?.hired_at && emp.hired_at !== p.hired_at) {
-        void updatePerson(p.id, { hired_at: emp.hired_at });
-        n++;
-      }
-    }
-    alert(
-      n > 0
-        ? `${n}名の入社日をマスターから取り込みました`
-        : "マスターと差異のある入社日はありませんでした（連携済みのみ対象）",
-    );
-  };
 
   // 1Q（3Q）の所属・TM・兼務設定を、全員の2Q（4Q）へ一括コピーする
   // （ほとんどの従業員は1Q=2Qのため。個別に異動がある人だけ後から2Q単体を編集する）。
@@ -471,8 +595,13 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
           />
           この期にデータのない人も表示
         </label>
-        <button className="labor-btn" onClick={syncHiredFromMaster}>
-          入社日をマスターから取込
+        <button
+          className="labor-btn"
+          onClick={() => void syncFromMaster()}
+          disabled={syncing}
+          title="TalentHub の従業員マスターから、未登録の社員（アルバイト・パート除く）の追加と入社日・退職の更新を行います"
+        >
+          {syncing ? "同期中…" : "⟳ 従業員マスターと同期"}
         </button>
         <button className="labor-btn" onClick={() => copyQuarterToSecond("H1")}>
           1Q→2Q 一括コピー
@@ -523,6 +652,37 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
           </button>
         </div>
       </div>
+      <div className="labor-filterbar">
+        <span className="labor-filterbar-label">絞り込み</span>
+        <select value={filterQ} onChange={(e) => setFilterQ(e.target.value as FilterQ)} title="どのQの所属で絞り込むか">
+          {(Object.keys(FILTER_Q_LABEL) as FilterQ[]).map((q) => (
+            <option key={q} value={q}>{FILTER_Q_LABEL[q]}</option>
+          ))}
+        </select>
+        <select
+          value={filterDept}
+          onChange={(e) => { setFilterDept(e.target.value); setFilterTm(""); }}
+          title="所属"
+        >
+          <option value="">所属：すべて</option>
+          {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select
+          value={filterTm}
+          onChange={(e) => setFilterTm(e.target.value)}
+          disabled={filterTmOptions.length === 0}
+          title="TM（所属を選ぶと選べます）"
+        >
+          <option value="">TM：すべて</option>
+          {filterTmOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {(filterDept || sort) && (
+          <button className="labor-btn" onClick={() => { setFilterDept(""); setFilterTm(""); setSort(null); }}>
+            絞り込み・並び替えを解除
+          </button>
+        )}
+        <span className="labor-filterbar-hint">列名クリックで 昇順 → 降順 → 解除</span>
+      </div>
       {manualRows.length > 0 && (
         <div className="labor-manualbar">
           <span className="labor-manualbar-label">見立て行（手動・削除可）:</span>
@@ -547,6 +707,8 @@ export function LaborSheetTab({ term }: { term: TermCode }) {
         onUndo={undo}
         onRedo={redo}
         cellClassName={cellClassName}
+        sort={sort}
+        onHeaderClick={onHeaderClick}
       />
       <p className="labor-hint">
         名前・社員番号・入社日・マスター所属・マスターTM（参考）は従業員マスター（社員番号で突合）から表示。
