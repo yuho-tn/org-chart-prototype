@@ -2143,7 +2143,7 @@ body.is-dragging .dept-card__add-child {
   border-radius: 8px;
   padding: 14px 16px;
   cursor: pointer;
-  transition: border-color 0.1s, box-shadow 0.1s, transform 0.06s;
+  transition: border-color 0.1s, box-shadow 0.1s;
 }
 
 .annlist__card:hover {
@@ -5729,7 +5729,8 @@ body.is-dragging .dept-card__add-child {
 
 .emppage__gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+  grid-auto-rows: 1fr;
   gap: 12px;
   padding: 2px;
 }
@@ -5746,13 +5747,14 @@ body.is-dragging .dept-card__add-child {
   cursor: pointer;
   font: inherit;
   text-align: left;
+  height: 100%;
+  min-width: 0;
   transition: border-color 0.1s, box-shadow 0.1s, transform 0.06s;
 }
 
 .empcard:hover {
   border-color: var(--primary);
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
-  transform: translateY(-1px);
 }
 
 .empcard.is-inactive {
@@ -5774,6 +5776,7 @@ body.is-dragging .dept-card__add-child {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 30%;
 }
 
 .empcard__initial {
@@ -5785,19 +5788,38 @@ body.is-dragging .dept-card__add-child {
 .empcard__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: 7px;
   padding: 10px 12px 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.empcard__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
 }
 
 .empcard__name {
   font-size: 14px;
   font-weight: 700;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .empcard__nickname {
   font-size: 11px;
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .empcard__sub {
@@ -5806,6 +5828,40 @@ body.is-dragging .dept-card__add-child {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.empcard__department {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--bg);
+  font-size: 10.5px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empcard__motto {
+  display: -webkit-box;
+  width: 100%;
+  min-height: calc(1.55em * 2);
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.empcard__hometown {
+  margin-top: auto;
+  color: var(--text-muted);
+  font-size: 10.5px;
 }
 
 /* ── 従業員詳細ページ（#/employees/:num） ─────────────────────────── */
@@ -5882,6 +5938,16 @@ body.is-dragging .dept-card__add-child {
   margin: 0;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.empdetail__motto {
+  margin: 12px 0 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--primary);
+  color: var(--text-strong, var(--text));
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.6;
 }
 
 .empdetail__heroActions {
@@ -6010,6 +6076,32 @@ body.is-dragging .dept-card__add-child {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.empdetail__formRow + .empdetail__formRow,
+.empdetail__formRow + .empdetail__formGrid,
+.empdetail__formGrid + .empdetail__formRow {
+  margin-top: 12px;
+}
+
+.empdetail__formRow--narrow {
+  max-width: 360px;
+}
+
+.empdetail__formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.empdetail__checkRow {
+  display: inline-flex;
+  align-items: center;
+  align-self: end;
+  gap: 7px;
+  min-height: 34px;
+  color: var(--text);
+  font-size: 12px;
 }
 
 .empdetail__itemRow {
@@ -7426,6 +7518,21 @@ body.is-dragging .dept-card__add-child {
   font-size: 13.5px;
 }
 
+.empdetail__careerContent {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.empdetail__careerDetails {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
 /* ── MBTI バッジ（表示） ── */
 .mbtiBadge {
   display: inline-flex;
@@ -7534,14 +7641,17 @@ body.is-dragging .dept-card__add-child {
   font-size: 9px;
 }
 .strengthBadge__popover {
-  position: absolute;
+  position: fixed;
   z-index: 80;
-  top: calc(100% + 8px);
-  left: 0;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(320px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   padding: 16px;
   color: #1f2937;
   background: #fff;
@@ -7561,7 +7671,9 @@ body.is-dragging .dept-card__add-child {
 }
 .strengthBadge__popoverName,
 .strengthBadge__popoverEnglish,
+.strengthBadge__popoverQuote,
 .strengthBadge__popoverBody,
+.strengthBadge__popoverBodyEn,
 .strengthBadge__popoverSource {
   display: block;
 }
@@ -7591,18 +7703,24 @@ body.is-dragging .dept-card__add-child {
   height: 8px;
   border-radius: 50%;
 }
+.strengthBadge__popoverQuote {
+  padding-left: 12px;
+  border-left: 3px solid var(--border-strong);
+}
 .strengthBadge__popoverBody {
   color: #1f2937;
+}
+.strengthBadge__popoverBodyEn {
+  margin-top: 8px;
+  color: #4b5563;
+  font-size: 11px;
+  line-height: 1.55;
 }
 .strengthBadge__popoverSource {
   padding-top: 10px;
   color: #4b5563;
   border-top: 1px solid #e5e7eb;
   font-size: 11px;
-}
-.strengthBadge__popoverSource a {
-  margin-left: 6px;
-  color: #1d4ed8;
   font-weight: 700;
   text-decoration: underline;
 }
@@ -7688,6 +7806,27 @@ body.is-dragging .dept-card__add-child {
 }
 .careerEditor__row {
   display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.careerEditor__main {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(280px, 1.2fr);
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.careerEditor__labelField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.careerEditor__periodRange {
+  display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
@@ -7699,8 +7838,16 @@ body.is-dragging .dept-card__add-child {
   color: var(--text-muted);
 }
 .careerEditor__body {
-  flex: 1 1 240px;
-  min-width: 200px;
+  min-width: 0;
+}
+.careerEditor__details {
+  min-width: 0;
+  resize: vertical;
+}
+.careerEditor__actions {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
 }
 
 /* ── タグエディタ ── */
@@ -7841,9 +7988,10 @@ body.is-dragging .dept-card__add-child {
 /* ── ギャラリーカードの MBTI／ストレングス小バッジ ── */
 .empcard__tags {
   display: flex;
+  align-items: center;
   gap: 4px;
-  margin-top: 4px;
   flex-wrap: wrap;
+  max-width: 100%;
 }
 .empcard__mbti {
   font-size: 10px;
@@ -7861,6 +8009,11 @@ body.is-dragging .dept-card__add-child {
   border-radius: 999px;
   color: #fff;
 }
+.empcard__strengthMore {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
 
 /* ── モバイル ── */
 @media (max-width: 768px) {
@@ -7877,9 +8030,39 @@ body.is-dragging .dept-card__add-child {
     right: 16px;
     bottom: 24px;
     left: 16px;
+    transform: none;
     width: auto;
     max-height: calc(100vh - 48px);
     overflow-y: auto;
+  }
+  .empdetail__hero {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .empdetail__heroBody {
+    flex: 1 1 calc(100% - 110px);
+  }
+  .empdetail__heroActions {
+    width: 100%;
+  }
+  .empdetail__formGrid {
+    grid-template-columns: 1fr;
+  }
+  .careerEditor__row,
+  .careerEditor__main {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  .careerEditor__actions {
+    align-self: flex-end;
+  }
+  .careerEditor__periodRange {
+    width: 100%;
+  }
+  .careerEditor__period {
+    flex: 1 1 120px;
+    min-width: 0;
   }
 }
 

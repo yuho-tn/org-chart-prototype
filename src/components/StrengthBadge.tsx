@@ -109,19 +109,24 @@ export function StrengthBadge({ quality, rank, compact = false }: StrengthBadgeP
               {STRENGTH_DOMAIN_LABEL[quality.domain]}
             </span>
           </span>
-          <span className="strengthBadge__popoverBody">{strengthDetailText(quality)}</span>
+          <span className="strengthBadge__popoverQuote">
+            <span className="strengthBadge__popoverBody">{strengthDetailText(quality)}</span>
+            {quality.detail_en && (
+              <span className="strengthBadge__popoverBodyEn" lang="en">
+                {quality.detail_en}
+              </span>
+            )}
+          </span>
           {quality.detail_url && (
-            <span className="strengthBadge__popoverSource">
-              出典：{quality.detail_source ?? "公式サイト"}
-              <a
-                href={quality.detail_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(event) => event.stopPropagation()}
-              >
-                詳細を見る ↗
-              </a>
-            </span>
+            <a
+              className="strengthBadge__popoverSource"
+              href={quality.detail_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(event) => event.stopPropagation()}
+            >
+              出典：{quality.detail_source ?? "公式サイト"} ↗
+            </a>
           )}
         </span>
       )}

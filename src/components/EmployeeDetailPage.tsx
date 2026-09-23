@@ -16,8 +16,10 @@ import {
   MBTI_GROUP_LABEL,
   MBTI_GROUP_COLOR,
   mbtiAvatarDataUri,
+  mbtiDisplayCode,
   mbtiExternalUrl,
-  normalizeMbti,
+  parseMbti,
+  type MbtiIdentity,
 } from "../lib/mbti";
 import {
   STRENGTHS,
@@ -118,24 +120,52 @@ function newId(): string {
 // ── 統一編集ドラフト ───────────────────────────────────────────────────
 type ProfileDraft = {
   nickname: string;
+  hometown: string;
+  residence: string;
+  birthday: string;
+  birthdayShowYear: boolean;
+  motto: string;
   careerRows: CareerRow[];
   specialties: string[];
   hobbyTags: string[];
   mbti: string | null;
+  mbtiIdentity: MbtiIdentity | null;
   strengths: string[]; // 資質 id・配列順＝1〜5位
+  strengthsYear: string;
+  mikiwame: string;
   blocks: ProfileBlock[];
 };
 
 function draftFromProfile(p: ProfileRow | undefined): ProfileDraft {
+  const parsedMbti = parseMbti(p?.mbti);
   return {
     nickname: p?.nickname ?? "",
-    careerRows: (p?.career_rows ?? []).map((r) => ({ ...r })),
+    hometown: p?.hometown ?? "",
+    residence: p?.residence ?? "",
+    birthday: p?.birthday ?? "",
+    birthdayShowYear: p?.birthday_show_year === true,
+    motto: p?.motto ?? "",
+    careerRows: (p?.career_rows ?? []).map((r) => ({
+      ...r,
+      details: [...(r.details ?? [])],
+    })),
     specialties: [...(p?.specialties ?? [])],
     hobbyTags: [...(p?.hobby_tags ?? [])],
-    mbti: normalizeMbti(p?.mbti ?? null),
+    mbti: parsedMbti.code,
+    mbtiIdentity: p?.mbti_identity ?? parsedMbti.identity,
     strengths: normalizeStrengthIds(p?.strengths ?? []),
+    strengthsYear: p?.strengths_year ?? "",
+    mikiwame: p?.mikiwame ?? "",
     blocks: normalizeBlocks(p?.blocks ?? []),
   };
+}
+
+function formatBirthday(value: string | null | undefined, showYear: boolean): string | null {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${showYear ? `${Number(year)}年` : ""}${Number(month)}月${Number(day)}日`;
 }
 
 export function EmployeeDetailPage({ num }: { num: string }) {
@@ -289,18 +319,28 @@ export function EmployeeDetailPage({ num }: { num: string }) {
     const res = await saveProfile({
       employee_number: num,
       nickname: draft.nickname.trim() || null,
+      hometown: draft.hometown.trim() || null,
+      residence: draft.residence.trim() || null,
+      birthday: draft.birthday || null,
+      birthday_show_year: draft.birthdayShowYear,
+      motto: draft.motto.trim() || null,
       career_rows: draft.careerRows
-        .filter((r) => r.body.trim() || r.period_from.trim())
+        .filter((r) => r.body.trim() || r.period_label?.trim() || r.period_from.trim())
         .map((r) => ({
           id: r.id,
           period_from: r.period_from.trim(),
           period_to: r.period_to?.trim() || null,
+          period_label: r.period_label?.trim() || undefined,
           body: r.body.trim(),
+          details: (r.details ?? []).map((detail) => detail.trim()).filter(Boolean),
         })),
       specialties: dedupeTags(draft.specialties),
       hobby_tags: dedupeTags(draft.hobbyTags),
       mbti: draft.mbti,
+      mbti_identity: draft.mbtiIdentity,
       strengths: draft.strengths.slice(0, 5),
+      strengths_year: draft.strengthsYear.trim() || null,
+      mikiwame: draft.mikiwame.trim() || null,
       blocks: pruneBlocks(draft.blocks),
     });
     setSaving(false);
@@ -356,8 +396,11 @@ export function EmployeeDetailPage({ num }: { num: string }) {
   const displayName = emp ? employeeName(emp) : num;
   const initial = displayName.trim()[0]?.toUpperCase() ?? "?";
   const viewBlocks = useMemo(() => normalizeBlocks(profile?.blocks ?? []), [profile]);
-  const viewMbti = normalizeMbti(profile?.mbti ?? null);
+  const parsedViewMbti = parseMbti(profile?.mbti);
+  const viewMbti = parsedViewMbti.code;
+  const viewMbtiIdentity = profile?.mbti_identity ?? parsedViewMbti.identity;
   const viewStrengths = normalizeStrengthIds(profile?.strengths ?? []);
+  const viewBirthday = formatBirthday(profile?.birthday, profile?.birthday_show_year === true);
 
   return (
     <main className="page empdetail">
@@ -413,6 +456,9 @@ export function EmployeeDetailPage({ num }: { num: string }) {
             {emp?.employment_type && <> ／ {emp.employment_type}</>}
             {emp?.hired_at && <> ／ 入社 {fmtDate(emp.hired_at)}</>}
           </p>
+          {profile?.motto && (
+            <blockquote className="empdetail__motto">{profile.motto}</blockquote>
+          )}
         </div>
         <div className="empdetail__heroActions">
           {canEdit && !editing && (
@@ -443,19 +489,59 @@ export function EmployeeDetailPage({ num }: { num: string }) {
         />
       ) : (
         <>
-          {/* ── SHO-SAN経歴 ─────────────────────────────────────── */}
+          {/* ── プロフィール ────────────────────────────────────── */}
           <section className="empdetail__section">
-            <h2 className="empdetail__sectionTitle">SHO-SAN経歴</h2>
+            <h2 className="empdetail__sectionTitle">プロフィール</h2>
+            <dl className="empdetail__fields">
+              <div className="empdetail__field">
+                <dt>生年月日</dt>
+                <dd>{viewBirthday ?? <Empty />}</dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>出身地</dt>
+                <dd>{profile?.hometown || <Empty />}</dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>居住地</dt>
+                <dd>{profile?.residence || <Empty />}</dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>趣味</dt>
+                <dd><TagList tags={profile?.hobby_tags ?? []} tone="hobby" /></dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>得意領域</dt>
+                <dd><TagList tags={profile?.specialties ?? []} tone="specialty" /></dd>
+              </div>
+            </dl>
+          </section>
+
+          {/* ── キャリア ────────────────────────────────────────── */}
+          <section className="empdetail__section">
+            <h2 className="empdetail__sectionTitle">キャリア</h2>
             {(profile?.career_rows ?? []).length > 0 ? (
               <ol className="empdetail__career">
                 {(profile?.career_rows ?? []).map((r) => (
                   <li key={r.id} className="empdetail__careerRow">
                     <span className="empdetail__careerPeriod">
-                      {r.period_from || "—"}
-                      {" 〜 "}
-                      {r.period_to || "現在"}
+                      {r.period_label?.trim() || (
+                        <>
+                          {r.period_from || "—"}
+                          {" 〜 "}
+                          {r.period_to || "現在"}
+                        </>
+                      )}
                     </span>
-                    <span className="empdetail__careerBody">{r.body}</span>
+                    <span className="empdetail__careerContent">
+                      <span className="empdetail__careerBody">{r.body}</span>
+                      {(r.details ?? []).length > 0 && (
+                        <ul className="empdetail__careerDetails">
+                          {(r.details ?? []).map((detail, index) => (
+                            <li key={`${r.id}_detail_${index}`}>{detail}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ol>
@@ -480,28 +566,19 @@ export function EmployeeDetailPage({ num }: { num: string }) {
             )}
           </section>
 
-          {/* ── 得意領域・趣味 ───────────────────────────────────── */}
+          {/* ── 分析・診断 ──────────────────────────────────────── */}
           <section className="empdetail__section">
-            <h2 className="empdetail__sectionTitle">プロフィール</h2>
+            <h2 className="empdetail__sectionTitle">分析・診断</h2>
             <dl className="empdetail__fields">
               <div className="empdetail__field">
-                <dt>得意領域</dt>
-                <dd>
-                  <TagList tags={profile?.specialties ?? []} tone="specialty" />
-                </dd>
-              </div>
-              <div className="empdetail__field">
-                <dt>趣味</dt>
-                <dd>
-                  <TagList tags={profile?.hobby_tags ?? []} tone="hobby" />
-                </dd>
-              </div>
-              <div className="empdetail__field">
                 <dt>MBTI</dt>
-                <dd>{viewMbti ? <MbtiBadge code={viewMbti} /> : <Empty />}</dd>
+                <dd>{viewMbti ? <MbtiBadge code={viewMbti} identity={viewMbtiIdentity} /> : <Empty />}</dd>
               </div>
               <div className="empdetail__field">
-                <dt>ストレングスファインダー</dt>
+                <dt>
+                  ストレングスファインダー
+                  {profile?.strengths_year && `（${profile.strengths_year}年）`}
+                </dt>
                 <dd>
                   {viewStrengths.length > 0 ? (
                     <StrengthList ids={viewStrengths} />
@@ -509,6 +586,10 @@ export function EmployeeDetailPage({ num }: { num: string }) {
                     <Empty />
                   )}
                 </dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>適性検査ミキワメ</dt>
+                <dd>{profile?.mikiwame || <Empty />}</dd>
               </div>
             </dl>
           </section>
@@ -572,7 +653,7 @@ export function EmployeeDetailPage({ num }: { num: string }) {
           {/* ── 自由プロフィール（ブロック） ─────────────────────── */}
           {viewBlocks.length > 0 && (
             <section className="empdetail__section">
-              <h2 className="empdetail__sectionTitle">自己紹介</h2>
+              <h2 className="empdetail__sectionTitle">自由記述</h2>
               <BlockView blocks={viewBlocks} photoUrls={photoUrls} />
             </section>
           )}
@@ -671,10 +752,11 @@ function TagList({ tags, tone }: { tags: string[]; tone: "specialty" | "hobby" }
   );
 }
 
-function MbtiBadge({ code }: { code: string }) {
+function MbtiBadge({ code, identity }: { code: string; identity: MbtiIdentity | null }) {
   const t = MBTI_BY_CODE[code];
   if (!t) return <span className="emppage__chip">{code}</span>;
   const color = MBTI_GROUP_COLOR[t.group];
+  const displayCode = mbtiDisplayCode(code, identity);
   return (
     <a
       className="mbtiBadge"
@@ -682,13 +764,13 @@ function MbtiBadge({ code }: { code: string }) {
       href={mbtiExternalUrl(code)}
       target="_blank"
       rel="noopener noreferrer"
-      title={`16personalities で ${code} の詳細を見る`}
+      title={`16personalities で ${displayCode} の詳細を見る`}
       onClick={(event) => event.stopPropagation()}
     >
       <img className="mbtiBadge__avatar" src={mbtiAvatarDataUri(code)} alt="" width={28} height={28} />
       <span className="mbtiBadge__text">
         <span className="mbtiBadge__code" style={{ color }}>
-          {code}
+          {displayCode}
         </span>
         <span className="mbtiBadge__nick">{t.nickname}</span>
       </span>
@@ -814,11 +896,11 @@ function EditForm({
 }) {
   return (
     <>
-      {/* あだ名 */}
+      {/* ヘッダー */}
       <section className="empdetail__section">
-        <h2 className="empdetail__sectionTitle">基本</h2>
+        <h2 className="empdetail__sectionTitle">ヘッダー</h2>
         <label className="empdetail__formRow">
-          <span className="field__label">あだ名</span>
+          <span className="field__label">愛称</span>
           <input
             className="field__input"
             value={draft.nickname}
@@ -826,17 +908,58 @@ function EditForm({
             placeholder="例: ゆーほー"
           />
         </label>
+        <label className="empdetail__formRow">
+          <span className="field__label">ひとこと</span>
+          <input
+            className="field__input"
+            value={draft.motto}
+            maxLength={120}
+            onChange={(e) => setDraft((d) => ({ ...d, motto: e.target.value }))}
+            placeholder="80文字を目安に入力"
+          />
+        </label>
       </section>
 
-      {/* SHO-SAN経歴 */}
-      <section className="empdetail__section">
-        <h2 className="empdetail__sectionTitle">SHO-SAN経歴</h2>
-        <CareerEditor rows={draft.careerRows} setDraft={setDraft} />
-      </section>
-
-      {/* 得意領域・趣味・MBTI・ストレングス */}
+      {/* プロフィール */}
       <section className="empdetail__section">
         <h2 className="empdetail__sectionTitle">プロフィール</h2>
+        <div className="empdetail__formGrid">
+          <label className="empdetail__formRow">
+            <span className="field__label">出身地</span>
+            <input
+              className="field__input"
+              value={draft.hometown}
+              onChange={(e) => setDraft((d) => ({ ...d, hometown: e.target.value }))}
+              placeholder="例: 宮崎市"
+            />
+          </label>
+          <label className="empdetail__formRow">
+            <span className="field__label">居住地</span>
+            <input
+              className="field__input"
+              value={draft.residence}
+              onChange={(e) => setDraft((d) => ({ ...d, residence: e.target.value }))}
+              placeholder="例: 松戸市"
+            />
+          </label>
+          <label className="empdetail__formRow">
+            <span className="field__label">生年月日</span>
+            <input
+              className="field__input"
+              type="date"
+              value={draft.birthday}
+              onChange={(e) => setDraft((d) => ({ ...d, birthday: e.target.value }))}
+            />
+          </label>
+          <label className="empdetail__checkRow">
+            <input
+              type="checkbox"
+              checked={draft.birthdayShowYear}
+              onChange={(e) => setDraft((d) => ({ ...d, birthdayShowYear: e.target.checked }))}
+            />
+            年も公開する
+          </label>
+        </div>
         <div className="empdetail__formRow">
           <span className="field__label">得意領域（タグ・複数可）</span>
           <TagEditor
@@ -855,13 +978,48 @@ function EditForm({
             onChange={(tags) => setDraft((d) => ({ ...d, hobbyTags: tags }))}
           />
         </div>
+      </section>
+
+      {/* キャリア */}
+      <section className="empdetail__section">
+        <h2 className="empdetail__sectionTitle">キャリア</h2>
+        <CareerEditor rows={draft.careerRows} setDraft={setDraft} />
+      </section>
+
+      {/* 分析・診断 */}
+      <section className="empdetail__section">
+        <h2 className="empdetail__sectionTitle">分析・診断</h2>
         <div className="empdetail__formRow">
           <span className="field__label">MBTI</span>
           <MbtiPicker
             value={draft.mbti}
-            onChange={(code) => setDraft((d) => ({ ...d, mbti: code }))}
+            onChange={(code) =>
+              setDraft((d) => ({
+                ...d,
+                mbti: code,
+                mbtiIdentity: code ? d.mbtiIdentity : null,
+              }))
+            }
           />
         </div>
+        <label className="empdetail__formRow empdetail__formRow--narrow">
+          <span className="field__label">MBTI アイデンティティ</span>
+          <select
+            className="field__input"
+            value={draft.mbtiIdentity ?? ""}
+            disabled={!draft.mbti}
+            onChange={(e) =>
+              setDraft((d) => ({
+                ...d,
+                mbtiIdentity: (e.target.value || null) as MbtiIdentity | null,
+              }))
+            }
+          >
+            <option value="">未設定</option>
+            <option value="A">-A（自己主張型）</option>
+            <option value="T">-T（慎重型）</option>
+          </select>
+        </label>
         <div className="empdetail__formRow">
           <span className="field__label">ストレングスファインダー（34資質から5つ・順位付き）</span>
           <StrengthPicker
@@ -869,11 +1027,31 @@ function EditForm({
             onChange={(ids) => setDraft((d) => ({ ...d, strengths: ids }))}
           />
         </div>
+        <div className="empdetail__formGrid">
+          <label className="empdetail__formRow">
+            <span className="field__label">ストレングス実施年（任意）</span>
+            <input
+              className="field__input"
+              value={draft.strengthsYear}
+              onChange={(e) => setDraft((d) => ({ ...d, strengthsYear: e.target.value }))}
+              placeholder="2025"
+            />
+          </label>
+          <label className="empdetail__formRow">
+            <span className="field__label">適性検査ミキワメ</span>
+            <input
+              className="field__input"
+              value={draft.mikiwame}
+              onChange={(e) => setDraft((d) => ({ ...d, mikiwame: e.target.value }))}
+              placeholder="例: アレンジ人材 エキスパート - 専門家"
+            />
+          </label>
+        </div>
       </section>
 
       {/* 自由プロフィール（ブロックエディタ） */}
       <section className="empdetail__section">
-        <h2 className="empdetail__sectionTitle">自己紹介（自由ブロック）</h2>
+        <h2 className="empdetail__sectionTitle">自由記述（ブロック）</h2>
         <BlockEditor
           blocks={draft.blocks}
           setDraft={setDraft}
@@ -913,47 +1091,74 @@ function CareerEditor({
     <div className="careerEditor">
       {rows.map((r, idx) => (
         <div key={r.id} className="careerEditor__row">
-          <input
-            className="field__input field__input--xs careerEditor__period"
-            type="month"
-            value={r.period_from}
-            onChange={(e) => update(r.id, { period_from: e.target.value })}
-            title="開始（YYYY-MM）"
-          />
-          <span className="careerEditor__tilde">〜</span>
-          <input
-            className="field__input field__input--xs careerEditor__period"
-            type="month"
-            value={r.period_to ?? ""}
-            onChange={(e) => update(r.id, { period_to: e.target.value || null })}
-            title="終了（空欄＝現在）"
-          />
-          <input
-            className="field__input field__input--xs careerEditor__body"
-            placeholder="配属・役割（例: マーケDIV / 広告TM リーダー）"
-            value={r.body}
-            onChange={(e) => update(r.id, { body: e.target.value })}
-          />
-          <button className="btn btn--ghost btn--xs" onClick={() => move(idx, -1)} disabled={idx === 0} title="上へ">
-            ↑
-          </button>
-          <button
-            className="btn btn--ghost btn--xs"
-            onClick={() => move(idx, 1)}
-            disabled={idx === rows.length - 1}
-            title="下へ"
-          >
-            ↓
-          </button>
-          <button
-            className="btn btn--ghost btn--xs"
-            onClick={() =>
-              setDraft((d) => ({ ...d, careerRows: d.careerRows.filter((x) => x.id !== r.id) }))
-            }
-            title="削除"
-          >
-            ✕
-          </button>
+          <div className="careerEditor__main">
+            <label className="careerEditor__labelField">
+              <span className="field__label">期間の自由表記</span>
+              <input
+                className="field__input field__input--xs"
+                value={r.period_label ?? ""}
+                onChange={(e) => update(r.id, { period_label: e.target.value })}
+                placeholder="例: 2025年（7月16日）"
+              />
+            </label>
+            <div className="careerEditor__periodRange">
+              <input
+                className="field__input field__input--xs careerEditor__period"
+                type="month"
+                value={r.period_from}
+                disabled={Boolean(r.period_label?.trim())}
+                onChange={(e) => update(r.id, { period_from: e.target.value })}
+                title="開始（YYYY-MM）"
+              />
+              <span className="careerEditor__tilde">〜</span>
+              <input
+                className="field__input field__input--xs careerEditor__period"
+                type="month"
+                value={r.period_to ?? ""}
+                disabled={Boolean(r.period_label?.trim())}
+                onChange={(e) => update(r.id, { period_to: e.target.value || null })}
+                title="終了（空欄＝現在）"
+              />
+              {r.period_label?.trim() && (
+                <span className="empdetail__hint">自由表記を表示します</span>
+              )}
+            </div>
+            <input
+              className="field__input field__input--xs careerEditor__body"
+              placeholder="経歴（例: マーケティングDiv ジョイン）"
+              value={r.body}
+              onChange={(e) => update(r.id, { body: e.target.value })}
+            />
+            <textarea
+              className="field__input field__textarea careerEditor__details"
+              rows={2}
+              placeholder="補足（1行に1項目。例: 自社EC）"
+              value={(r.details ?? []).join("\n")}
+              onChange={(e) => update(r.id, { details: e.target.value.split("\n") })}
+            />
+          </div>
+          <div className="careerEditor__actions">
+            <button className="btn btn--ghost btn--xs" onClick={() => move(idx, -1)} disabled={idx === 0} title="上へ">
+              ↑
+            </button>
+            <button
+              className="btn btn--ghost btn--xs"
+              onClick={() => move(idx, 1)}
+              disabled={idx === rows.length - 1}
+              title="下へ"
+            >
+              ↓
+            </button>
+            <button
+              className="btn btn--ghost btn--xs"
+              onClick={() =>
+                setDraft((d) => ({ ...d, careerRows: d.careerRows.filter((x) => x.id !== r.id) }))
+              }
+              title="削除"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       ))}
       <button
