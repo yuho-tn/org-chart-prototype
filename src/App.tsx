@@ -42,10 +42,15 @@ const SharedAnnouncementPage = lazy(() =>
     default: m.SharedAnnouncementPage,
   })),
 );
-// パルスサーベイ 回答画面（#/survey）。ログイン必須だが app シェルを持たない
-// chrome 無しルート — 認証ゲート後に単独描画する。
+// パルスサーベイ 回答画面（#/survey）。token 付き（#/survey?t=…）はログイン不要の
+// 本人専用ディープリンクなので認証ゲートより前で描画する。token 無しは従来どおり
+// ログイン必須・app シェルを持たない chrome 無しルート。
 const SurveyPage = lazy(() =>
   import("./components/pulse/SurveyPage").then((m) => ({ default: m.SurveyPage })),
+);
+// パルスサーベイ 振り返り（#/survey/history）。ログイン必須・chrome 無し（設計書 v3 §5-4）。
+const SurveyHistoryPage = lazy(() =>
+  import("./components/pulse/SurveyHistoryPage").then((m) => ({ default: m.SurveyHistoryPage })),
 );
 // 人件費管理（#/labor）。chrome 無し・ナビ導線なし・URL直打ち専用。
 // laborcost_admins 許可リスト（RLS＋RPCの二重防御）でページ側ゲート。
@@ -651,6 +656,17 @@ export default function App() {
     );
   }
 
+  // パルスサーベイ 回答画面（本人専用トークン付き）: Slack DM/メールのリンクから
+  // 1タップで開く経路なのでログイン不要。セッションの有無に関わらず動く必要が
+  // あるため、認証ゲート・viewOnly 分岐より前で処理する（設計書 v3 §5-1）。
+  if (route.name === "survey" && route.token) {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <SurveyPage token={route.token} />
+      </Suspense>
+    );
+  }
+
   if (viewOnly) {
     return (
       <Suspense fallback={<BootSplash />}>
@@ -670,6 +686,15 @@ export default function App() {
     return (
       <Suspense fallback={<BootSplash />}>
         <SurveyPage />
+      </Suspense>
+    );
+  }
+
+  // パルスサーベイ 振り返り: ログイン必須・app シェルを持たない chrome 無しルート。
+  if (route.name === "survey_history") {
+    return (
+      <Suspense fallback={<BootSplash />}>
+        <SurveyHistoryPage />
       </Suspense>
     );
   }

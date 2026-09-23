@@ -4,7 +4,7 @@ import "./comments.css";
 import { usePulseCommentsStore } from "../../store/usePulseCommentsStore";
 import { PulseSubnav } from "./PulseSubnav";
 import { usePulseToast, PulseToast } from "./usePulseToast";
-import { periodLabel, type PulseCommentRow } from "../../lib/pulse";
+import { periodLabel, type PulseCommentRow, type PulseCommentClassification } from "../../lib/pulse";
 import { buildCsv, downloadCsv } from "../../lib/pulseCsv";
 
 const DEPT_UNMASKED = "__unmasked__"; // 部署フィルタの選択値: n<5マスクで「—」表示されている行
@@ -16,7 +16,7 @@ const DEPT_UNMASKED = "__unmasked__"; // 部署フィルタの選択値: n<5マ�
  * 本文検索＋部署フィルタ（返却データから動的生成）で絞り込みできる。
  */
 export function PulseCommentsPage() {
-  const { loaded, loading, error, cycles, selectedPeriod, comments, load, selectPeriod } =
+  const { loaded, loading, error, cycles, selectedPeriod, comments, classifications, load, selectPeriod } =
     usePulseCommentsStore();
   const { toast, showToast, clearToast } = usePulseToast();
   const [q, setQ] = useState("");
@@ -135,7 +135,7 @@ export function PulseCommentsPage() {
           </p>
           <div className="pcmt__list">
             {filtered.map((c) => (
-              <CommentCard key={c.response_id} c={c} />
+              <CommentCard key={c.response_id} c={c} classification={classifications[c.response_id]} />
             ))}
           </div>
         </>
@@ -146,7 +146,13 @@ export function PulseCommentsPage() {
   );
 }
 
-function CommentCard({ c }: { c: PulseCommentRow }) {
+function CommentCard({
+  c,
+  classification,
+}: {
+  c: PulseCommentRow;
+  classification?: PulseCommentClassification;
+}) {
   const when = c.answered_at
     ? new Date(c.answered_at).toLocaleDateString("ja-JP", { dateStyle: "short" })
     : "";
@@ -161,6 +167,23 @@ function CommentCard({ c }: { c: PulseCommentRow }) {
         </span>
         {when && <span className="pcmt__when">{when}</span>}
       </div>
+      {classification && classification.categories.length > 0 && (
+        <div className="pcmt__tags">
+          {classification.categories.map((cat) => (
+            <span
+              key={cat}
+              className={"pcmt__tag" + (cat === classification.primary_category ? " is-primary" : "")}
+            >
+              {cat}
+            </span>
+          ))}
+          {classification.severity && (
+            <span className={`pcmt__tag pcmt__tag--sev-${classification.severity}`}>
+              重要度：{classification.severity === "high" ? "高" : classification.severity === "mid" ? "中" : "低"}
+            </span>
+          )}
+        </div>
+      )}
       <p className="pcmt__body">{c.comment}</p>
     </section>
   );

@@ -87,6 +87,23 @@
 .padm__notifyresult--error .padm__notifyresult-msg { color: var(--danger); }
 .padm__copybtn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
+/* サイクル行: 「文面と自分用URLを確認」（mode:preview・未送信） */
+.padm__preview { flex: 1 1 100%; display: flex; flex-direction: column; gap: 10px; }
+.padm__preview-summary { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
+.padm__preview-block { display: flex; flex-direction: column; gap: 4px; }
+.padm__preview-label { font-size: 11px; font-weight: 700; color: var(--text-subtle); letter-spacing: 0.02em; }
+.padm__preview-urlrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.padm__preview-url {
+  flex: 1; min-width: 0; font-size: 12px; color: var(--text-strong); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px;
+  overflow-wrap: anywhere;
+}
+.padm__preview-text {
+  margin: 0; font-size: 12.5px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+  white-space: pre-wrap; line-height: 1.6; font-family: inherit;
+}
+
 @media (max-width: 720px) {
   .padm__qrow, .padm__qadd { grid-template-columns: 1fr; }
   .padm__qmove { flex-direction: row; }
@@ -94,3 +111,30 @@
   .padm__step { min-width: 50%; border-right: none; border-bottom: 1px solid var(--border); }
   .padm__step:nth-child(2n) { border-right: none; }
 }
+
+/* ── P2: アラートルール（設計書 §10-1） ── */
+.padm__rulelist { display: flex; flex-direction: column; gap: 10px; }
+.padm__rulerow { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--primary); border-radius: var(--radius); padding: 12px 14px; }
+.padm__rulerow.is-off { border-left-color: var(--border); opacity: 0.68; }
+.padm__ruletop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.padm__ruletoggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.padm__ruletoggle input { width: 16px; height: 16px; cursor: pointer; }
+.padm__ruletitle { font-size: 13.5px; font-weight: 700; color: var(--text-strong); }
+.padm__rulesource { font-size: 10px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.03em; }
+.padm__rulecode { font-size: 11px; color: var(--text-subtle); font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; margin-left: auto; }
+.padm__ruledesc { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; }
+.padm__ruleparams { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-top: 10px; }
+.padm__ruleparam { min-width: 110px; }
+.padm__ruleparam input { width: 90px; }
+.padm__rulecheck { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer; white-space: nowrap; }
+.padm__rulecheck input { width: 15px; height: 15px; cursor: pointer; }
+
+/* ── P2: アラート通知（設計書 §10-6） ── */
+.padm__notifywarn { font-size: 12.5px; font-weight: 600; color: var(--warn); background: var(--warn-soft); border-radius: var(--radius); padding: 8px 12px; margin: 0 0 12px; }
+.padm__notifyrecipients { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.padm__chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--navy-800, var(--primary)); background: var(--navy-100, #dce6f5); border-radius: 999px; padding: 4px 6px 4px 12px; }
+.padm__chip button { appearance: none; border: none; background: rgba(0,0,0,0.08); color: inherit; border-radius: 999px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.padm__chip button:hover { background: rgba(0,0,0,0.18); }
+.padm__notifytoggles { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+.padm__digestactions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.padm__digestpreview { margin-top: 12px; max-height: 320px; overflow-y: auto; }
