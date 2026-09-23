@@ -6,6 +6,7 @@ import type {
   PulseAnswerInput,
   PulseMyResponse,
 } from "../lib/pulse";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * パルスサーベイ 回答画面（#/survey）用ストア。useMissionsStore の作法を踏襲
@@ -95,13 +96,26 @@ export const usePulseStore = create<PulseState>((set, get) => ({
     set({ loading: true, error: null });
 
     // 1. 受付中サイクル（最新の sent）。
-    const { data: cycleData, error: cycleErr } = await supabase
-      .from("pulse_cycles")
-      .select("*")
-      .eq("status", "sent")
-      .order("period", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    let cycleResult;
+    try {
+      cycleResult = await fetchWithRetry(() =>
+        supabase!
+          .from("pulse_cycles")
+          .select("*")
+          .eq("status", "sent")
+          .order("period", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      );
+    } catch (e) {
+      set({
+        loading: false,
+        loaded: true,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+    const { data: cycleData, error: cycleErr } = cycleResult;
     if (cycleErr) {
       set({
         loading: false,
@@ -117,15 +131,28 @@ export const usePulseStore = create<PulseState>((set, get) => ({
     }
 
     // 2. 設問（active・並び順）と 3. 自分の回答（プレフィル）を並列取得。
-    const [qRes, myRes] = await Promise.all([
-      supabase
-        .from("pulse_questions")
-        .select("*")
-        .eq("question_set_id", cycle.question_set_id)
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
-      supabase.rpc("pulse_my_response", { p_cycle_id: cycle.id }),
-    ]);
+    let qRes;
+    let myRes;
+    try {
+      [qRes, myRes] = await Promise.all([
+        fetchWithRetry(() =>
+          supabase!
+            .from("pulse_questions")
+            .select("*")
+            .eq("question_set_id", cycle.question_set_id)
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true }),
+        ),
+        fetchWithRetry(() => supabase!.rpc("pulse_my_response", { p_cycle_id: cycle.id })),
+      ]);
+    } catch (e) {
+      set({
+        loading: false,
+        loaded: true,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
 
     if (qRes.error) {
       set({
@@ -168,7 +195,14 @@ export const usePulseStore = create<PulseState>((set, get) => ({
   loadMyHistory: async () => {
     if (!supabase || get().historyLoading) return;
     set({ historyLoading: true });
-    const { data, error } = await supabase.rpc("pulse_my_history");
+    let result;
+    try {
+      result = await fetchWithRetry(() => supabase!.rpc("pulse_my_history"));
+    } catch {
+      set({ historyLoading: false, historyLoaded: true, history: [] });
+      return;
+    }
+    const { data, error } = result;
     set({
       historyLoading: false,
       historyLoaded: true,

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePulseCyclesStore } from "./usePulseCyclesStore";
+import { fetchWithRetry } from "../lib/query";
 import type {
   PulseQuestionSetRow,
   PulseQuestionRow,
@@ -111,15 +112,42 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
     }
     set({ loading: true, error: null });
 
-    const [setsRes, qRes, , statsRes] = await Promise.all([
-      supabase.from("pulse_question_sets").select("*").order("name").order("version", { ascending: false }),
-      supabase.from("pulse_questions").select("*").order("sort_order", { ascending: true }),
-      usePulseCyclesStore.getState().loadCycles(),
-      supabase.rpc("pulse_admin_cycle_stats"),
-    ]);
+    let setsRes;
+    let qRes;
+    let statsRes;
+    try {
+      [setsRes, qRes, , statsRes] = await Promise.all([
+        fetchWithRetry(() =>
+          supabase!
+            .from("pulse_question_sets")
+            .select("*")
+            .order("name")
+            .order("version", { ascending: false }),
+        ),
+        fetchWithRetry(() =>
+          supabase!.from("pulse_questions").select("*").order("sort_order", { ascending: true }),
+        ),
+        usePulseCyclesStore.getState().loadCycles(),
+        fetchWithRetry(() => supabase!.rpc("pulse_admin_cycle_stats")).catch(() => ({
+          data: null,
+          error: { message: "cycle stats unavailable" },
+        })),
+      ]);
+    } catch (e) {
+      set({
+        loading: false,
+        loaded: true,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
 
-    if (setsRes.error) {
-      set({ loading: false, loaded: true, error: guardMessage(setsRes.error.message) });
+    if (setsRes.error || qRes.error) {
+      set({
+        loading: false,
+        loaded: true,
+        error: guardMessage(setsRes.error?.message ?? qRes.error?.message),
+      });
       return;
     }
 

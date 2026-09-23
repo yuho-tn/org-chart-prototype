@@ -7,6 +7,7 @@ import type {
   PulsePersonAlertRow,
   PulseCareKind,
 } from "../lib/pulse";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * P4-①: パルス メンバー（個人別回答推移）用ストア（#/pulse/members）。
@@ -65,10 +66,20 @@ async function fetchCareData(
   employeeNumber: string,
 ): Promise<{ canCare: boolean; careLogs: PulseCareLogRow[]; personAlerts: PulsePersonAlertRow[] }> {
   if (!supabase) return { canCare: false, careLogs: [], personAlerts: [] };
-  const [logsRes, alertsRes] = await Promise.all([
-    supabase.rpc("pulse_list_care_logs", { p_employee_number: employeeNumber }),
-    supabase.rpc("pulse_person_alerts", { p_employee_number: employeeNumber }),
-  ]);
+  let logsRes;
+  let alertsRes;
+  try {
+    [logsRes, alertsRes] = await Promise.all([
+      fetchWithRetry(() =>
+        supabase!.rpc("pulse_list_care_logs", { p_employee_number: employeeNumber }),
+      ),
+      fetchWithRetry(() =>
+        supabase!.rpc("pulse_person_alerts", { p_employee_number: employeeNumber }),
+      ),
+    ]);
+  } catch {
+    return { canCare: false, careLogs: [], personAlerts: [] };
+  }
   if (logsRes.error) {
     // permission denied / migration 未適用 → 対応ログ UI 自体を出さない
     return { canCare: false, careLogs: [], personAlerts: [] };
@@ -101,8 +112,14 @@ export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
       set({ canViewRealname: false });
       return;
     }
-    const { data, error } = await supabase.rpc("pulse_can_view_realname");
-    set({ canViewRealname: !error && data === true });
+    try {
+      const { data, error } = await fetchWithRetry(() =>
+        supabase!.rpc("pulse_can_view_realname"),
+      );
+      set({ canViewRealname: !error && data === true });
+    } catch {
+      set({ canViewRealname: false });
+    }
   },
 
   loadMembers: async () => {
@@ -111,7 +128,18 @@ export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
       return;
     }
     set({ loading: true, error: null });
-    const { data, error } = await supabase.rpc("pulse_list_member_summaries");
+    let result;
+    try {
+      result = await fetchWithRetry(() => supabase!.rpc("pulse_list_member_summaries"));
+    } catch (e) {
+      set({
+        loading: false,
+        loaded: true,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+    const { data, error } = result;
     if (error) {
       set({
         loading: false,
@@ -145,10 +173,21 @@ export const usePulseMembersStore = create<PulseMembersState>((set, get) => ({
       careLogs: [],
       personAlerts: [],
     });
-    const [historyRes, care] = await Promise.all([
-      supabase.rpc("pulse_person_history", { p_employee_number: employeeNumber }),
-      fetchCareData(employeeNumber),
-    ]);
+    let historyRes;
+    let care;
+    try {
+      [historyRes, care] = await Promise.all([
+        fetchWithRetry(() =>
+          supabase!.rpc("pulse_person_history", { p_employee_number: employeeNumber }),
+        ),
+        fetchCareData(employeeNumber),
+      ]);
+    } catch (e) {
+      if (get().personEmp === employeeNumber) {
+        set({ personLoading: false, personError: e instanceof Error ? e.message : String(e) });
+      }
+      return;
+    }
     // A→B と素早く遷移して A のレスポンスが後着した場合は破棄（人物取り違え防止）
     if (get().personEmp !== employeeNumber) return;
     if (historyRes.error) {

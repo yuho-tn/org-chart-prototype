@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePulseCyclesStore } from "./usePulseCyclesStore";
 import type { PulseCycleRow, PulseAlertRow, PulseActionState } from "../lib/pulse";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * パルスサーベイ アラート一覧＋対応管理（#/pulse/alerts）用ストア。
@@ -55,7 +56,9 @@ function cycleIdOf(cycles: PulseCycleRow[], period: string | null): string | nul
 
 async function fetchAlerts(cycleId: string): Promise<PulseAlertRow[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase.rpc("pulse_list_alerts", { p_cycle_id: cycleId });
+  const { data, error } = await fetchWithRetry(() =>
+    supabase!.rpc("pulse_list_alerts", { p_cycle_id: cycleId }),
+  );
   if (error) throw error;
   return (data ?? []) as PulseAlertRow[];
 }
@@ -78,14 +81,30 @@ export const usePulseAlertsStore = create<PulseAlertsState>((set, get) => ({
     }
     set({ loading: true, error: null });
 
-    const [, empRes] = await Promise.all([
-      usePulseCyclesStore.getState().loadCycles(),
-      supabase
-        .from("employees")
-        .select("employee_number, display_name, full_name")
-        .is("left_at", null)
-        .order("employee_number", { ascending: true }),
-    ]);
+    let empRes;
+    try {
+      [, empRes] = await Promise.all([
+        usePulseCyclesStore.getState().loadCycles(),
+        fetchWithRetry(() =>
+          supabase!
+            .from("employees")
+            .select("employee_number, display_name, full_name")
+            .is("left_at", null)
+            .order("employee_number", { ascending: true }),
+        ),
+      ]);
+    } catch (e) {
+      set({
+        loading: false,
+        loaded: true,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+    if (empRes.error) {
+      set({ loading: false, loaded: true, error: empRes.error.message });
+      return;
+    }
 
     const cyclesState = usePulseCyclesStore.getState();
     if (cyclesState.error) {

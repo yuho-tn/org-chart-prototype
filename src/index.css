@@ -5742,7 +5742,7 @@ body.is-dragging .dept-card__add-child {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -5767,6 +5767,7 @@ body.is-dragging .dept-card__add-child {
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   overflow: hidden;
+  border-radius: 9px 9px 0 0;
 }
 
 .empcard__photo img {
@@ -7434,6 +7435,8 @@ body.is-dragging .dept-card__add-child {
   border: 1.5px solid var(--border);
   border-radius: 999px;
   background: #fff;
+  color: inherit;
+  text-decoration: none;
 }
 .mbtiBadge__avatar {
   border-radius: 50%;
@@ -7472,6 +7475,11 @@ body.is-dragging .dept-card__add-child {
   margin: 0;
   padding: 0;
 }
+.strengthBadgeWrap {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
 .strengthBadge {
   display: inline-flex;
   align-items: center;
@@ -7496,6 +7504,10 @@ body.is-dragging .dept-card__add-child {
 .strengthBadge__q {
   opacity: 0.7;
   font-size: 10px;
+  line-height: 1;
+  padding: 0;
+  color: #fff;
+  background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 50%;
   width: 14px;
@@ -7503,7 +7515,96 @@ body.is-dragging .dept-card__add-child {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: help;
+  cursor: pointer;
+}
+.strengthBadge__q:hover,
+.strengthBadge__q:focus-visible {
+  opacity: 1;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.strengthBadge--compact {
+  padding: 1px 5px 1px 6px;
+  gap: 4px;
+  font-size: 10px;
+}
+.strengthBadge--compact .strengthBadge__q {
+  width: 13px;
+  height: 13px;
+  font-size: 9px;
+}
+.strengthBadge__popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(320px, calc(100vw - 32px));
+  padding: 16px;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.2);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.7;
+  text-align: left;
+}
+.strengthBadge__popoverHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.strengthBadge__popoverName,
+.strengthBadge__popoverEnglish,
+.strengthBadge__popoverBody,
+.strengthBadge__popoverSource {
+  display: block;
+}
+.strengthBadge__popoverName {
+  color: #111827;
+  font-size: 16px;
+  line-height: 1.3;
+}
+.strengthBadge__popoverEnglish {
+  margin-top: 2px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.strengthBadge__popoverDomain {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.strengthBadge__popoverDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.strengthBadge__popoverBody {
+  color: #1f2937;
+}
+.strengthBadge__popoverSource {
+  padding-top: 10px;
+  color: #4b5563;
+  border-top: 1px solid #e5e7eb;
+  font-size: 11px;
+}
+.strengthBadge__popoverSource a {
+  margin-left: 6px;
+  color: #1d4ed8;
+  font-weight: 700;
+  text-decoration: underline;
 }
 
 /* ── 自由プロフィール（ブロック表示） ── */
@@ -7751,6 +7852,7 @@ body.is-dragging .dept-card__add-child {
   border-radius: 999px;
   border: 1.5px solid var(--border);
   color: var(--text);
+  text-decoration: none;
 }
 .empcard__strength {
   font-size: 10px;
@@ -7768,6 +7870,16 @@ body.is-dragging .dept-card__add-child {
   .empdetail__careerRow {
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+  .strengthBadge__popover {
+    position: fixed;
+    top: auto;
+    right: 16px;
+    bottom: 24px;
+    left: 16px;
+    width: auto;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
   }
 }
 

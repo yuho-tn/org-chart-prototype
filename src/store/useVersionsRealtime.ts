@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { OrgNode } from "../lib/types";
 import { useOrgStore } from "./useOrgStore";
 import { useVersionsStore } from "./useVersionsStore";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * Collaborative sync engine (v2, 2026-07 rewrite).
@@ -78,11 +79,19 @@ async function fetchVersionHead(
   versionId: string,
 ): Promise<{ id: string; name: string; updated_at: string | null } | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from("org_versions")
-    .select("id, name, updated_at")
-    .eq("id", versionId)
-    .maybeSingle();
+  let result;
+  try {
+    result = await fetchWithRetry(() =>
+      supabase!
+        .from("org_versions")
+        .select("id, name, updated_at")
+        .eq("id", versionId)
+        .maybeSingle(),
+    );
+  } catch {
+    return null;
+  }
+  const { data, error } = result;
   if (error || !data) return null;
   return data as { id: string; name: string; updated_at: string | null };
 }

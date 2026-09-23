@@ -80,7 +80,7 @@ export function normalizeMbti(raw: string | null | undefined): string | null {
 
 /** 16personalities の該当タイプページへの外部リンク（日本語）。 */
 export function mbtiExternalUrl(code: string): string {
-  return `https://www.16personalities.com/ja/${code.toLowerCase()}-型の性格`;
+  return `https://www.16personalities.com/ja/${code.toLowerCase()}型の性格`;
 }
 
 /**

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePulseCyclesStore } from "./usePulseCyclesStore";
 import type { PulseCycleRow, PulseAggregateRow, PulseAlertRow } from "../lib/pulse";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * パルスサーベイ 管理ダッシュボード（#/pulse）用ストア。
@@ -105,32 +106,44 @@ type PulseDashState = {
 
 async function fetchSummary(period: string): Promise<PulseSummary | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from("pulse_summaries")
-    .select("summary, model, created_at, meta")
-    .eq("period", period)
-    .maybeSingle();
-  if (error) return null; // 未生成・テーブル未適用は静かに null
-  return (data as PulseSummary) ?? null;
+  try {
+    const { data, error } = await fetchWithRetry(() =>
+      supabase!
+        .from("pulse_summaries")
+        .select("summary, model, created_at, meta")
+        .eq("period", period)
+        .maybeSingle(),
+    );
+    if (error) return null; // 未生成・テーブル未適用は静かに null
+    return (data as PulseSummary) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchAggregates(period: string): Promise<PulseAggregateRow[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase
-    .from("pulse_monthly_aggregates")
-    .select("*")
-    .eq("period", period);
+  const { data, error } = await fetchWithRetry(() =>
+    supabase!.from("pulse_monthly_aggregates").select("*").eq("period", period),
+  );
   if (error) throw error;
   return (data ?? []) as PulseAggregateRow[];
 }
 
 async function fetchTrend(): Promise<PulseTrendPoint[]> {
   if (!supabase) return [];
-  const { data } = await supabase
-    .from("pulse_monthly_aggregates")
-    .select("period, metrics")
-    .eq("dimension", "total")
-    .order("period", { ascending: true });
+  let data;
+  try {
+    ({ data } = await fetchWithRetry(() =>
+      supabase!
+        .from("pulse_monthly_aggregates")
+        .select("period, metrics")
+        .eq("dimension", "total")
+        .order("period", { ascending: true }),
+    ));
+  } catch {
+    return [];
+  }
   return ((data ?? []) as {
     period: string;
     metrics: { avg_overall?: number; enps?: number; response_rate?: number | null; n?: number };
@@ -146,7 +159,13 @@ async function fetchTrend(): Promise<PulseTrendPoint[]> {
 /** ヒーローバー用の回答数/対象数。権限が無ければ空オブジェクト（表示は「—」）。 */
 async function fetchCycleStats(): Promise<Record<string, PulseCycleStat>> {
   if (!supabase) return {};
-  const { data, error } = await supabase.rpc("pulse_admin_cycle_stats");
+  let result;
+  try {
+    result = await fetchWithRetry(() => supabase!.rpc("pulse_admin_cycle_stats"));
+  } catch {
+    return {};
+  }
+  const { data, error } = result;
   if (error) return {};
   const map: Record<string, PulseCycleStat> = {};
   for (const s of (data ?? []) as PulseCycleStat[]) map[s.cycle_id] = s;
@@ -156,7 +175,15 @@ async function fetchCycleStats(): Promise<Record<string, PulseCycleStat>> {
 /** 未対応（status='open'）アラート数。権限が無ければ null。 */
 async function fetchOpenAlerts(cycleId: string): Promise<number | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.rpc("pulse_list_alerts", { p_cycle_id: cycleId });
+  let result;
+  try {
+    result = await fetchWithRetry(() =>
+      supabase!.rpc("pulse_list_alerts", { p_cycle_id: cycleId }),
+    );
+  } catch {
+    return null;
+  }
+  const { data, error } = result;
   if (error) return null;
   return ((data ?? []) as PulseAlertRow[]).filter((a) => a.status === "open").length;
 }
@@ -164,7 +191,15 @@ async function fetchOpenAlerts(cycleId: string): Promise<number | null> {
 /** status='active' の設問セット数。権限が無い/未適用なら null（＝判定不能）。 */
 async function fetchActiveSetCount(): Promise<number | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("pulse_question_sets").select("id").eq("status", "active");
+  let result;
+  try {
+    result = await fetchWithRetry(() =>
+      supabase!.from("pulse_question_sets").select("id").eq("status", "active"),
+    );
+  } catch {
+    return null;
+  }
+  const { data, error } = result;
   if (error) return null;
   return (data ?? []).length;
 }

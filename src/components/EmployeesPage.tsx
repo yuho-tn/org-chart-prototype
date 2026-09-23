@@ -8,10 +8,11 @@ import { AiLevelBadge } from "./ailevel/AiLevelBadge";
 import { useUiStore } from "../store/useUiStore";
 import { employeeName, type EmployeeRow } from "../lib/supabase";
 import { avatarPathOf } from "../lib/profile";
-import { normalizeMbti, MBTI_BY_CODE, MBTI_GROUP_COLOR } from "../lib/mbti";
-import { STRENGTH_BY_ID, STRENGTH_DOMAIN_COLOR, normalizeStrengthIds } from "../lib/strengths";
+import { normalizeMbti, MBTI_BY_CODE, MBTI_GROUP_COLOR, mbtiExternalUrl } from "../lib/mbti";
+import { STRENGTH_BY_ID, normalizeStrengthIds } from "../lib/strengths";
 import { useRevalidateOnFocus } from "../lib/useRevalidateOnFocus";
 import type { ImportSummary } from "../store/useEmployeesStore";
+import { StrengthBadge } from "./StrengthBadge";
 
 const PAGE_SIZE = 50;
 
@@ -629,11 +630,20 @@ export function EmployeesPage() {
                 const name = employeeName(emp);
                 const isInactive = !!emp.left_at && emp.left_at <= today;
                 return (
-                  <button
+                  <div
                     key={emp.employee_number}
                     className={`empcard ${isInactive ? "is-inactive" : ""}`}
                     onClick={() => openDetail(emp)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openDetail(emp);
+                      }
+                    }}
+                    role="link"
+                    tabIndex={0}
                     title="クリックで詳細ページへ"
+                    aria-label={`${name}の詳細ページへ`}
                   >
                     <span className="empcard__photo" aria-hidden>
                       {avatarUrl ? (
@@ -661,26 +671,25 @@ export function EmployeesPage() {
                           <span className="empcard__tags">
                             {aiLevel && <AiLevelBadge level={aiLevel.level} size="sm" />}
                             {mbti && (
-                              <span
+                              <a
                                 className="empcard__mbti"
                                 style={{ borderColor: MBTI_GROUP_COLOR[MBTI_BY_CODE[mbti].group] }}
+                                href={mbtiExternalUrl(mbti)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={`16personalities で ${mbti} の詳細を見る`}
+                                onClick={(event) => event.stopPropagation()}
+                                onKeyDown={(event) => event.stopPropagation()}
                               >
-                                {mbti}
-                              </span>
+                                {mbti} <span aria-hidden="true">↗</span>
+                              </a>
                             )}
-                            {topQ && (
-                              <span
-                                className="empcard__strength"
-                                style={{ background: STRENGTH_DOMAIN_COLOR[topQ.domain] }}
-                              >
-                                {topQ.name_ja}
-                              </span>
-                            )}
+                            {topQ && <StrengthBadge quality={topQ} compact />}
                           </span>
                         );
                       })()}
                     </span>
-                  </button>
+                  </div>
                 );
               })}
           </div>

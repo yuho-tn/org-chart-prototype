@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { supabase } from "../lib/supabase";
 import type { AnnouncementPayload } from "../lib/announcement";
+import { fetchWithRetry } from "../lib/query";
 
 export type AnnouncementRow = {
   id: string;
@@ -64,11 +65,20 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
   refresh: async () => {
     if (!supabase) return;
     set({ loading: true, error: null });
-    const { data, error } = await supabase
-      .from("hr_announcements")
-      .select("*")
-      .order("period", { ascending: false })
-      .order("created_at", { ascending: false });
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!
+          .from("hr_announcements")
+          .select("*")
+          .order("period", { ascending: false })
+          .order("created_at", { ascending: false }),
+      );
+    } catch (e) {
+      set({ loading: false, error: e instanceof Error ? e.message : String(e), list: [] });
+      return;
+    }
+    const { data, error } = result;
     if (error) {
       const isMissing = /(relation|table).*hr_announcements.*(does not exist|in the schema cache)/i.test(error.message);
       set({
@@ -157,11 +167,15 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
       set({ error: `削除に失敗しました: ${error.message}` });
       return false;
     }
-    const verify = await supabase
-      .from("hr_announcements")
-      .select("id")
-      .eq("id", id)
-      .maybeSingle();
+    let verify;
+    try {
+      verify = await fetchWithRetry(() =>
+        supabase!.from("hr_announcements").select("id").eq("id", id).maybeSingle(),
+      );
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return false;
+    }
     if (verify.data) {
       set({
         error:
@@ -178,11 +192,16 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
     // First check the in-memory list.
     const cached = get().list.find((r) => r.id === id);
     if (cached) return cached;
-    const { data, error } = await supabase
-      .from("hr_announcements")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!.from("hr_announcements").select("*").eq("id", id).maybeSingle(),
+      );
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return null;
+    }
+    const { data, error } = result;
     if (error) {
       set({ error: error.message });
       return null;
@@ -248,9 +267,16 @@ export const useAnnouncementsStore = create<AnnouncementsState>((set, get) => ({
 
   getBySharedToken: async (token) => {
     if (!supabase) return null;
-    const { data, error } = await supabase.rpc("announcement_by_share_token", {
-      p_token: token,
-    });
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!.rpc("announcement_by_share_token", { p_token: token }),
+      );
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return null;
+    }
+    const { data, error } = result;
     if (error) {
       set({ error: error.message });
       return null;

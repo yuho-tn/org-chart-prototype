@@ -41,6 +41,7 @@ import {
 import { useAiLevelsStore } from "../store/useAiLevelsStore";
 import { AI_LEVEL_KIND_LABEL, currentLevelOfGrants } from "../lib/aiLevels";
 import { AiLevelBadge } from "./ailevel/AiLevelBadge";
+import { StrengthBadge } from "./StrengthBadge";
 
 /**
  * 従業員詳細ページ（route: #/employees/:num）。P3 でカルチャー層を刷新。
@@ -675,7 +676,15 @@ function MbtiBadge({ code }: { code: string }) {
   if (!t) return <span className="emppage__chip">{code}</span>;
   const color = MBTI_GROUP_COLOR[t.group];
   return (
-    <span className="mbtiBadge" style={{ borderColor: color }} title={t.blurb}>
+    <a
+      className="mbtiBadge"
+      style={{ borderColor: color }}
+      href={mbtiExternalUrl(code)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`16personalities で ${code} の詳細を見る`}
+      onClick={(event) => event.stopPropagation()}
+    >
       <img className="mbtiBadge__avatar" src={mbtiAvatarDataUri(code)} alt="" width={28} height={28} />
       <span className="mbtiBadge__text">
         <span className="mbtiBadge__code" style={{ color }}>
@@ -683,17 +692,8 @@ function MbtiBadge({ code }: { code: string }) {
         </span>
         <span className="mbtiBadge__nick">{t.nickname}</span>
       </span>
-      <a
-        className="mbtiBadge__link"
-        href={mbtiExternalUrl(code)}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="16personalities で詳しく見る"
-        onClick={(e) => e.stopPropagation()}
-      >
-        ↗
-      </a>
-    </span>
+      <span className="mbtiBadge__link" aria-hidden="true">↗</span>
+    </a>
   );
 }
 
@@ -703,21 +703,7 @@ function StrengthList({ ids }: { ids: string[] }) {
       {ids.map((id, i) => {
         const q = STRENGTH_BY_ID[id];
         if (!q) return null;
-        const color = STRENGTH_DOMAIN_COLOR[q.domain];
-        return (
-          <span
-            key={id}
-            className="strengthBadge"
-            style={{ background: color }}
-            title={`${STRENGTH_DOMAIN_LABEL[q.domain]}：${q.description}`}
-          >
-            <span className="strengthBadge__rank">{i + 1}</span>
-            <span className="strengthBadge__name">{q.name_ja}</span>
-            <span className="strengthBadge__q" aria-hidden>
-              ?
-            </span>
-          </span>
-        );
+        return <StrengthBadge key={id} quality={q} rank={i + 1} />;
       })}
     </div>
   );

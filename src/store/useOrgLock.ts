@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { useAuthStore } from "./useAuthStore";
 import { useVersionsRealtime } from "./useVersionsRealtime";
 import { useOrgStore } from "./useOrgStore";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * P2: 組織図ファイルの編集ロック（要件定義書 §6-1）。
@@ -192,11 +193,19 @@ export const useOrgLock = create<OrgLockState>((set, get) => ({
   refreshState: async () => {
     const { versionId } = get();
     if (!versionId || !supabase) return;
-    const { data, error } = await supabase
-      .from("org_edit_locks")
-      .select("locked_by_email, heartbeat_at")
-      .eq("version_id", versionId)
-      .maybeSingle();
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!
+          .from("org_edit_locks")
+          .select("locked_by_email, heartbeat_at")
+          .eq("version_id", versionId)
+          .maybeSingle(),
+      );
+    } catch {
+      return;
+    }
+    const { data, error } = result;
     if (get().versionId !== versionId) return; // 切替済み
     if (error) return;
     if (!data) {

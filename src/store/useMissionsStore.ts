@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { PeriodCode, PeriodRow } from "../lib/supabase";
 import { useAuthStore } from "./useAuthStore";
+import { fetchWithRetry } from "../lib/query";
 import {
   normalizeDefinition,
   answerKey,
@@ -146,10 +147,23 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
       return;
     }
     set({ loading: true, error: null });
-    const [tRes, sRes] = await Promise.all([
-      supabase.from("mission_templates").select("*").order("created_at", { ascending: false }),
-      supabase.from("mission_sheets").select("*"),
-    ]);
+    let tRes;
+    let sRes;
+    try {
+      [tRes, sRes] = await Promise.all([
+        fetchWithRetry(() =>
+          supabase!.from("mission_templates").select("*").order("created_at", { ascending: false }),
+        ),
+        fetchWithRetry(() => supabase!.from("mission_sheets").select("*")),
+      ]);
+    } catch (e) {
+      set({
+        loading: false,
+        loaded: true,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
     if (tRes.error || sRes.error) {
       const err = tRes.error ?? sRes.error;
       set({
@@ -173,10 +187,16 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
 
   refreshTemplates: async () => {
     if (!supabase) return;
-    const { data, error } = await supabase
-      .from("mission_templates")
-      .select("*")
-      .order("created_at", { ascending: false });
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!.from("mission_templates").select("*").order("created_at", { ascending: false }),
+      );
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    const { data, error } = result;
     if (error) {
       set({ error: missingTableError(error.message) ? MISSING_MSG : error.message });
       return;
@@ -186,7 +206,14 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
 
   refreshSheets: async () => {
     if (!supabase) return;
-    const { data, error } = await supabase.from("mission_sheets").select("*");
+    let result;
+    try {
+      result = await fetchWithRetry(() => supabase!.from("mission_sheets").select("*"));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    const { data, error } = result;
     if (error) {
       set({ error: missingTableError(error.message) ? MISSING_MSG : error.message });
       return;
@@ -200,11 +227,14 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
     // その場合は PeriodCode の既知一覧からフォールバック生成する。
     let rows: PeriodRow[] = [];
     if (supabase) {
-      const { data, error } = await supabase
-        .from("periods")
-        .select("*")
-        .order("sort_order");
-      if (!error && data && data.length > 0) rows = data as PeriodRow[];
+      try {
+        const { data, error } = await fetchWithRetry(() =>
+          supabase!.from("periods").select("*").order("sort_order"),
+        );
+        if (!error && data && data.length > 0) rows = data as PeriodRow[];
+      } catch {
+        // periods を読めない場合も既知コードのフォールバックで画面を成立させる。
+      }
     }
     if (rows.length === 0) {
       rows = FALLBACK_PERIOD_CODES.map((code, i) => ({
@@ -300,15 +330,28 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
 
   fetchSheetDetail: async (sheetId) => {
     if (!supabase) return { ok: false, reason: "Supabase未設定です" };
-    const [shRes, aRes, eRes] = await Promise.all([
-      supabase.from("mission_sheets").select("*").eq("id", sheetId).maybeSingle(),
-      supabase.from("mission_answers").select("*").eq("sheet_id", sheetId),
-      supabase
-        .from("mission_stage_events")
-        .select("*")
-        .eq("sheet_id", sheetId)
-        .order("created_at", { ascending: true }),
-    ]);
+    let shRes;
+    let aRes;
+    let eRes;
+    try {
+      [shRes, aRes, eRes] = await Promise.all([
+        fetchWithRetry(() =>
+          supabase!.from("mission_sheets").select("*").eq("id", sheetId).maybeSingle(),
+        ),
+        fetchWithRetry(() =>
+          supabase!.from("mission_answers").select("*").eq("sheet_id", sheetId),
+        ),
+        fetchWithRetry(() =>
+          supabase!
+            .from("mission_stage_events")
+            .select("*")
+            .eq("sheet_id", sheetId)
+            .order("created_at", { ascending: true }),
+        ),
+      ]);
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    }
     if (shRes.error) {
       return {
         ok: false,
@@ -335,11 +378,19 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
     }));
     // 一覧未ロードで直接シートURLに来た場合に備え、テンプレを補完 fetch
     if (!get().templates.some((t) => t.id === sheet.template_id)) {
-      const { data: tData } = await supabase
-        .from("mission_templates")
-        .select("*")
-        .eq("id", sheet.template_id)
-        .maybeSingle();
+      let templateResult;
+      try {
+        templateResult = await fetchWithRetry(() =>
+          supabase!
+            .from("mission_templates")
+            .select("*")
+            .eq("id", sheet.template_id)
+            .maybeSingle(),
+        );
+      } catch (e) {
+        return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+      }
+      const tData = templateResult.data;
       if (tData) {
         const tpl = normalizeTemplate(tData as MissionTemplateRow);
         set((s) => ({

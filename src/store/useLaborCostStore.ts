@@ -17,6 +17,7 @@ import type {
   TermCode,
 } from "../lib/laborCost";
 import { amountKey, assignKey } from "../lib/laborCost";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * 人件費管理（#/labor）ストア。
@@ -241,8 +242,12 @@ export const useLaborCostStore = create<State>((set, get) => ({
 
   checkAccess: async () => {
     if (!supabase) { set({ accessChecked: true, canAccess: false }); return; }
-    const { data, error } = await supabase.rpc("laborcost_can_access");
-    set({ accessChecked: true, canAccess: !error && data === true });
+    try {
+      const { data, error } = await fetchWithRetry(() => supabase!.rpc("laborcost_can_access"));
+      set({ accessChecked: true, canAccess: !error && data === true });
+    } catch {
+      set({ accessChecked: true, canAccess: false });
+    }
   },
 
   load: async () => {
@@ -258,9 +263,11 @@ export const useLaborCostStore = create<State>((set, get) => ({
         const PAGE = 1000;
         const all: T[] = [];
         for (let from = 0; ; from += PAGE) {
-          let q = supabase!.from(table).select("*");
-          for (const c of orderCols) q = q.order(c);
-          const { data, error } = await q.range(from, from + PAGE - 1);
+          const { data, error } = await fetchWithRetry(() => {
+            let q = supabase!.from(table).select("*");
+            for (const c of orderCols) q = q.order(c);
+            return q.range(from, from + PAGE - 1);
+          });
           if (error) return { data: all, error };
           all.push(...((data ?? []) as T[]));
           if (!data || data.length < PAGE) break;
@@ -270,15 +277,15 @@ export const useLaborCostStore = create<State>((set, get) => ({
 
       const [terms, people, assigns, amounts, deptMap, tms, targets, settings, tmTargets] =
         await Promise.all([
-          supabase.from("labor_terms").select("*").order("sort_order"),
-          supabase.from("labor_people").select("*").order("sort_order"),
+          fetchWithRetry(() => supabase!.from("labor_terms").select("*").order("sort_order")),
+          fetchWithRetry(() => supabase!.from("labor_people").select("*").order("sort_order")),
           fetchAll<LaborAssignmentRow>("labor_assignments", ["person_id", "term", "half", "quarter"]),
           fetchAll<LaborAmountRow>("labor_amounts", ["person_id", "term", "slot"]),
-          supabase.from("labor_dept_map").select("*"),
-          supabase.from("labor_tms").select("*").order("sort_order"),
-          supabase.from("labor_front_targets").select("*"),
-          supabase.from("labor_settings").select("*"),
-          supabase.from("labor_tm_targets").select("*"),
+          fetchWithRetry(() => supabase!.from("labor_dept_map").select("*")),
+          fetchWithRetry(() => supabase!.from("labor_tms").select("*").order("sort_order")),
+          fetchWithRetry(() => supabase!.from("labor_front_targets").select("*")),
+          fetchWithRetry(() => supabase!.from("labor_settings").select("*")),
+          fetchWithRetry(() => supabase!.from("labor_tm_targets").select("*")),
         ]);
       const firstErr =
         terms.error || people.error || assigns.error || amounts.error ||

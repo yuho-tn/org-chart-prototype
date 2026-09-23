@@ -7,6 +7,7 @@ import {
 } from "../lib/supabase";
 import type { OrgNode } from "../lib/types";
 import { useVersionsRealtime } from "./useVersionsRealtime";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * Progressive column sets used by every "select org_versions" query. We try
@@ -131,16 +132,23 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     set({ loading: true, error: null });
     let tier = 0;
     let resp: { data: unknown; error: { message: string } | null } | null = null;
-    while (tier < SELECT_TIERS.length) {
-      resp = (await supabase
-        .from("org_versions")
-        .select(SELECT_TIERS[tier])
-        .order("created_at", { ascending: false })
-        .limit(100)) as { data: unknown; error: { message: string } | null };
-      if (!resp.error) break;
-      const next = pickNextTier(tier, resp.error.message);
-      if (next === null) break;
-      tier = next;
+    try {
+      while (tier < SELECT_TIERS.length) {
+        resp = (await fetchWithRetry(() =>
+          supabase!
+            .from("org_versions")
+            .select(SELECT_TIERS[tier])
+            .order("created_at", { ascending: false })
+            .limit(100),
+        )) as { data: unknown; error: { message: string } | null };
+        if (!resp.error) break;
+        const next = pickNextTier(tier, resp.error.message);
+        if (next === null) break;
+        tier = next;
+      }
+    } catch (e) {
+      set({ loading: false, error: e instanceof Error ? e.message : String(e) });
+      return;
     }
     if (!resp || resp.error) {
       set({ loading: false, error: resp?.error?.message ?? "読み込みに失敗しました" });
@@ -262,16 +270,23 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
     // 保存後の行を tier フォールバック付きで再取得し、ローカルキャッシュ更新。
     let tier = 0;
     let resp: { data: unknown; error: { message: string } | null } | null = null;
-    while (tier < SELECT_TIERS.length) {
-      resp = (await supabase
-        .from("org_versions")
-        .select(SELECT_TIERS[tier])
-        .eq("id", id)
-        .maybeSingle()) as { data: unknown; error: { message: string } | null };
-      if (!resp.error) break;
-      const next = pickNextTier(tier, resp.error.message);
-      if (next === null) break;
-      tier = next;
+    try {
+      while (tier < SELECT_TIERS.length) {
+        resp = (await fetchWithRetry(() =>
+          supabase!
+            .from("org_versions")
+            .select(SELECT_TIERS[tier])
+            .eq("id", id)
+            .maybeSingle(),
+        )) as { data: unknown; error: { message: string } | null };
+        if (!resp.error) break;
+        const next = pickNextTier(tier, resp.error.message);
+        if (next === null) break;
+        tier = next;
+      }
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return { ok: false, reason: "read_failed" };
     }
     const fetched = (resp?.data as VersionRow | null) ?? null;
     const existing = get().versions.find((v) => v.id === id);
@@ -309,11 +324,20 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
 
   duplicate: async (id, nameOverride, author, created_by_email) => {
     if (!supabase) return null;
-    const { data: src, error: srcErr } = await supabase
-      .from("org_versions")
-      .select("snapshot, note")
-      .eq("id", id)
-      .maybeSingle();
+    let sourceResult;
+    try {
+      sourceResult = await fetchWithRetry(() =>
+        supabase!
+          .from("org_versions")
+          .select("snapshot, note")
+          .eq("id", id)
+          .maybeSingle(),
+      );
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return null;
+    }
+    const { data: src, error: srcErr } = sourceResult;
     if (srcErr || !src) {
       set({ error: srcErr?.message ?? "複製元の取得に失敗しました" });
       return null;
@@ -470,18 +494,20 @@ export const useVersionsStore = create<VersionsState>((set, get) => ({
 
   getSnapshot: async (id) => {
     if (!supabase) return null;
-    let resp = await supabase
-      .from("org_versions")
-      .select("snapshot, rev")
-      .eq("id", id)
-      .maybeSingle();
-    if (resp.error && EDITING_COLS_RE.test(resp.error.message)) {
-      // 0027 未適用: rev 抜きで再試行。
-      resp = (await supabase
-        .from("org_versions")
-        .select("snapshot")
-        .eq("id", id)
-        .maybeSingle()) as typeof resp;
+    let resp;
+    try {
+      resp = await fetchWithRetry(() =>
+        supabase!.from("org_versions").select("snapshot, rev").eq("id", id).maybeSingle(),
+      );
+      if (resp.error && EDITING_COLS_RE.test(resp.error.message)) {
+        // 0027 未適用: rev 抜きで再試行。
+        resp = (await fetchWithRetry(() =>
+          supabase!.from("org_versions").select("snapshot").eq("id", id).maybeSingle(),
+        )) as typeof resp;
+      }
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return null;
     }
     if (resp.error) {
       set({ error: resp.error.message });

@@ -10,6 +10,7 @@ import type {
   CareerTrack,
   EvaluationGrade,
 } from "../lib/supabase";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * Single store for the entire Payroll system: 等級マスター / 期マスター /
@@ -104,11 +105,23 @@ export const usePayrollStore = create<State>((set, get) => ({
       return;
     }
     set({ loading: true, error: null });
-    const [gRes, pRes, rRes] = await Promise.all([
-      supabase.from("grades").select("*").order("sort_order"),
-      supabase.from("periods").select("*").order("sort_order"),
-      supabase.from("salary_records").select("*"),
-    ]);
+    let gRes;
+    let pRes;
+    let rRes;
+    try {
+      [gRes, pRes, rRes] = await Promise.all([
+        fetchWithRetry(() => supabase!.from("grades").select("*").order("sort_order")),
+        fetchWithRetry(() => supabase!.from("periods").select("*").order("sort_order")),
+        fetchWithRetry(() => supabase!.from("salary_records").select("*")),
+      ]);
+    } catch (e) {
+      set({
+        loading: false,
+        loaded: true,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
     if (gRes.error || pRes.error || rRes.error) {
       const err = gRes.error ?? pRes.error ?? rRes.error;
       const isPermission = err && /permission denied|row-level security/i.test(err.message);
@@ -138,11 +151,20 @@ export const usePayrollStore = create<State>((set, get) => ({
   refreshAuditLog: async (limit = 200) => {
     if (!supabase) return;
     set({ auditLoading: true, auditError: null });
-    const { data, error } = await supabase
-      .from("salary_audit_log")
-      .select("*")
-      .order("changed_at", { ascending: false })
-      .limit(limit);
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!
+          .from("salary_audit_log")
+          .select("*")
+          .order("changed_at", { ascending: false })
+          .limit(limit),
+      );
+    } catch (e) {
+      set({ auditLoading: false, auditError: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    const { data, error } = result;
     if (error) {
       set({ auditLoading: false, auditError: error.message });
       return;

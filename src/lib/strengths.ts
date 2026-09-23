@@ -32,55 +32,67 @@ export type StrengthQuality = {
   id: string;
   /** 日本語資質名。 */
   name_ja: string;
+  /** 英語資質名。 */
+  name_en: string;
   domain: StrengthDomain;
   /** 自前の短い説明（差し替え可能）。 */
   description: string;
+  /** 公式（Gallup）由来の詳細説明。未設定なら description にフォールバックする。 */
+  detail?: string;
+  /** detail の出典表記（例: "Gallup CliftonStrengths"）。 */
+  detail_source?: string;
+  /** 出典 URL。 */
+  detail_url?: string;
 };
 
 /** CliftonStrengths 34資質（4領域）。順序は領域→一般的な並び。 */
 export const STRENGTHS: StrengthQuality[] = [
   // ── 実行力（Executing）9資質 ──
-  { id: "achiever", name_ja: "達成欲", domain: "executing", description: "常に何かを成し遂げたいという強い欲求を持ち、日々の達成感を原動力にする。" },
-  { id: "arranger", name_ja: "アレンジ", domain: "executing", description: "人やリソースを最適に組み合わせ、変化に応じて柔軟に段取りを組み直せる。" },
-  { id: "belief", name_ja: "信念", domain: "executing", description: "揺るがない核となる価値観を持ち、それが人生と仕事に一貫した意味を与える。" },
-  { id: "consistency", name_ja: "公平性", domain: "executing", description: "誰もが平等に扱われるべきと考え、明確なルールで一貫性を保つ。" },
-  { id: "deliberative", name_ja: "慎重さ", domain: "executing", description: "決断の前にリスクを丁寧に見極め、慎重に選択を積み重ねる。" },
-  { id: "discipline", name_ja: "規律性", domain: "executing", description: "秩序と構造を好み、計画・ルーティンで物事を確実に前へ進める。" },
-  { id: "focus", name_ja: "目標志向", domain: "executing", description: "目的地を定め、そこに向けて優先順位を絞り込み無駄なく進む。" },
-  { id: "responsibility", name_ja: "責任感", domain: "executing", description: "引き受けたことは必ずやり遂げ、約束と誠実さを何より重んじる。" },
-  { id: "restorative", name_ja: "回復志向", domain: "executing", description: "問題を見つけ出し、原因を突き止めて解決することにやりがいを感じる。" },
+  { id: "achiever", name_ja: "達成欲", name_en: "Achiever", domain: "executing", description: "常に何かを成し遂げたいという強い欲求を持ち、日々の達成感を原動力にする。" },
+  { id: "arranger", name_ja: "アレンジ", name_en: "Arranger", domain: "executing", description: "人やリソースを最適に組み合わせ、変化に応じて柔軟に段取りを組み直せる。" },
+  { id: "belief", name_ja: "信念", name_en: "Belief", domain: "executing", description: "揺るがない核となる価値観を持ち、それが人生と仕事に一貫した意味を与える。" },
+  { id: "consistency", name_ja: "公平性", name_en: "Consistency", domain: "executing", description: "誰もが平等に扱われるべきと考え、明確なルールで一貫性を保つ。" },
+  { id: "deliberative", name_ja: "慎重さ", name_en: "Deliberative", domain: "executing", description: "決断の前にリスクを丁寧に見極め、慎重に選択を積み重ねる。" },
+  { id: "discipline", name_ja: "規律性", name_en: "Discipline", domain: "executing", description: "秩序と構造を好み、計画・ルーティンで物事を確実に前へ進める。" },
+  { id: "focus", name_ja: "目標志向", name_en: "Focus", domain: "executing", description: "目的地を定め、そこに向けて優先順位を絞り込み無駄なく進む。" },
+  { id: "responsibility", name_ja: "責任感", name_en: "Responsibility", domain: "executing", description: "引き受けたことは必ずやり遂げ、約束と誠実さを何より重んじる。" },
+  { id: "restorative", name_ja: "回復志向", name_en: "Restorative", domain: "executing", description: "問題を見つけ出し、原因を突き止めて解決することにやりがいを感じる。" },
 
   // ── 影響力（Influencing）8資質 ──
-  { id: "activator", name_ja: "活発性", domain: "influencing", description: "考えを即行動に移し、動き出すことで物事を前進させる。" },
-  { id: "command", name_ja: "指令性", domain: "influencing", description: "主導権を握り、状況を明確にして周囲を決断へ導く。" },
-  { id: "communication", name_ja: "コミュニケーション", domain: "influencing", description: "考えや情報を言葉にして生き生きと伝え、人を惹きつける。" },
-  { id: "competition", name_ja: "競争性", domain: "influencing", description: "他者との比較を糧にし、1番になることでパフォーマンスを高める。" },
-  { id: "maximizer", name_ja: "最上志向", domain: "influencing", description: "平均ではなく卓越を目指し、強みを一流へ磨き上げることに注力する。" },
-  { id: "self_assurance", name_ja: "自己確信", domain: "influencing", description: "自分の判断と能力を信じ、不確実な状況でも自信を持って進む。" },
-  { id: "significance", name_ja: "自我", domain: "influencing", description: "重要な存在でありたいと願い、価値ある成果で認められることを目指す。" },
-  { id: "woo", name_ja: "社交性", domain: "influencing", description: "初対面の人と打ち解けるのが得意で、新たなつながりを築くことを楽しむ。" },
+  { id: "activator", name_ja: "活発性", name_en: "Activator", domain: "influencing", description: "考えを即行動に移し、動き出すことで物事を前進させる。" },
+  { id: "command", name_ja: "指令性", name_en: "Command", domain: "influencing", description: "主導権を握り、状況を明確にして周囲を決断へ導く。" },
+  { id: "communication", name_ja: "コミュニケーション", name_en: "Communication", domain: "influencing", description: "考えや情報を言葉にして生き生きと伝え、人を惹きつける。" },
+  { id: "competition", name_ja: "競争性", name_en: "Competition", domain: "influencing", description: "他者との比較を糧にし、1番になることでパフォーマンスを高める。" },
+  { id: "maximizer", name_ja: "最上志向", name_en: "Maximizer", domain: "influencing", description: "平均ではなく卓越を目指し、強みを一流へ磨き上げることに注力する。" },
+  { id: "self_assurance", name_ja: "自己確信", name_en: "Self-Assurance", domain: "influencing", description: "自分の判断と能力を信じ、不確実な状況でも自信を持って進む。" },
+  { id: "significance", name_ja: "自我", name_en: "Significance", domain: "influencing", description: "重要な存在でありたいと願い、価値ある成果で認められることを目指す。" },
+  { id: "woo", name_ja: "社交性", name_en: "Woo", domain: "influencing", description: "初対面の人と打ち解けるのが得意で、新たなつながりを築くことを楽しむ。" },
 
   // ── 人間関係構築力（Relationship Building）9資質 ──
-  { id: "adaptability", name_ja: "適応性", domain: "relationship", description: "今この瞬間に柔軟に対応し、予定変更もしなやかに乗りこなす。" },
-  { id: "connectedness", name_ja: "運命思考", domain: "relationship", description: "すべての出来事はつながっていると捉え、その意味を大切にする。" },
-  { id: "developer", name_ja: "成長促進", domain: "relationship", description: "他者の可能性を見抜き、小さな成長を後押しすることに喜びを感じる。" },
-  { id: "empathy", name_ja: "共感性", domain: "relationship", description: "相手の感情を敏感に察知し、その気持ちに寄り添える。" },
-  { id: "harmony", name_ja: "調和性", domain: "relationship", description: "対立を避け、合意点を探ることで人と物事を円滑に進める。" },
-  { id: "includer", name_ja: "包含", domain: "relationship", description: "誰も取り残さず、輪の中に迎え入れることを自然に行う。" },
-  { id: "individualization", name_ja: "個別化", domain: "relationship", description: "一人ひとりの個性を見極め、その人に合った関わり方をする。" },
-  { id: "positivity", name_ja: "ポジティブ", domain: "relationship", description: "熱意と前向きさで周囲を明るくし、場のエネルギーを高める。" },
-  { id: "relator", name_ja: "親密性", domain: "relationship", description: "少数の深い関係を大切にし、信頼で結ばれたつながりを育む。" },
+  { id: "adaptability", name_ja: "適応性", name_en: "Adaptability", domain: "relationship", description: "今この瞬間に柔軟に対応し、予定変更もしなやかに乗りこなす。" },
+  { id: "connectedness", name_ja: "運命思考", name_en: "Connectedness", domain: "relationship", description: "すべての出来事はつながっていると捉え、その意味を大切にする。" },
+  { id: "developer", name_ja: "成長促進", name_en: "Developer", domain: "relationship", description: "他者の可能性を見抜き、小さな成長を後押しすることに喜びを感じる。" },
+  { id: "empathy", name_ja: "共感性", name_en: "Empathy", domain: "relationship", description: "相手の感情を敏感に察知し、その気持ちに寄り添える。" },
+  { id: "harmony", name_ja: "調和性", name_en: "Harmony", domain: "relationship", description: "対立を避け、合意点を探ることで人と物事を円滑に進める。" },
+  { id: "includer", name_ja: "包含", name_en: "Includer", domain: "relationship", description: "誰も取り残さず、輪の中に迎え入れることを自然に行う。" },
+  { id: "individualization", name_ja: "個別化", name_en: "Individualization", domain: "relationship", description: "一人ひとりの個性を見極め、その人に合った関わり方をする。" },
+  { id: "positivity", name_ja: "ポジティブ", name_en: "Positivity", domain: "relationship", description: "熱意と前向きさで周囲を明るくし、場のエネルギーを高める。" },
+  { id: "relator", name_ja: "親密性", name_en: "Relator", domain: "relationship", description: "少数の深い関係を大切にし、信頼で結ばれたつながりを育む。" },
 
   // ── 戦略的思考力（Strategic Thinking）8資質 ──
-  { id: "analytical", name_ja: "分析思考", domain: "strategic", description: "客観的な事実とデータで物事を検証し、根拠を突き詰める。" },
-  { id: "context", name_ja: "原点思考", domain: "strategic", description: "過去の経緯を踏まえて現在を理解し、判断の土台にする。" },
-  { id: "futuristic", name_ja: "未来志向", domain: "strategic", description: "先の可能性を鮮やかに描き、そのビジョンで人を鼓舞する。" },
-  { id: "ideation", name_ja: "着想", domain: "strategic", description: "新しいアイデアや切り口を次々と生み出すことに喜びを感じる。" },
-  { id: "input", name_ja: "収集心", domain: "strategic", description: "情報・知識・モノを集め、いつか役立つ蓄えとして大切にする。" },
-  { id: "intellection", name_ja: "内省", domain: "strategic", description: "深く考えることを好み、思索を通じて理解を掘り下げる。" },
-  { id: "learner", name_ja: "学習欲", domain: "strategic", description: "学び続けるプロセスそのものに喜びを感じ、成長し続ける。" },
-  { id: "strategic", name_ja: "戦略性", domain: "strategic", description: "多くの選択肢の中から最短の道筋を素早く見抜く。" },
+  { id: "analytical", name_ja: "分析思考", name_en: "Analytical", domain: "strategic", description: "客観的な事実とデータで物事を検証し、根拠を突き詰める。" },
+  { id: "context", name_ja: "原点思考", name_en: "Context", domain: "strategic", description: "過去の経緯を踏まえて現在を理解し、判断の土台にする。" },
+  { id: "futuristic", name_ja: "未来志向", name_en: "Futuristic", domain: "strategic", description: "先の可能性を鮮やかに描き、そのビジョンで人を鼓舞する。" },
+  { id: "ideation", name_ja: "着想", name_en: "Ideation", domain: "strategic", description: "新しいアイデアや切り口を次々と生み出すことに喜びを感じる。" },
+  { id: "input", name_ja: "収集心", name_en: "Input", domain: "strategic", description: "情報・知識・モノを集め、いつか役立つ蓄えとして大切にする。" },
+  { id: "intellection", name_ja: "内省", name_en: "Intellection", domain: "strategic", description: "深く考えることを好み、思索を通じて理解を掘り下げる。" },
+  { id: "learner", name_ja: "学習欲", name_en: "Learner", domain: "strategic", description: "学び続けるプロセスそのものに喜びを感じ、成長し続ける。" },
+  { id: "strategic", name_ja: "戦略性", name_en: "Strategic", domain: "strategic", description: "多くの選択肢の中から最短の道筋を素早く見抜く。" },
 ];
+
+export function strengthDetailText(q: StrengthQuality): string {
+  return q.detail?.trim() || q.description;
+}
 
 export const STRENGTH_BY_ID: Record<string, StrengthQuality> = Object.fromEntries(
   STRENGTHS.map((s) => [s.id, s]),

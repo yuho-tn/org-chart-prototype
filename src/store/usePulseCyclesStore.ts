@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { PulseCycleRow } from "../lib/pulse";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * パルスサーベイ cycles 一覧 ＋ selectedPeriod の一元管理ストア（設計書 v2 §3）。
@@ -64,10 +65,20 @@ export const usePulseCyclesStore = create<PulseCyclesState>((set, get) => ({
     const client = supabase;
     inflight = (async () => {
       set({ loading: true, error: null });
-      const { data, error } = await client
-        .from("pulse_cycles")
-        .select("*")
-        .order("period", { ascending: false });
+      let result;
+      try {
+        result = await fetchWithRetry(() =>
+          client.from("pulse_cycles").select("*").order("period", { ascending: false }),
+        );
+      } catch (e) {
+        set({
+          loading: false,
+          loaded: true,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        return;
+      }
+      const { data, error } = result;
 
       if (error) {
         set({ loading: false, loaded: true, error: error.message });
