@@ -1,0 +1,80 @@
+/* ═══════════════════════════════════════════════════════════════════
+   パルスサーベイ 振り返り（#/survey/history・chrome 無しルート）
+   survey.css の .pulse / .pulse__card / .pulse__foot 語彙の上に追加する
+   このページ専用のスタイル（6か月グリッド・全期間リスト・統計カード）。
+   ═══════════════════════════════════════════════════════════════════ */
+.pulse-hist__card { max-width: 640px; }
+.pulse-hist__brand-name { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── 上段: 統計カード3枚 ───────────────────────────────────────── */
+.pulse-hist__stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 24px;
+}
+.pulse-hist__stat {
+  display: flex; flex-direction: column; gap: 4px; text-align: center;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 8px;
+}
+.pulse-hist__stat-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.pulse-hist__stat-value {
+  font-size: 22px; font-weight: 700; color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.pulse-hist__stat-unit { font-size: 11px; font-weight: 600; color: var(--text-subtle); margin-left: 2px; }
+
+.pulse-hist__section { margin-bottom: 26px; }
+.pulse-hist__h2 { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--text-strong); }
+
+/* ── 直近6か月グリッド ─────────────────────────────────────────── */
+.pulse-hist__grid {
+  border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+}
+.pulse-hist__grid-row { display: flex; align-items: center; border-top: 1px solid var(--border); }
+.pulse-hist__grid-row:first-child { border-top: none; }
+.pulse-hist__grid-row--head { background: var(--bg-soft); }
+.pulse-hist__grid-cell {
+  flex: 1; min-width: 0; text-align: center; padding: 7px 4px;
+  font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.pulse-hist__grid-cell--label {
+  flex: 0 0 52px; text-align: left; padding-left: 10px;
+  font-size: 11.5px; font-weight: 700; color: var(--text-muted);
+}
+.pulse-hist__grid-cell--head { font-size: 11px; font-weight: 600; color: var(--text-subtle); }
+.pulse-hist__cell-empty { color: var(--text-subtle); }
+
+/* ── 全期間リスト ─────────────────────────────────────────────── */
+.pulse-hist__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pulse-hist__item {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel); padding: 10px 12px;
+}
+.pulse-hist__item-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pulse-hist__item-period {
+  flex: 0 0 auto; font-size: 13px; font-weight: 700; color: var(--text-strong); min-width: 84px;
+}
+.pulse-hist__item-weathers { display: flex; gap: 4px; }
+.pulse-hist__item-w { font-size: 16px; line-height: 1; }
+.pulse-hist__item-sum {
+  font-size: 12px; font-weight: 700; color: var(--primary);
+  font-variant-numeric: tabular-nums; margin-left: auto;
+}
+.pulse-hist__item-nps { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pulse-hist__item-comment { margin-top: 8px; }
+.pulse-hist__item-comment summary {
+  font-size: 11.5px; font-weight: 600; color: var(--primary); cursor: pointer;
+  min-height: 28px; display: inline-flex; align-items: center;
+}
+.pulse-hist__item-comment p {
+  margin: 6px 0 0; font-size: 12.5px; color: var(--text); line-height: 1.6;
+  background: var(--bg-soft); border-radius: var(--radius-sm); padding: 8px 10px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 480px) {
+  .pulse-hist__grid-cell { font-size: 13px; padding: 6px 2px; }
+  .pulse-hist__grid-cell--label { flex-basis: 44px; padding-left: 6px; font-size: 11px; }
+  .pulse-hist__item-period { min-width: 68px; font-size: 12px; }
+  .pulse-hist__item-sum { font-size: 11px; }
+  .pulse-hist__item-nps { display: block; width: 100%; margin-left: 0; }
+}

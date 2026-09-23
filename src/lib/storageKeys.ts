@@ -17,6 +17,8 @@ export const STORAGE_KEYS = {
   lastVersionId: `${PREFIX}:last-version`,
   /** Last-used SmartHR/Google Sheet CSV URL for the employee importer. */
   sheetCsvUrl: `${PREFIX}:sheet-csv-url`,
+  /** 未配置メンバーパネルの絞り込み状態（雇用形態モード・部署）。 */
+  unplacedFilters: `${PREFIX}:unplaced-filters`,
 } as const;
 
 export function readStorage(key: string): string | null {
@@ -52,6 +54,8 @@ export type DraftPayload = {
    *  server row's updated_at to warn when someone else saved meanwhile. */
   savedAt: string;
   nodes: unknown[];
+  /** 0027: 編集の元になったサーバ rev（保存時の照合に使う）。 */
+  rev?: number | null;
 };
 
 export type LegacyDraft = { legacyNodes: unknown[] };

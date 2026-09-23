@@ -11,6 +11,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useOrgStore } from "../store/useOrgStore";
+import { useOrgLock, selectLockReadOnly } from "../store/useOrgLock";
 import { useUiStore } from "../store/useUiStore";
 import { useEmployeesStore } from "../store/useEmployeesStore";
 import { DepartmentNode, type DeptNodeData } from "./DepartmentNode";
@@ -50,7 +51,11 @@ export function Canvas() {
   const reparent = useOrgStore((s) => s.reparent);
   const duplicateAtPosition = useOrgStore((s) => s.duplicateAtPosition);
   const setToast = useOrgStore((s) => s.setToast);
-  const viewOnly = useUiStore((s) => s.viewOnly);
+  const uiViewOnly = useUiStore((s) => s.viewOnly);
+  // P2: 編集ロック非保持（他人が編集中）またはデフォルト閲覧表示のときも
+  // キャンバスは読み取り専用にする（保存不可な編集を作らせない）。
+  const lockReadOnly = useOrgLock(selectLockReadOnly);
+  const viewOnly = uiViewOnly || lockReadOnly;
   const employees = useEmployeesStore((s) => s.employees);
   const reactFlow = useReactFlow();
 
@@ -65,6 +70,12 @@ export function Canvas() {
     return s;
   }, [employees]);
   function isPersonUnlinked(p: OrgNode): boolean {
+    // The ⚠ badge is an editor-only affordance: it warns the user to fix a
+    // person→master link before generating an announcement. A read-only share
+    // view (viewOnly) is anonymous, so the employee master is RLS-empty and
+    // every person would falsely flag as unlinked. A viewer also has no way to
+    // act on it, so suppress the warning entirely in view-only mode.
+    if (viewOnly) return false;
     if (p.kind !== "person") return false;
     if (!p.employeeNumber) return true;
     return !validEmployeeNumbers.has(p.employeeNumber);
@@ -365,8 +376,81 @@ export function Canvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [laidOutDepts.length, laidOutExecs.length]);
 
+  // ── P0-2: ネイティブDnD中のエッジ・オートパン ────────────────────────
+  // React Flow の autoPanOnNodeDrag はRFノードのドラッグにしか効かない。
+  // 未配置メンバー／部署チップはネイティブ HTML5 DnD なので、ポインタが
+  // キャンバス端に近づいたら手動でビューポートをパンする（1回のドラッグで
+  // 画面外の部署まで届くようにする）。
+  const AUTOPAN_EDGE_PX = 56;
+  const AUTOPAN_MAX_SPEED = 18; // 端ぴったりで px/frame
+  const autoPanVel = useRef({ x: 0, y: 0 });
+  const autoPanRaf = useRef<number | null>(null);
+
+  const stopAutoPan = useCallback(() => {
+    autoPanVel.current = { x: 0, y: 0 };
+    if (autoPanRaf.current != null) {
+      cancelAnimationFrame(autoPanRaf.current);
+      autoPanRaf.current = null;
+    }
+  }, []);
+
+  const kickAutoPan = useCallback(() => {
+    if (autoPanRaf.current != null) return;
+    const step = () => {
+      const inst = fitOnceRef.current;
+      const { x: vx, y: vy } = autoPanVel.current;
+      if (!inst || (vx === 0 && vy === 0)) {
+        autoPanRaf.current = null;
+        return;
+      }
+      const vp = inst.getViewport();
+      // 右端へドラッグ → さらに右のコンテンツを見せる ＝ viewport.x を負方向へ
+      inst.setViewport({ x: vp.x - vx, y: vp.y - vy, zoom: vp.zoom });
+      autoPanRaf.current = requestAnimationFrame(step);
+    };
+    autoPanRaf.current = requestAnimationFrame(step);
+  }, []);
+
+  const updateAutoPan = useCallback(
+    (e: ReactDragEvent) => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const speedFor = (dist: number) =>
+        dist >= AUTOPAN_EDGE_PX
+          ? 0
+          : Math.ceil(((AUTOPAN_EDGE_PX - dist) / AUTOPAN_EDGE_PX) * AUTOPAN_MAX_SPEED);
+      autoPanVel.current = {
+        x: speedFor(rect.right - e.clientX) - speedFor(e.clientX - rect.left),
+        y: speedFor(rect.bottom - e.clientY) - speedFor(e.clientY - rect.top),
+      };
+      if (autoPanVel.current.x !== 0 || autoPanVel.current.y !== 0) kickAutoPan();
+    },
+    [kickAutoPan],
+  );
+
+  // ドラッグがどこで終わってもパンを確実に止める（drop はノード側で
+  // 処理されることがあり、pane の onDrop だけでは拾えないため window で拾う）
+  useEffect(() => {
+    const end = () => stopAutoPan();
+    window.addEventListener("dragend", end);
+    window.addEventListener("drop", end);
+    return () => {
+      window.removeEventListener("dragend", end);
+      window.removeEventListener("drop", end);
+      stopAutoPan();
+    };
+  }, [stopAutoPan]);
+
   // Tray-originated dept drops anywhere on the canvas pane → place at root.
   const onPaneDragOver = useCallback((e: ReactDragEvent) => {
+    // 閲覧モード（共有ビュー/編集ロック非保持）ではドロップ受付もパンもしない
+    if (viewOnly) return;
+    // 部署チップ・メンバーチップどちらのネイティブドラッグでも端オートパン
+    if (
+      e.dataTransfer.types.includes("application/x-dept-id") ||
+      e.dataTransfer.types.includes("application/x-person-id")
+    ) {
+      updateAutoPan(e);
+    }
     if (e.dataTransfer.types.includes("application/x-dept-id")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
@@ -380,10 +464,12 @@ export function Canvas() {
         });
       }
     }
-  }, []);
+  }, [viewOnly, updateAutoPan]);
 
   const onPaneDrop = useCallback(
     (e: ReactDragEvent) => {
+      stopAutoPan();
+      if (viewOnly) return;
       const deptId = e.dataTransfer.getData("application/x-dept-id");
       if (!deptId) return;
       e.preventDefault();
@@ -409,17 +495,18 @@ export function Canvas() {
         setToast({ kind: "error", message: result.reason });
       }
     },
-    [reparent, duplicateAtPosition, setToast],
+    [reparent, duplicateAtPosition, setToast, stopAutoPan, viewOnly],
   );
 
   const onPaneDragLeave = useCallback((e: ReactDragEvent) => {
     const wrapper = e.currentTarget as HTMLElement;
     const related = e.relatedTarget as globalThis.Node | null;
     if (!related || !wrapper.contains(related)) {
+      stopAutoPan();
       useDndStore.getState().setPreview(null);
       useDndStore.getState().setHover(null);
     }
-  }, []);
+  }, [stopAutoPan]);
 
   return (
     <div
@@ -445,6 +532,8 @@ export function Canvas() {
       nodesConnectable={false}
       edgesFocusable={false}
       nodeDragThreshold={6}
+      // RFノードドラッグ時の端オートパン（ネイティブDnDは上の手動パンが担当）
+      autoPanOnNodeDrag
       // Figma-style trackpad UX: two-finger scroll pans the canvas, pinch
       // zooms, ⌘/Ctrl + scroll also zooms (matches macOS conventions).
       // Click-and-drag on empty pane still pans for mouse users.

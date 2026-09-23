@@ -1,0 +1,37 @@
+/* ── パルス メンバー別回答推移（P4-①） ── */
+.pmem__search { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; font-size: 13px; min-width: 200px; background: var(--panel); }
+.pmem__careonly { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
+.pmem__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pmem__table th { text-align: left; font-size: 12px; color: var(--text-muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.pmem__table td { padding: 10px; border-bottom: 1px solid var(--border-soft, var(--border)); vertical-align: middle; }
+.pmem__row { cursor: pointer; }
+.pmem__row:hover { background: var(--bg-soft); }
+.pmem__name { font-weight: 700; color: var(--text-strong); margin-right: 8px; }
+.pmem__emp { font-size: 11px; color: var(--text-subtle); }
+.pmem__dept { color: var(--text-muted); }
+.pmem__latest { display: inline-flex; align-items: baseline; gap: 6px; font-weight: 600; color: var(--text-strong); }
+.pmem__period { font-size: 11px; color: var(--text-subtle); font-weight: 400; }
+.pmem__trend { display: inline-block; width: 22px; font-size: 15px; font-weight: 700; vertical-align: middle; }
+.pmem__trend--up { color: #1d8a4b; }
+.pmem__trend--down { color: #c0392b; }
+.pmem__trend--flat, .pmem__trend--none { color: var(--text-subtle); }
+.pmem__spark { width: 96px; height: 24px; vertical-align: middle; }
+.pmem__spark-line { stroke: var(--primary); stroke-width: 2; }
+.pmem__flag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #fdecec; color: #c0392b; white-space: nowrap; }
+.pmem__back { appearance: none; background: none; border: none; padding: 0; font-size: 13px; font-weight: 600; color: var(--primary); cursor: pointer; margin-bottom: 6px; }
+.pmem__back:hover { text-decoration: underline; }
+.pmem__headweather { font-size: 15px; font-weight: 600; color: var(--text-muted); margin-left: 12px; }
+.pmem__comments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.pmem__comment { border-left: 3px solid var(--navy-100, var(--border)); padding: 2px 0 2px 12px; }
+.pmem__comment-period { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.pmem__comment-body { margin: 4px 0 0; font-size: 13px; line-height: 1.7; color: var(--text-strong); white-space: pre-wrap; }
+.pmem__cattable-wrap { overflow-x: auto; }
+.pmem__cattable { border-collapse: collapse; font-size: 13px; min-width: 320px; }
+.pmem__cattable th { text-align: left; font-size: 12px; color: var(--text-muted); font-weight: 600; padding: 6px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.pmem__cattable td { padding: 8px 12px; border-bottom: 1px solid var(--border-soft, var(--border)); white-space: nowrap; }
+@media (max-width: 720px) {
+  .pmem__table th:nth-child(2), .pmem__table td:nth-child(2) { display: none; }
+  .pmem__spark { display: none; }
+}
+
+/* .pdash__toast--error は pulse-shared.css で定義済み（本ページも常にpulse-shared.cssを import する） */

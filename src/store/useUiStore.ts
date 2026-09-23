@@ -1,6 +1,12 @@
 import { create } from "zustand";
 
-export type OrgView = "tree" | "list" | "assignments";
+/**
+ * 「体制図」セクション内のタブ。
+ *  tree/list/assignments = 体制図（全メンバーの所属を示す社内発表用の図）
+ *  authority             = 組織図（マネージャー以上の権限図・2026-08-05 MTGで新設）
+ *  ml                    = ML規定（役職別の決裁権限表）
+ */
+export type OrgView = "tree" | "list" | "assignments" | "authority" | "ml";
 
 /**
  * Top-level "system" axis. Above the GlobalHeader sits a small system
@@ -25,11 +31,16 @@ export type Section =
   | "org"
   | "employees"
   | "missions"
+  | "survey"
+  | "pulse"
+  | "reviews"
+  | "ailevel"
   | "users"
   | "permissions"
   | "salary"
   | "grades"
-  | "audit_log";
+  | "audit_log"
+  | "labor";
 
 /**
  * Concrete routes. Most routes belong to exactly one section — see
@@ -40,7 +51,9 @@ export type Section =
 export type Route =
   // TalentHub
   | { name: "home" }
-  | { name: "editor" }
+  // editor: 組織図ファイル1枚を開いている状態。versionId 付き = そのファイルの
+  // ディープリンク（#/org/<id>・共有可能）。versionId 無し = #/org（ブランク）。
+  | { name: "editor"; versionId?: string }
   | { name: "announcements" }
   | { name: "announcement"; id: string }
   | { name: "employees" }
@@ -52,10 +65,40 @@ export type Route =
   | { name: "mission_templates" }
   | { name: "mission_template"; id: string }
   | { name: "mission_sheet"; id: string }
+  // パルスサーベイ 回答画面（chrome 無し）。token 付き（#/survey?t=…）はログイン不要の
+  // 本人専用ディープリンク（設計書 v3 §5-1）。token 無しは従来どおりログイン必須。
+  | { name: "survey"; token?: string }
+  // パルスサーベイ 振り返り（#/survey/history・ログイン必須・chrome 無し・設計書 v3 §5-4）
+  | { name: "survey_history" }
+  // パルスサーベイ 管理ダッシュボード（chrome 内・権限者）
+  | { name: "pulse" }
+  // パルスサーベイ メンバー別回答推移（P4-①・実名閲覧権限者のみ・section は "pulse" と共通）
+  | { name: "pulse_members" }
+  | { name: "pulse_member"; num: string }
+  // パルスサーベイ アラート一覧＋対応管理（section は "pulse" と共通・サブナビ切替）
+  | { name: "pulse_alerts" }
+  // パルスサーベイ コメント一覧（section は "pulse" と共通・サブナビ切替）
+  | { name: "pulse_comments" }
+  // パルスサーベイ 設定（質問セット/設問/サイクル・section は "pulse" と共通）
+  | { name: "pulse_admin" }
+  // 人事評価制度（静的コンテンツ・全ログインユーザー閲覧可。section は共通 "reviews"）
+  | { name: "reviews" }
+  | { name: "reviews_rank" }
+  | { name: "reviews_grade" }
+  | { name: "reviews_flow" }
+  | { name: "reviews_rules" }
+  // AI活用レベル（分布=全ログインユーザー可視。section は共通 "ailevel"）
+  | { name: "ailevel" }
+  // AIレベル 認定管理（管理者のみ・ページ側でゲート）
+  | { name: "ailevel_admin" }
   // Payroll
   | { name: "salary" }
   | { name: "grades" }
-  | { name: "audit_log" };
+  | { name: "audit_log" }
+  // 人件費管理（chrome 無し・ナビ導線なし・URL直打ち専用・laborcost_admins限定）
+  | { name: "labor" }
+  // DIV別人件費ページ（chrome 無し・ナビ導線なし・URL直打ち専用・labor_div_access限定）
+  | { name: "labor_div"; target: string };
 
 export function sectionOfRoute(r: Route): Section {
   switch (r.name) {
@@ -73,6 +116,25 @@ export function sectionOfRoute(r: Route): Section {
     case "mission_template":
     case "mission_sheet":
       return "missions";
+    case "survey":
+    case "survey_history":
+      return "survey";
+    case "pulse":
+    case "pulse_members":
+    case "pulse_member":
+    case "pulse_alerts":
+    case "pulse_comments":
+    case "pulse_admin":
+      return "pulse";
+    case "reviews":
+    case "reviews_rank":
+    case "reviews_grade":
+    case "reviews_flow":
+    case "reviews_rules":
+      return "reviews";
+    case "ailevel":
+    case "ailevel_admin":
+      return "ailevel";
     case "users":
       return "users";
     case "permissions":
@@ -83,6 +145,9 @@ export function sectionOfRoute(r: Route): Section {
       return "grades";
     case "audit_log":
       return "audit_log";
+    case "labor":
+    case "labor_div":
+      return "labor";
   }
 }
 
@@ -108,6 +173,14 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "employees" };
     case "missions":
       return { name: "missions" };
+    case "survey":
+      return { name: "survey" };
+    case "pulse":
+      return { name: "pulse" };
+    case "reviews":
+      return { name: "reviews" };
+    case "ailevel":
+      return { name: "ailevel" };
     case "users":
       return { name: "users" };
     case "permissions":
@@ -118,6 +191,8 @@ export function defaultRouteForSection(s: Section): Route {
       return { name: "grades" };
     case "audit_log":
       return { name: "audit_log" };
+    case "labor":
+      return { name: "labor" };
   }
 }
 
@@ -132,6 +207,9 @@ function readRouteFromHash(): Route {
   // TOP は「ホーム」。組織図は #/org に退避（旧来の TOP=組織図から分離）。
   if (h === "" || h === "#" || h === "#/") return { name: "home" };
   if (h === "#/org" || h === "#/editor") return { name: "editor" };
+  // 組織図ファイルのディープリンク: #/org/<versionId>（org_versions の uuid）
+  const org = /^#\/org\/([0-9a-f-]+)$/i.exec(h);
+  if (org) return { name: "editor", versionId: org[1] };
   if (h === "#/employees") return { name: "employees" };
   if (h === "#/users") return { name: "users" };
   if (h === "#/permissions") return { name: "permissions" };
@@ -155,10 +233,54 @@ function readRouteFromHash(): Route {
   if (mt) return { name: "mission_template", id: mt[1] };
   const msh = /^#\/missions\/sheet\/([0-9a-f-]+)$/i.exec(h);
   if (msh) return { name: "mission_sheet", id: msh[1] };
+  // パルスサーベイ 回答画面。#/survey?t=<token> は本人専用トークン付きディープリンク
+  // （ログイン不要・設計書 v3 §5-1）。t が空/欠落なら通常のログイン必須ルートへ落とす。
+  if (h === "#/survey") return { name: "survey" };
+  if (h.startsWith("#/survey?")) {
+    const qs = new URLSearchParams(h.slice("#/survey?".length));
+    const t = qs.get("t");
+    return t ? { name: "survey", token: t } : { name: "survey" };
+  }
+  // パルスサーベイ 振り返り（ログイン必須）
+  if (h === "#/survey/history") return { name: "survey_history" };
+  // パルスサーベイ 管理ダッシュボード / メンバー / アラート / コメント
+  const pmem = /^#\/pulse\/members\/([^/]+)$/.exec(h);
+  if (pmem) {
+    try {
+      return { name: "pulse_member", num: decodeURIComponent(pmem[1]) };
+    } catch {
+      return { name: "pulse_members" };
+    }
+  }
+  if (h === "#/pulse/members") return { name: "pulse_members" };
+  if (h === "#/pulse/alerts") return { name: "pulse_alerts" };
+  if (h === "#/pulse/comments") return { name: "pulse_comments" };
+  if (h === "#/pulse/admin") return { name: "pulse_admin" };
+  if (h === "#/pulse") return { name: "pulse" };
+  // 人事評価制度
+  if (h === "#/reviews") return { name: "reviews" };
+  if (h === "#/reviews/rank") return { name: "reviews_rank" };
+  if (h === "#/reviews/grade") return { name: "reviews_grade" };
+  if (h === "#/reviews/flow") return { name: "reviews_flow" };
+  if (h === "#/reviews/rules") return { name: "reviews_rules" };
+  // AI活用レベル
+  if (h === "#/ailevel") return { name: "ailevel" };
+  if (h === "#/ailevel/admin") return { name: "ailevel_admin" };
   // Payroll routes
   if (h === "#/payroll" || h === "#/payroll/salary") return { name: "salary" };
   if (h === "#/payroll/grades") return { name: "grades" };
   if (h === "#/payroll/audit-log") return { name: "audit_log" };
+  // 人件費管理（ナビ導線なし・URL直打ち専用）
+  if (h === "#/labor") return { name: "labor" };
+  // DIV別人件費ページ: #/labor/div/:target（target はURLエンコードされている想定）
+  const laborDiv = /^#\/labor\/div\/([^/]+)$/.exec(h);
+  if (laborDiv) {
+    try {
+      return { name: "labor_div", target: decodeURIComponent(laborDiv[1]) };
+    } catch {
+      return { name: "home" };
+    }
+  }
   return { name: "home" };
 }
 
@@ -167,7 +289,7 @@ function routeToHash(r: Route): string {
     case "home":
       return "";
     case "editor":
-      return "#/org";
+      return r.versionId ? `#/org/${r.versionId}` : "#/org";
     case "employees":
       return "#/employees";
     case "employee":
@@ -188,12 +310,46 @@ function routeToHash(r: Route): string {
       return `#/missions/templates/${r.id}`;
     case "mission_sheet":
       return `#/missions/sheet/${r.id}`;
+    case "survey":
+      return r.token ? `#/survey?t=${encodeURIComponent(r.token)}` : "#/survey";
+    case "survey_history":
+      return "#/survey/history";
+    case "pulse":
+      return "#/pulse";
+    case "pulse_members":
+      return "#/pulse/members";
+    case "pulse_member":
+      return `#/pulse/members/${encodeURIComponent(r.num)}`;
+    case "pulse_alerts":
+      return "#/pulse/alerts";
+    case "pulse_comments":
+      return "#/pulse/comments";
+    case "pulse_admin":
+      return "#/pulse/admin";
+    case "reviews":
+      return "#/reviews";
+    case "reviews_rank":
+      return "#/reviews/rank";
+    case "reviews_grade":
+      return "#/reviews/grade";
+    case "reviews_flow":
+      return "#/reviews/flow";
+    case "reviews_rules":
+      return "#/reviews/rules";
+    case "ailevel":
+      return "#/ailevel";
+    case "ailevel_admin":
+      return "#/ailevel/admin";
     case "salary":
       return "#/payroll";
     case "grades":
       return "#/payroll/grades";
     case "audit_log":
       return "#/payroll/audit-log";
+    case "labor":
+      return "#/labor";
+    case "labor_div":
+      return `#/labor/div/${encodeURIComponent(r.target)}`;
   }
 }
 

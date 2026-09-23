@@ -220,28 +220,65 @@ function MySheetsTab({
       </p>
     );
   }
+  // sheets は period 降順ソート済み（呼び出し側）— 先頭が当期
+  const [current, ...past] = sheets;
+  const currentTpl = templatesById[current.template_id];
   return (
-    <div className="mission__cards">
-      {sheets.map((sheet) => {
-        const tpl = templatesById[sheet.template_id];
-        return (
-          <div key={sheet.id} className="mission__card">
-            <div className="mission__cardHead">
-              <span className="mission__cardPeriod">
-                {periodLabel(sheet.period, periods)}
-              </span>
-              <StageBadge stage={sheet.stage} />
-            </div>
-            <div className="mission__cardTitle">{tpl?.title ?? "ミッションシート"}</div>
-            <DeadlineBanner template={tpl} stage={sheet.stage} />
-            <div className="mission__cardActions">
-              <button className="btn btn--primary" onClick={() => onOpen(sheet.id)}>
-                シートを開く
-              </button>
-            </div>
-          </div>
-        );
-      })}
+    <div className="mission__myTimeline">
+      <div className="mission__card mission__card--current">
+        <div className="mission__cardHead">
+          <span className="mission__cardPeriod">
+            {periodLabel(current.period, periods)}
+          </span>
+          <StageBadge stage={current.stage} />
+          {current.final_grade && (
+            <span className="mission__rankBadge">{current.final_grade}</span>
+          )}
+        </div>
+        <div className="mission__cardTitle">
+          {currentTpl?.title ?? "ミッションシート"}
+        </div>
+        <DeadlineBanner template={currentTpl} stage={current.stage} />
+        <div className="mission__cardActions">
+          <button className="btn btn--primary" onClick={() => onOpen(current.id)}>
+            シートを開く
+          </button>
+        </div>
+      </div>
+
+      {past.length > 0 && (
+        <>
+          <h3 className="mission__timelineHead">過去の期</h3>
+          <ul className="mission__timeline">
+            {past.map((sheet) => {
+              const tpl = templatesById[sheet.template_id];
+              return (
+                <li key={sheet.id} className="mission__timelineItem">
+                  <span className="mission__timelinePeriod">
+                    {periodLabel(sheet.period, periods)}
+                  </span>
+                  <span className="mission__timelineTitle">
+                    {tpl?.title ?? "ミッションシート"}
+                  </span>
+                  <StageBadge stage={sheet.stage} />
+                  {sheet.final_grade && (
+                    <span className="mission__rankBadge">{sheet.final_grade}</span>
+                  )}
+                  <button
+                    className="btn btn--ghost btn--xs"
+                    onClick={() => onOpen(sheet.id)}
+                  >
+                    参照する
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="empdetail__hint">
+            過去の期のシートは読み取り専用です（査定確定後は編集できません）。
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -261,6 +298,30 @@ function TargetsTab({
   periods: ReturnType<typeof useMissionsStore.getState>["periods"];
   onOpen: (id: string) => void;
 }) {
+  // メンバー単位にグルーピング（sheets は period 降順ソート済み＝各メンバーの
+  // 先頭が当期）。部署→氏名順で並べ、過去期は同一行内の導線チップにする。
+  const groups = useMemo(() => {
+    const map = new Map<string, { current: MissionSheetRow; past: MissionSheetRow[] }>();
+    for (const sheet of sheets) {
+      const g = map.get(sheet.employee_number);
+      if (!g) map.set(sheet.employee_number, { current: sheet, past: [] });
+      else g.past.push(sheet);
+    }
+    return [...map.entries()]
+      .map(([employeeNumber, g]) => ({ employeeNumber, ...g }))
+      .sort((a, b) => {
+        const ea = employeesByNumber[a.employeeNumber];
+        const eb = employeesByNumber[b.employeeNumber];
+        return (
+          (ea?.department ?? "").localeCompare(eb?.department ?? "", "ja") ||
+          (ea ? employeeName(ea) : a.employeeNumber).localeCompare(
+            eb ? employeeName(eb) : b.employeeNumber,
+            "ja",
+          )
+        );
+      });
+  }, [sheets, employeesByNumber]);
+
   return (
     <div className="emppage__tableWrap">
       <table className="empmgr__table emppage__table">
@@ -268,39 +329,43 @@ function TargetsTab({
           <tr>
             <th>氏名</th>
             <th>部署</th>
-            <th style={{ width: 110 }}>期</th>
-            <th style={{ width: 130 }}>ステージ</th>
-            <th style={{ width: 130 }}>最終更新</th>
-            <th style={{ width: 110 }} />
+            <th style={{ width: 110 }}>最新期</th>
+            <th style={{ width: 170 }}>ステージ</th>
+            <th style={{ width: 110 }}>最終更新</th>
+            <th>過去期</th>
+            <th style={{ width: 100 }} />
           </tr>
         </thead>
         <tbody>
-          {sheets.length === 0 && (
+          {groups.length === 0 && (
             <tr>
-              <td colSpan={6} className="usermgr__empty">
+              <td colSpan={7} className="usermgr__empty">
                 評価対象のシートはありません。
               </td>
             </tr>
           )}
-          {sheets.map((sheet) => {
-            const emp = employeesByNumber[sheet.employee_number];
-            const tpl = templatesById[sheet.template_id];
+          {groups.map(({ employeeNumber, current, past }) => {
+            const emp = employeesByNumber[employeeNumber];
+            const tpl = templatesById[current.template_id];
             // 未提出（発行済のまま）/ 提出済み未確認 をハイライト
             const highlight =
-              sheet.stage === "issued"
+              current.stage === "issued"
                 ? "mission__row--pending"
-                : sheet.stage === "goal_submitted"
+                : current.stage === "goal_submitted"
                   ? "mission__row--action"
                   : "";
-            const dl = tpl ? deadlineInfo(tpl, sheet.stage) : null;
+            const dl = tpl ? deadlineInfo(tpl, current.stage) : null;
             return (
-              <tr key={sheet.id} className={highlight}>
-                <td>{emp ? employeeName(emp) : sheet.employee_number}</td>
+              <tr key={current.id} className={highlight}>
+                <td>{emp ? employeeName(emp) : employeeNumber}</td>
                 <td>{emp?.department ?? "—"}</td>
-                <td>{periodLabel(sheet.period, periods)}</td>
+                <td>{periodLabel(current.period, periods)}</td>
                 <td>
-                  <StageBadge stage={sheet.stage} />
-                  {sheet.stage === "goal_submitted" && (
+                  <StageBadge stage={current.stage} />
+                  {current.stage === "issued" && (
+                    <span className="mission__hintNote">本人未提出</span>
+                  )}
+                  {current.stage === "goal_submitted" && (
                     <span className="mission__hintNote">要確認</span>
                   )}
                   {dl?.overdue && (
@@ -309,9 +374,23 @@ function TargetsTab({
                     </span>
                   )}
                 </td>
-                <td>{sheet.updated_at?.slice(0, 10) ?? "—"}</td>
+                <td>{current.updated_at?.slice(0, 10) ?? "—"}</td>
+                <td>
+                  {past.length === 0 && <span className="mission__pastNone">—</span>}
+                  {past.map((p) => (
+                    <button
+                      key={p.id}
+                      className="mission__pastChip"
+                      title={`${periodLabel(p.period, periods)}のシートを開く${p.final_grade ? `（${p.final_grade}）` : ""}`}
+                      onClick={() => onOpen(p.id)}
+                    >
+                      {periodLabel(p.period, periods)}
+                      {p.final_grade ? `｜${p.final_grade}` : ""}
+                    </button>
+                  ))}
+                </td>
                 <td style={{ textAlign: "right" }}>
-                  <button className="btn btn--ghost btn--xs" onClick={() => onOpen(sheet.id)}>
+                  <button className="btn btn--ghost btn--xs" onClick={() => onOpen(current.id)}>
                     確認する
                   </button>
                 </td>

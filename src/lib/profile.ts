@@ -19,19 +19,41 @@ export type PhotoItem = {
   caption?: string;
 };
 
+/** SHO-SAN経歴の1行（career_rows jsonb・行形式自由入力／要件 7-1）。 */
+export type CareerRow = {
+  id: string;
+  /** "YYYY-MM"。 */
+  period_from: string;
+  /** "YYYY-MM" または null（＝現在）。 */
+  period_to: string | null;
+  body: string;
+};
+
 /** public.employee_profiles（カルチャー層・1人1行）。 */
 export type ProfileRow = {
   employee_number: string;
   nickname: string | null;
+  /** @deprecated P3 で specialties(タグ複数)へ移行。データ温存のため列は残す。 */
   specialty: string | null;
+  /** @deprecated P3 で blocks へ移行。データ温存のため列は残す。 */
   bio: string | null;
+  /** @deprecated P3 で hobby_tags(タグ複数)へ移行。データ温存のため列は残す。 */
   hobbies: string | null;
   mbti: string | null;
-  /** ストレングスファインダー上位5（text[] 相当の jsonb）。 */
+  /** ストレングスファインダー：34資質から選んだ資質 id を順位順（配列順＝1〜5位）。 */
   strengths: string[];
   custom_items: CustomItem[];
   photos: PhotoItem[];
   avatar_path: string | null;
+  // ── P3 追加（migration 0028） ──
+  /** SHO-SAN経歴（行形式）。 */
+  career_rows: CareerRow[];
+  /** 得意領域タグ（複数）。 */
+  specialties: string[];
+  /** 趣味タグ（複数）。 */
+  hobby_tags: string[];
+  /** 自由プロフィール（ブロックエディタ・profileBlocks.ProfileBlock[] の生値）。 */
+  blocks: unknown[];
   updated_at: string;
   updated_by_email: string | null;
 };
@@ -139,6 +161,14 @@ export async function signedPhotoUrls(
 export function buildPhotoPath(employeeNumber: string, fileName: string): string {
   const safe = fileName.replace(/[^\w.-]+/g, "_").slice(-80) || "photo";
   return `${employeeNumber}/${Date.now()}_${safe}`;
+}
+
+/** ブロックエディタ画像のアップロード先パス（P3・要件 7-5）。
+ *  ⚠ RLS は先頭セグメント＝社員番号を要求するため blocks/ は第2セグメントに置く
+ *  （要件記載の `blocks/{num}/…` は RLS 違反になるため `{num}/blocks/…` に補正）。 */
+export function buildBlockImagePath(employeeNumber: string, fileName: string): string {
+  const safe = fileName.replace(/[^\w.-]+/g, "_").slice(-80) || "image";
+  return `${employeeNumber}/blocks/${Date.now()}_${safe}`;
 }
 
 export const PROFILE_PHOTOS_BUCKET = BUCKET;

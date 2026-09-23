@@ -47,6 +47,7 @@ export function VersionsPanel() {
   const currentUser = useAuthStore((s) => s.currentUser);
   const setViewOnly = useUiStore((s) => s.setViewOnly);
   const setFilesDrawerOpen = useUiStore((s) => s.setFilesDrawerOpen);
+  const navigate = useUiStore((s) => s.navigate);
 
   const [showSave, setShowSave] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
@@ -97,8 +98,8 @@ export function VersionsPanel() {
       );
       if (!ok) return;
     }
-    const nodes = await getSnapshot(id);
-    if (!nodes) {
+    const loaded = await getSnapshot(id);
+    if (!loaded) {
       setToast({ kind: "error", message: "ファイルの読み込みに失敗しました" });
       return;
     }
@@ -106,7 +107,12 @@ export function VersionsPanel() {
     // Edit access is solely a function of accessForVersion(); the FIX label
     // doesn't lock edits any more — only an explicit 確定解除 reverts to draft.
     setViewOnly(!canEdit);
-    replaceNodes(nodes, { versionId: id, versionLabel: name });
+    replaceNodes(loaded.nodes, { versionId: id, versionLabel: name, rev: loaded.rev });
+    // Reflect the opened file in the address bar as #/org/<id> so the URL is
+    // distinct per file and can be copied to share with other members.
+    // (The URL-driven loader in App.tsx no-ops because the file is already
+    // loaded here — currentVersionId now equals the routed id.)
+    navigate({ name: "editor", versionId: id });
     // After a successful load, collapse the drawer so the editor canvas
     // is fully visible — this is the whole reason the drawer exists.
     setFilesDrawerOpen(false);
@@ -149,13 +155,43 @@ export function VersionsPanel() {
       setTab("draft");
       return;
     }
-    const nodes = await getSnapshot(row.id);
-    if (nodes) {
+    const loaded = await getSnapshot(row.id);
+    if (loaded) {
       setViewOnly(false);
-      replaceNodes(nodes, { versionId: row.id, versionLabel: row.name });
+      replaceNodes(loaded.nodes, {
+        versionId: row.id,
+        versionLabel: row.name,
+        rev: loaded.rev,
+      });
+      navigate({ name: "editor", versionId: row.id });
     }
     setTab("draft");
     setToast({ kind: "info", message: `「${trimmed}」を複製しました` });
+  }
+
+  // P2: 公式デフォルト組織図の付替え（admin以上・RPC org_set_default）
+  async function handleSetDefault(
+    id: string,
+    name: string,
+    isCurrentDefault: boolean,
+    e: React.MouseEvent,
+  ) {
+    e.stopPropagation();
+    const setDefault = useVersionsStore.getState().setDefault;
+    const res = await setDefault(isCurrentDefault ? null : id);
+    setToast(
+      res.ok
+        ? {
+            kind: "info",
+            message: isCurrentDefault
+              ? "デフォルト指定を解除しました"
+              : `「${name}」を全員のデフォルト組織図に設定しました`,
+          }
+        : {
+            kind: "error",
+            message: `デフォルト設定に失敗しました（${res.reason ?? "権限が無い可能性があります"}）`,
+          },
+    );
   }
 
   async function confirmDelete() {
@@ -341,6 +377,14 @@ export function VersionsPanel() {
               >
                 <div className="version-card__head">
                   <span className="version-card__name">
+                    {v.is_default && (
+                      <span
+                        className="version-card__default"
+                        title="全員のデフォルト組織図（#/org で最初に表示されます）"
+                      >
+                        ★ デフォルト
+                      </span>
+                    )}
                     {v.is_confirmed && (
                       <span className="version-card__period" title="確定版">
                         {formatPeriod(v.confirmed_period)}
@@ -409,6 +453,22 @@ export function VersionsPanel() {
                     >
                       <span className="vmenu__icon" aria-hidden>📋</span>
                       <span className="vmenu__label">複製</span>
+                    </button>
+                  )}
+                  {isPower && (
+                    <button
+                      className={`vmenu__btn ${v.is_default ? "is-on" : ""}`}
+                      onClick={(e) => handleSetDefault(v.id, v.name, !!v.is_default, e)}
+                      title={
+                        v.is_default
+                          ? "現在の全員向けデフォルトです — クリックで解除"
+                          : "全員が #/org を開いた時に最初に表示される組織図にする"
+                      }
+                    >
+                      <span className="vmenu__icon" aria-hidden>★</span>
+                      <span className="vmenu__label">
+                        {v.is_default ? "デフォルト中" : "デフォルトに"}
+                      </span>
                     </button>
                   )}
                   {canConfirm && !v.is_confirmed && (

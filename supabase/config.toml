@@ -1,0 +1,43 @@
+# Supabase CLI プロジェクト設定（最小構成）。
+#
+# 目的: Edge Function の verify_jwt をコードで固定する。
+#   pulse-answer … #/survey?t=<token>（ログイン不要・本人専用トークンURL）からの回答を受ける。
+#                  認可は _shared/pulseToken.ts のトークン検証のみ＝ゲートウェイの JWT 検証は使わない。
+#   pulse-notify … pg_cron（0050 pulse_cron_fire_reminders）が x-cron-secret だけで呼ぶ。
+#                  関数内で cron secret／JWT(pulse_can_manage_alert) を自前検証する。
+#   smarthr-sync … 同型（cron から x-cron-secret で起動・2026-07-15 から verify_jwt=false 運用）。
+#
+# 以前は `supabase functions deploy <name> --no-verify-jwt` をデプロイのたびに手で付ける運用で、
+# 付け忘れた再デプロイ1回で「トークン回答・自動リマインドが黙って全滅」する構造だった
+# （PULSE_V3 独立レビュー 2026-09-20 指摘）。ここで恒久化する。
+#
+# ローカル開発（supabase start）は使っていない。DB 接続は `supabase link` 済みの .temp を使う。
+
+project_id = "kgofrmfsfnxbzqkfrkqo"
+
+[functions.pulse-answer]
+verify_jwt = false
+
+[functions.pulse-notify]
+verify_jwt = false
+
+[functions.smarthr-sync]
+verify_jwt = false
+
+[functions.pulse-summary]
+verify_jwt = true
+
+# x-export-secret ヘッダで自前認可（予実アプリのサーバから呼ぶ）。2026-09-20 時点の本番も false。
+[functions.employees-export]
+verify_jwt = false
+
+# P2 アラート（PULSE_V3_DESIGN.md §10-6）。どちらも pulse-notify と同型:
+#   pulse-alert-digest     … pg_cron（0051 の日次ダイジェスト起動）が x-cron-secret だけで呼ぶ。
+#                             関数内で cron secret／JWT(pulse_can_manage_alert) を自前検証する。
+#   pulse-comment-classify … pulse-alert-digest（daily モード）が x-cron-secret 付きでHTTP起動する
+#                             ほか、pulse__request_classification（DB内部関数）からも起動され得る。
+[functions.pulse-alert-digest]
+verify_jwt = false
+
+[functions.pulse-comment-classify]
+verify_jwt = false

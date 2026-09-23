@@ -70,7 +70,7 @@ export function SaveVersionDialog({ onClose }: { onClose: () => void }) {
       setError("保存に失敗しました。ネットワーク／設定をご確認ください。");
       return;
     }
-    markClean({ versionId: row.id, versionLabel: row.name });
+    markClean({ versionId: row.id, versionLabel: row.name, rev: row.rev ?? 0 });
     setToast({ kind: "info", message: `バージョン「${row.name}」を保存しました` });
     onClose();
   }

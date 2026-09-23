@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase, type EmployeeRow } from "../lib/supabase";
 import { parseCsv, pick, normalizeDate } from "../lib/csv";
 import { STORAGE_KEYS } from "../lib/storageKeys";
+import { fetchWithRetry } from "../lib/query";
 
 const SHEET_URL_KEY = STORAGE_KEYS.sheetCsvUrl;
 
@@ -68,6 +69,23 @@ export type ImportSummary = {
   errors: string[];
 };
 
+// ── SmartHR 連携（Edge Function `smarthr-sync` の結果） ──
+export type SmartHrSyncSummary = {
+  fetched: number;
+  upserted: number;
+  employed: number;
+  absent: number;
+  retired: number;
+  position_updated: number;
+  errors: string[];
+};
+export type SmartHrSyncState = {
+  last_run_at: string | null;
+  last_status: "ok" | "error" | null;
+  summary: (Partial<SmartHrSyncSummary> & { error?: string }) | null;
+};
+export type SmartHrSyncResult = { ok: boolean; summary?: SmartHrSyncSummary; error?: string };
+
 type EmployeesState = {
   employees: EmployeeRow[];
   loading: boolean;
@@ -75,7 +93,9 @@ type EmployeesState = {
   /** Optional published-CSV URL (Google Sheets "Publish to web" output). */
   sheetCsvUrl: string;
 
-  refresh: () => Promise<void>;
+  /** silent: 手元に既にデータがある時はスピナーを出さず裏で再検証する
+   *  （フォーカス時再検証用。初回ロードは常に loading を立てる）。 */
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   /** Insert or upsert one employee record. */
   upsert: (row: Partial<EmployeeRow> & { employee_number: string }) => Promise<{ ok: boolean; reason?: string }>;
   remove: (employeeNumber: string) => Promise<boolean>;
@@ -84,6 +104,13 @@ type EmployeesState = {
   /** Fetch CSV from a published Google Sheets URL and import it. */
   importFromSheetUrl: (url: string) => Promise<ImportSummary>;
   setSheetCsvUrl: (url: string) => void;
+
+  /** SmartHR 同期の最終状態（UIの「最終同期: …」表示用）。null=未取得 */
+  smartHrState: SmartHrSyncState | null;
+  /** SmartHR API から従業員マスターを同期（Edge Function 経由）。正＝SmartHR。 */
+  syncFromSmartHr: () => Promise<SmartHrSyncResult>;
+  /** 最終同期状態を smarthr_sync_state から読み込む。 */
+  loadSmartHrState: () => Promise<void>;
 };
 
 function readStoredUrl(): string {
@@ -140,25 +167,35 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
   error: null,
   sheetCsvUrl: readStoredUrl(),
 
-  refresh: async () => {
+  refresh: async (opts) => {
     if (!supabase) return;
-    set({ loading: true, error: null });
-    const { data, error } = await supabase
-      .from("employees")
-      .select("*")
-      .order("hired_at", { ascending: false, nullsFirst: false });
-    if (error) {
-      const isMissing = /relation .*employees.* does not exist/i.test(error.message);
-      set({
-        loading: false,
-        error: isMissing
-          ? "従業員テーブルが見つかりません。supabase/migrations/0002_employees.sql をSQLエディタで実行してください。"
-          : error.message,
-        employees: [],
-      });
-      return;
+    const sb = supabase;
+    const silent = Boolean(opts?.silent) && get().employees.length > 0;
+    if (!silent) set({ loading: true, error: null });
+    try {
+      const { data, error } = await fetchWithRetry(() =>
+        sb
+          .from("employees")
+          .select("*")
+          .order("hired_at", { ascending: false, nullsFirst: false }),
+      );
+      if (error) {
+        const isMissing = /relation .*employees.* does not exist/i.test(error.message);
+        set({
+          loading: false,
+          error: isMissing
+            ? "従業員テーブルが見つかりません。supabase/migrations/0002_employees.sql をSQLエディタで実行してください。"
+            : error.message,
+          // silent 再検証の失敗では手元のデータを消さない
+          ...(silent ? {} : { employees: [] }),
+        });
+        return;
+      }
+      set({ loading: false, employees: (data ?? []) as EmployeeRow[], error: null });
+    } catch (e) {
+      // タイムアウト／ネットワーク断（リトライ尽き）。silent 時はデータ温存。
+      set({ loading: false, error: (e as Error).message });
     }
-    set({ loading: false, employees: (data ?? []) as EmployeeRow[], error: null });
   },
 
   upsert: async (row) => {
@@ -279,6 +316,39 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
   setSheetCsvUrl: (url) => {
     writeStoredUrl(url);
     set({ sheetCsvUrl: url });
+  },
+
+  smartHrState: null,
+
+  syncFromSmartHr: async () => {
+    if (!supabase) return { ok: false, error: "Supabase未設定です" };
+    const { data, error } = await supabase.functions.invoke("smarthr-sync", { body: {} });
+    if (error) {
+      // 非2xx時は FunctionsHttpError。本文の {error} を拾えれば優先表示。
+      let msg = error.message;
+      try {
+        const b = await (error as { context?: Response }).context?.json?.();
+        if (b && (b as { error?: string }).error) msg = (b as { error: string }).error;
+      } catch {
+        // ignore parse failure
+      }
+      await get().loadSmartHrState();
+      return { ok: false, error: msg };
+    }
+    // 207(部分成功)は data.errors に詳細。ok として summary を返しつつ errors を保持。
+    await get().refresh();
+    await get().loadSmartHrState();
+    return { ok: true, summary: data as SmartHrSyncSummary };
+  },
+
+  loadSmartHrState: async () => {
+    if (!supabase) return;
+    const { data } = await supabase
+      .from("smarthr_sync_state")
+      .select("last_run_at, last_status, summary")
+      .eq("id", true)
+      .maybeSingle();
+    if (data) set({ smartHrState: data as SmartHrSyncState });
   },
 }));
 

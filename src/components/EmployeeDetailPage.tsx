@@ -5,25 +5,54 @@ import { useAuthStore } from "../store/useAuthStore";
 import { usePayrollStore } from "../store/usePayrollStore";
 import { useUiStore } from "../store/useUiStore";
 import { useOrgStore } from "../store/useOrgStore";
-import { supabase, canAccessPayroll, employeeName } from "../lib/supabase";
+import { supabase, canAccessPayroll, canManagePermissions, employeeName } from "../lib/supabase";
 import { avatarPathOf } from "../lib/profile";
-import type { ProfileRow, CustomItem } from "../lib/profile";
+import type { ProfileRow, CareerRow } from "../lib/profile";
 import type { OrgNode } from "../lib/types";
+import {
+  MBTI_TYPES,
+  MBTI_BY_CODE,
+  MBTI_GROUP_ORDER,
+  MBTI_GROUP_LABEL,
+  MBTI_GROUP_COLOR,
+  mbtiAvatarDataUri,
+  mbtiExternalUrl,
+  normalizeMbti,
+} from "../lib/mbti";
+import {
+  STRENGTHS,
+  STRENGTH_BY_ID,
+  STRENGTH_DOMAIN_LABEL,
+  STRENGTH_DOMAIN_COLOR,
+  normalizeStrengthIds,
+  type StrengthDomain,
+} from "../lib/strengths";
+import {
+  normalizeBlocks,
+  pruneBlocks,
+  emptyBlock,
+  collectBlockImagePaths,
+  safeLinkUrl,
+  BLOCK_TYPE_LABEL,
+  URL_REGEX,
+  type ProfileBlock,
+  type BlockType,
+} from "../lib/profileBlocks";
+import { useAiLevelsStore } from "../store/useAiLevelsStore";
+import { AI_LEVEL_KIND_LABEL, currentLevelOfGrants } from "../lib/aiLevels";
+import { AiLevelBadge } from "./ailevel/AiLevelBadge";
 
 /**
- * 従業員詳細ページ（route: #/employees/:num）。
- *   • ヘッダ: アバター・氏名・あだ名・部署/役職（マスターから）・グレード
- *     （payroll 閲覧権限がある人にのみ表示）
- *   • 異動歴: org_versions の確定版(is_confirmed) snapshot から自動生成
- *   • カルチャー層: 自己紹介/得意領域/趣味/MBTI/ストレングス/自由項目/写真
- *     — 本人（＋edit_any 権限者/管理者）はインライン編集可
- *   • 人事機密層: view_confidential 権限者にのみ表示・編集
+ * 従業員詳細ページ（route: #/employees/:num）。P3 でカルチャー層を刷新。
+ *   • ヘッダ: アバター・氏名・あだ名・部署/役職・グレード（payroll 権限者のみ）
+ *   • SHO-SAN経歴: 行形式の自由入力（旧・自動異動歴は初期値として取込可）
+ *   • 得意領域/趣味: タグ複数／MBTI: 16タイプ選択＋アバター／ストレングス: 34資質から5つ順位
+ *   • 自由プロフィール: 軽量ブロックエディタ（見出し/テキスト/画像/リンク）
+ *   • 写真ギャラリー（非回帰）
+ *   • 人事機密層は UI 撤去（データ・RLS は温存。ここでは一切描画しない）
  */
 
-// ── 異動歴: 確定版スナップショットの軽量キャッシュ ─────────────────
-// 全従業員で共通のデータなのでモジュールレベルで1回だけ fetch する
-// （詳細ページ表示時の lazy fetch ＋ メモ化）。
-
+// ── 異動歴（初期値変換用）: 確定版スナップショットの軽量キャッシュ ──────
 type ConfirmedVersionLite = {
   id: string;
   name: string;
@@ -59,7 +88,6 @@ function pathForEmployee(nodes: OrgNode[], employeeNumber: string): string | nul
     (n) => n.kind === "person" && n.employeeNumber === employeeNumber,
   );
   if (persons.length === 0) return null;
-  // 主務（兼務でないノード）を優先する
   const person = persons.find((p) => !p.isConcurrent) ?? persons[0];
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const segs: string[] = [];
@@ -73,41 +101,39 @@ function pathForEmployee(nodes: OrgNode[], employeeNumber: string): string | nul
   return segs.length > 0 ? segs.join(" / ") : "（直属）";
 }
 
-type HistoryEntry = { period: string; versionName: string; path: string };
+type HistoryEntry = { period: string; path: string };
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   return iso.slice(0, 10);
 }
 
-const EMPTY_ITEM = (): CustomItem => ({
-  id:
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-  label: "",
-  value: "",
-});
+function newId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
+// ── 統一編集ドラフト ───────────────────────────────────────────────────
 type ProfileDraft = {
   nickname: string;
-  specialty: string;
-  bio: string;
-  hobbies: string;
-  mbti: string;
-  strengthsText: string;
-  custom_items: CustomItem[];
+  careerRows: CareerRow[];
+  specialties: string[];
+  hobbyTags: string[];
+  mbti: string | null;
+  strengths: string[]; // 資質 id・配列順＝1〜5位
+  blocks: ProfileBlock[];
 };
 
 function draftFromProfile(p: ProfileRow | undefined): ProfileDraft {
   return {
     nickname: p?.nickname ?? "",
-    specialty: p?.specialty ?? "",
-    bio: p?.bio ?? "",
-    hobbies: p?.hobbies ?? "",
-    mbti: p?.mbti ?? "",
-    strengthsText: (p?.strengths ?? []).join("、"),
-    custom_items: (p?.custom_items ?? []).map((i) => ({ ...i })),
+    careerRows: (p?.career_rows ?? []).map((r) => ({ ...r })),
+    specialties: [...(p?.specialties ?? [])],
+    hobbyTags: [...(p?.hobby_tags ?? [])],
+    mbti: normalizeMbti(p?.mbti ?? null),
+    strengths: normalizeStrengthIds(p?.strengths ?? []),
+    blocks: normalizeBlocks(p?.blocks ?? []),
   };
 }
 
@@ -120,35 +146,48 @@ export function EmployeeDetailPage({ num }: { num: string }) {
   const refreshEmployees = useEmployeesStore((s) => s.refresh);
 
   const profiles = useProfilesStore((s) => s.profilesByNumber);
-  const confidentials = useProfilesStore((s) => s.confidentialByNumber);
   const profilesLoaded = useProfilesStore((s) => s.loaded);
   const profilesError = useProfilesStore((s) => s.error);
   const refreshProfiles = useProfilesStore((s) => s.refresh);
-  const fetchConfidential = useProfilesStore((s) => s.fetchConfidential);
   const saveProfile = useProfilesStore((s) => s.saveProfile);
-  const saveConfidential = useProfilesStore((s) => s.saveConfidential);
   const uploadPhoto = useProfilesStore((s) => s.uploadPhoto);
+  const uploadBlockImage = useProfilesStore((s) => s.uploadBlockImage);
   const removePhoto = useProfilesStore((s) => s.removePhoto);
   const setAvatar = useProfilesStore((s) => s.setAvatar);
   const ensurePhotoUrls = useProfilesStore((s) => s.ensurePhotoUrls);
   const photoUrls = useProfilesStore((s) => s.photoUrls);
-  const can = useProfilesStore((s) => s.can);
 
   const emp = employees.find((e) => e.employee_number === num);
   const profile = profiles[num];
-  const confidential = confidentials[num];
 
-  const canConfidential = can("profiles", "view_confidential");
   const canEdit = canEditProfileOf(num);
   const payrollAllowed = canAccessPayroll(currentRole);
 
-  // ── データロード: 表示時 fetch ＋ フォーカス時再検証（ポーリングなし） ──
+  // ── AI活用レベル（閲覧専用・編集は認定管理ページへ） ──
+  const aiGrants = useAiLevelsStore((s) => s.grants);
+  const aiLevelsLoaded = useAiLevelsStore((s) => s.loaded);
+  const aiLevelsError = useAiLevelsStore((s) => s.error);
+  const refreshAiLevels = useAiLevelsStore((s) => s.refresh);
+
+  const myAiGrants = useMemo(
+    () =>
+      aiGrants
+        .filter((g) => g.employee_number === num)
+        .sort(
+          (a, b) =>
+            b.certified_at.localeCompare(a.certified_at) ||
+            b.created_at.localeCompare(a.created_at),
+        ),
+    [aiGrants, num],
+  );
+  const myAiLevel = useMemo(() => currentLevelOfGrants(myAiGrants), [myAiGrants]);
+
+  // ── データロード ──
   const reload = useCallback(() => {
     if (employees.length === 0) refreshEmployees();
-    refreshProfiles();
-    // 権限がある時のみ機密層を fetch（RLS 拒否/0行は store 側で静かに無視）
-    fetchConfidential(num);
-  }, [employees.length, refreshEmployees, refreshProfiles, fetchConfidential, num]);
+    refreshProfiles({ silent: true });
+    refreshAiLevels({ silent: true });
+  }, [employees.length, refreshEmployees, refreshProfiles, refreshAiLevels]);
 
   useEffect(() => {
     reload();
@@ -160,7 +199,7 @@ export function EmployeeDetailPage({ num }: { num: string }) {
     return () => window.removeEventListener("focus", onFocus);
   }, [reload]);
 
-  // ── グレード（payroll 閲覧権限者のみ・salary_records 最新期） ──────
+  // ── グレード（payroll 閲覧権限者のみ） ──
   const payrollLoaded = usePayrollStore((s) => s.loaded);
   const payrollRefresh = usePayrollStore((s) => s.refresh);
   const payrollRecords = usePayrollStore((s) => s.records);
@@ -181,12 +220,12 @@ export function EmployeeDetailPage({ num }: { num: string }) {
       if (!best || sort > best.sort) best = { sort, grade_code: r.grade_code };
     }
     if (!best) return null;
-    const found = best; // 閉包内での null 絞り込み用
+    const found = best;
     const grade = payrollGrades.find((g) => g.code === found.grade_code);
     return { code: found.grade_code, label: grade?.label ?? null };
   }, [payrollAllowed, payrollRecords, payrollPeriods, payrollGrades, num]);
 
-  // ── 異動歴（確定版のみ・lazy fetch＋メモ化） ────────────────────────
+  // ── 自動異動歴（SHO-SAN経歴の初期値／careerRows 空のときのフォールバック表示） ──
   const [confirmedVersions, setConfirmedVersions] = useState<ConfirmedVersionLite[] | null>(
     confirmedVersionsCache,
   );
@@ -200,60 +239,68 @@ export function EmployeeDetailPage({ num }: { num: string }) {
     };
   }, []);
 
-  const history = useMemo<HistoryEntry[]>(() => {
+  const autoHistory = useMemo<HistoryEntry[]>(() => {
     if (!confirmedVersions) return [];
-    // 同一 confirmed_period が複数ある場合は後勝ち（1期1エントリ）
     const byPeriod = new Map<string, HistoryEntry>();
     for (const v of confirmedVersions) {
       if (!v.confirmed_period || !v.snapshot?.nodes) continue;
       const path = pathForEmployee(v.snapshot.nodes, num);
       if (!path) continue;
-      byPeriod.set(v.confirmed_period, {
-        period: v.confirmed_period,
-        versionName: v.name,
-        path,
-      });
+      byPeriod.set(v.confirmed_period, { period: v.confirmed_period, path });
     }
     return [...byPeriod.values()].sort((a, b) => a.period.localeCompare(b.period));
   }, [confirmedVersions, num]);
 
-  // ── 写真 signed URL ─────────────────────────────────────────────────
+  // ── 写真＋ブロック画像の signed URL ──
   useEffect(() => {
     const paths = (profile?.photos ?? []).map((p) => p.path);
     if (profile?.avatar_path) paths.push(profile.avatar_path);
+    paths.push(...collectBlockImagePaths(normalizeBlocks(profile?.blocks ?? [])));
     if (paths.length > 0) ensurePhotoUrls(paths);
   }, [profile, ensurePhotoUrls]);
 
   const avatarPath = avatarPathOf(profile);
   const avatarUrl = avatarPath ? photoUrls[avatarPath] : undefined;
 
-  // ── カルチャー層 編集フォーム ───────────────────────────────────────
+  // ── 統一編集フォーム ──
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>(() => draftFromProfile(profile));
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   function startEdit() {
-    setDraft(draftFromProfile(profile));
+    const d = draftFromProfile(profile);
+    // careerRows が空なら自動異動歴を初期値として取り込む（要件 7-1）
+    if (d.careerRows.length === 0 && autoHistory.length > 0) {
+      d.careerRows = autoHistory.map((h) => ({
+        id: newId(),
+        period_from: h.period,
+        period_to: null,
+        body: h.path,
+      }));
+    }
+    setDraft(d);
     setEditing(true);
   }
 
   async function commitEdit() {
     setSaving(true);
-    const strengths = draft.strengthsText
-      .split(/[、,，\n]/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 5);
     const res = await saveProfile({
       employee_number: num,
       nickname: draft.nickname.trim() || null,
-      specialty: draft.specialty.trim() || null,
-      bio: draft.bio.trim() || null,
-      hobbies: draft.hobbies.trim() || null,
-      mbti: draft.mbti.trim() || null,
-      strengths,
-      custom_items: draft.custom_items.filter((i) => i.label.trim() || i.value.trim()),
+      career_rows: draft.careerRows
+        .filter((r) => r.body.trim() || r.period_from.trim())
+        .map((r) => ({
+          id: r.id,
+          period_from: r.period_from.trim(),
+          period_to: r.period_to?.trim() || null,
+          body: r.body.trim(),
+        })),
+      specialties: dedupeTags(draft.specialties),
+      hobby_tags: dedupeTags(draft.hobbyTags),
+      mbti: draft.mbti,
+      strengths: draft.strengths.slice(0, 5),
+      blocks: pruneBlocks(draft.blocks),
     });
     setSaving(false);
     if (!res.ok) {
@@ -264,16 +311,26 @@ export function EmployeeDetailPage({ num }: { num: string }) {
     setToast({ kind: "info", message: "プロフィールを保存しました" });
   }
 
-  function moveItem(idx: number, dir: -1 | 1) {
-    setDraft((d) => {
-      const items = [...d.custom_items];
-      const to = idx + dir;
-      if (to < 0 || to >= items.length) return d;
-      [items[idx], items[to]] = [items[to], items[idx]];
-      return { ...d, custom_items: items };
-    });
+  async function handleBlockImageUpload(blockId: string, file: File) {
+    setUploading(true);
+    const res = await uploadBlockImage(num, file);
+    setUploading(false);
+    if (!res.ok || !res.path) {
+      setToast({ kind: "error", message: res.reason ?? "画像アップロードに失敗しました" });
+      return;
+    }
+    const path = res.path;
+    setDraft((d) => ({
+      ...d,
+      blocks: d.blocks.map((b) =>
+        b.id === blockId && b.type === "image"
+          ? { ...b, images: [...b.images, { path }] }
+          : b,
+      ),
+    }));
   }
 
+  // ── 写真ギャラリー（即時保存・ドラフト外） ──
   async function handlePhotoUpload(file: File) {
     setUploading(true);
     const res = await uploadPhoto(num, file);
@@ -295,30 +352,11 @@ export function EmployeeDetailPage({ num }: { num: string }) {
     if (!res.ok) setToast({ kind: "error", message: res.reason ?? "設定に失敗しました" });
   }
 
-  // ── 機密層 編集 ─────────────────────────────────────────────────────
-  const [confEditing, setConfEditing] = useState(false);
-  const [confItems, setConfItems] = useState<CustomItem[]>([]);
-
-  function startConfEdit() {
-    setConfItems((confidential?.items ?? []).map((i) => ({ ...i })));
-    setConfEditing(true);
-  }
-
-  async function commitConfEdit() {
-    const res = await saveConfidential({
-      employee_number: num,
-      items: confItems.filter((i) => i.label.trim() || i.value.trim()),
-    });
-    if (!res.ok) {
-      setToast({ kind: "error", message: res.reason ?? "保存に失敗しました" });
-      return;
-    }
-    setConfEditing(false);
-    setToast({ kind: "info", message: "機密情報を保存しました" });
-  }
-
   const displayName = emp ? employeeName(emp) : num;
   const initial = displayName.trim()[0]?.toUpperCase() ?? "?";
+  const viewBlocks = useMemo(() => normalizeBlocks(profile?.blocks ?? []), [profile]);
+  const viewMbti = normalizeMbti(profile?.mbti ?? null);
+  const viewStrengths = normalizeStrengthIds(profile?.strengths ?? []);
 
   return (
     <main className="page empdetail">
@@ -328,7 +366,7 @@ export function EmployeeDetailPage({ num }: { num: string }) {
             className="btn btn--ghost btn--xs"
             onClick={() => navigate({ name: "employees" })}
           >
-            ‹ 従業員マスターへ戻る
+            ‹ メンバーへ戻る
           </button>
         </div>
       </div>
@@ -381,40 +419,6 @@ export function EmployeeDetailPage({ num }: { num: string }) {
               プロフィールを編集
             </button>
           )}
-        </div>
-      </section>
-
-      {/* ── 異動歴（確定版から自動生成・手入力なし） ────────────────── */}
-      <section className="empdetail__section">
-        <h2 className="empdetail__sectionTitle">異動歴</h2>
-        {confirmedVersions === null ? (
-          <p className="empdetail__empty">読み込み中…</p>
-        ) : history.length === 0 ? (
-          <p className="empdetail__empty">
-            確定済みの組織図に配置履歴がありません。
-          </p>
-        ) : (
-          <ol className="empdetail__history">
-            {history.map((h, i) => (
-              <li key={h.period} className="empdetail__historyRow">
-                <span className="empdetail__historyPeriod">{h.period}</span>
-                <span className="empdetail__historyPath">{h.path}</span>
-                {i < history.length - 1 && (
-                  <span className="empdetail__historyArrow" aria-hidden>→</span>
-                )}
-              </li>
-            ))}
-          </ol>
-        )}
-        <p className="empdetail__hint">
-          ※ FIX登録済みの組織図（確定版）から自動生成しています。
-        </p>
-      </section>
-
-      {/* ── カルチャー層 ───────────────────────────────────────────── */}
-      <section className="empdetail__section">
-        <div className="empdetail__sectionHead">
-          <h2 className="empdetail__sectionTitle">プロフィール</h2>
           {editing && (
             <div className="empdetail__sectionActions">
               <button className="btn btn--primary btn--xs" onClick={commitEdit} disabled={saving}>
@@ -426,164 +430,155 @@ export function EmployeeDetailPage({ num }: { num: string }) {
             </div>
           )}
         </div>
-
-        {!editing ? (
-          <dl className="empdetail__fields">
-            <ProfileField label="自己紹介" value={profile?.bio} multiline />
-            <ProfileField label="得意領域" value={profile?.specialty} />
-            <ProfileField label="趣味" value={profile?.hobbies} />
-            <ProfileField label="MBTI" value={profile?.mbti} />
-            <div className="empdetail__field">
-              <dt>ストレングスファインダー</dt>
-              <dd>
-                {(profile?.strengths ?? []).length > 0 ? (
-                  (profile?.strengths ?? []).map((s, i) => (
-                    <span key={i} className="emppage__chip">{i + 1}. {s}</span>
-                  ))
-                ) : (
-                  <span className="empdetail__empty">未設定</span>
-                )}
-              </dd>
-            </div>
-            {(profile?.custom_items ?? []).map((item) => (
-              <ProfileField key={item.id} label={item.label} value={item.value} multiline />
-            ))}
-          </dl>
-        ) : (
-          <div className="empdetail__form">
-            <label className="empdetail__formRow">
-              <span className="field__label">あだ名</span>
-              <input
-                className="field__input"
-                value={draft.nickname}
-                onChange={(e) => setDraft({ ...draft, nickname: e.target.value })}
-                placeholder="例: ゆーほー"
-              />
-            </label>
-            <label className="empdetail__formRow">
-              <span className="field__label">自己紹介</span>
-              <textarea
-                className="field__input"
-                rows={4}
-                value={draft.bio}
-                onChange={(e) => setDraft({ ...draft, bio: e.target.value })}
-              />
-            </label>
-            <label className="empdetail__formRow">
-              <span className="field__label">得意領域</span>
-              <input
-                className="field__input"
-                value={draft.specialty}
-                onChange={(e) => setDraft({ ...draft, specialty: e.target.value })}
-                placeholder="例: BtoBマーケ戦略 / SEO"
-              />
-            </label>
-            <label className="empdetail__formRow">
-              <span className="field__label">趣味</span>
-              <input
-                className="field__input"
-                value={draft.hobbies}
-                onChange={(e) => setDraft({ ...draft, hobbies: e.target.value })}
-              />
-            </label>
-            <label className="empdetail__formRow">
-              <span className="field__label">MBTI</span>
-              <input
-                className="field__input"
-                value={draft.mbti}
-                onChange={(e) => setDraft({ ...draft, mbti: e.target.value })}
-                placeholder="例: ENTJ"
-              />
-            </label>
-            <label className="empdetail__formRow">
-              <span className="field__label">ストレングスファインダー上位5（読点区切り）</span>
-              <input
-                className="field__input"
-                value={draft.strengthsText}
-                onChange={(e) => setDraft({ ...draft, strengthsText: e.target.value })}
-                placeholder="例: 達成欲、未来志向、戦略性、最上志向、活発性"
-              />
-            </label>
-
-            <div className="empdetail__formRow">
-              <span className="field__label">自由項目</span>
-              {draft.custom_items.map((item, idx) => (
-                <div key={item.id} className="empdetail__itemRow">
-                  <input
-                    className="field__input field__input--xs"
-                    placeholder="項目名（例: 好きな言葉）"
-                    value={item.label}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        custom_items: d.custom_items.map((it) =>
-                          it.id === item.id ? { ...it, label: e.target.value } : it,
-                        ),
-                      }))
-                    }
-                    style={{ flex: "0 0 180px" }}
-                  />
-                  <input
-                    className="field__input field__input--xs"
-                    placeholder="内容"
-                    value={item.value}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        custom_items: d.custom_items.map((it) =>
-                          it.id === item.id ? { ...it, value: e.target.value } : it,
-                        ),
-                      }))
-                    }
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    className="btn btn--ghost btn--xs"
-                    onClick={() => moveItem(idx, -1)}
-                    disabled={idx === 0}
-                    title="上へ"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    className="btn btn--ghost btn--xs"
-                    onClick={() => moveItem(idx, 1)}
-                    disabled={idx === draft.custom_items.length - 1}
-                    title="下へ"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    className="btn btn--ghost btn--xs"
-                    onClick={() =>
-                      setDraft((d) => ({
-                        ...d,
-                        custom_items: d.custom_items.filter((it) => it.id !== item.id),
-                      }))
-                    }
-                    title="削除"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              <button
-                className="btn btn--ghost btn--xs"
-                onClick={() =>
-                  setDraft((d) => ({
-                    ...d,
-                    custom_items: [...d.custom_items, EMPTY_ITEM()],
-                  }))
-                }
-              >
-                ＋項目を追加
-              </button>
-            </div>
-          </div>
-        )}
       </section>
 
-      {/* ── 写真ギャラリー ─────────────────────────────────────────── */}
+      {editing ? (
+        <EditForm
+          draft={draft}
+          setDraft={setDraft}
+          uploading={uploading}
+          onBlockImageUpload={handleBlockImageUpload}
+          photoUrls={photoUrls}
+        />
+      ) : (
+        <>
+          {/* ── SHO-SAN経歴 ─────────────────────────────────────── */}
+          <section className="empdetail__section">
+            <h2 className="empdetail__sectionTitle">SHO-SAN経歴</h2>
+            {(profile?.career_rows ?? []).length > 0 ? (
+              <ol className="empdetail__career">
+                {(profile?.career_rows ?? []).map((r) => (
+                  <li key={r.id} className="empdetail__careerRow">
+                    <span className="empdetail__careerPeriod">
+                      {r.period_from || "—"}
+                      {" 〜 "}
+                      {r.period_to || "現在"}
+                    </span>
+                    <span className="empdetail__careerBody">{r.body}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : confirmedVersions === null ? (
+              <p className="empdetail__empty">読み込み中…</p>
+            ) : autoHistory.length > 0 ? (
+              <>
+                <ol className="empdetail__career empdetail__career--auto">
+                  {autoHistory.map((h) => (
+                    <li key={h.period} className="empdetail__careerRow">
+                      <span className="empdetail__careerPeriod">{h.period}</span>
+                      <span className="empdetail__careerBody">{h.path}</span>
+                    </li>
+                  ))}
+                </ol>
+                <p className="empdetail__hint">
+                  ※ 確定版の組織図から自動生成した配属履歴です。「プロフィールを編集」で経歴として取り込み・編集できます。
+                </p>
+              </>
+            ) : (
+              <p className="empdetail__empty">経歴はまだ登録されていません。</p>
+            )}
+          </section>
+
+          {/* ── 得意領域・趣味 ───────────────────────────────────── */}
+          <section className="empdetail__section">
+            <h2 className="empdetail__sectionTitle">プロフィール</h2>
+            <dl className="empdetail__fields">
+              <div className="empdetail__field">
+                <dt>得意領域</dt>
+                <dd>
+                  <TagList tags={profile?.specialties ?? []} tone="specialty" />
+                </dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>趣味</dt>
+                <dd>
+                  <TagList tags={profile?.hobby_tags ?? []} tone="hobby" />
+                </dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>MBTI</dt>
+                <dd>{viewMbti ? <MbtiBadge code={viewMbti} /> : <Empty />}</dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>ストレングスファインダー</dt>
+                <dd>
+                  {viewStrengths.length > 0 ? (
+                    <StrengthList ids={viewStrengths} />
+                  ) : (
+                    <Empty />
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          {/* ── AI活用レベル（閲覧専用・全社オープン） ───────────── */}
+          <section className="empdetail__section">
+            <div className="empdetail__sectionHead">
+              <h2 className="empdetail__sectionTitle">AI活用レベル</h2>
+              {canManagePermissions(currentRole) && (
+                <div className="empdetail__sectionActions">
+                  <button
+                    className="btn btn--ghost btn--xs"
+                    onClick={() => navigate({ name: "ailevel_admin" })}
+                  >
+                    認定管理へ
+                  </button>
+                </div>
+              )}
+            </div>
+            {myAiLevel ? (
+              <>
+                <div className="ail__current">
+                  <AiLevelBadge level={myAiLevel.level} kind={myAiLevel.kind} size="md" />
+                  <div className="ail__currentBody">
+                    <span className="ail__currentSub">{myAiLevel.def.subcopy}</span>
+                    <span className="ail__currentDef">{myAiLevel.def.definition}</span>
+                    <span className="ail__currentMeta">
+                      {AI_LEVEL_KIND_LABEL[myAiLevel.kind]}・認定日 {myAiLevel.certified_at}
+                      {myAiLevel.def.appointment && <>・任用接続: {myAiLevel.def.appointment}</>}
+                    </span>
+                  </div>
+                </div>
+                {myAiGrants.length > 1 && (
+                  <ol className="ail__history">
+                    {/* note（認定根拠メモ）は管理者向け情報のためここでは
+                        表示しない（認定管理ページのみで閲覧） */}
+                    {myAiGrants.map((g) => (
+                      <li key={g.id} className="ail__historyRow">
+                        <span className="ail__historyDate">{g.certified_at}</span>
+                        <AiLevelBadge level={g.level} size="sm" />
+                        <span className="ail__historyKind">{AI_LEVEL_KIND_LABEL[g.kind]}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                <p className="empdetail__hint">
+                  ※ レベルは失効なし（上がるだけ）。認定はAIレベル制度に基づき付与されます（編集は認定管理ページから）。
+                </p>
+              </>
+            ) : aiLevelsError ? (
+              <p className="empdetail__empty">
+                AIレベルの読み込みでエラーが発生しました（{aiLevelsError}）。再読み込みしてください。
+              </p>
+            ) : (
+              <p className="empdetail__empty">
+                {aiLevelsLoaded ? "AI活用レベルは未認定です。" : "読み込み中…"}
+              </p>
+            )}
+          </section>
+
+          {/* ── 自由プロフィール（ブロック） ─────────────────────── */}
+          {viewBlocks.length > 0 && (
+            <section className="empdetail__section">
+              <h2 className="empdetail__sectionTitle">自己紹介</h2>
+              <BlockView blocks={viewBlocks} photoUrls={photoUrls} />
+            </section>
+          )}
+        </>
+      )}
+
+      {/* ── 写真ギャラリー（編集モードと独立・非回帰） ───────────── */}
       <section className="empdetail__section">
         <div className="empdetail__sectionHead">
           <h2 className="empdetail__sectionTitle">写真</h2>
@@ -649,112 +644,715 @@ export function EmployeeDetailPage({ num }: { num: string }) {
           </div>
         )}
       </section>
-
-      {/* ── 人事機密層（権限者のみ） ─────────────────────────────────── */}
-      {canConfidential && (
-        <section className="empdetail__section empdetail__section--confidential">
-          <div className="empdetail__sectionHead">
-            <h2 className="empdetail__sectionTitle">人事機密情報 🔒</h2>
-            <div className="empdetail__sectionActions">
-              {!confEditing ? (
-                <button className="btn btn--ghost btn--xs" onClick={startConfEdit}>
-                  編集
-                </button>
-              ) : (
-                <>
-                  <button className="btn btn--primary btn--xs" onClick={commitConfEdit}>
-                    保存
-                  </button>
-                  <button className="btn btn--ghost btn--xs" onClick={() => setConfEditing(false)}>
-                    取消
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          <p className="empdetail__hint">
-            このセクションは権限者（役職レベル・個別付与・管理者）にのみ表示されます。
-          </p>
-          {!confEditing ? (
-            (confidential?.items ?? []).length === 0 ? (
-              <p className="empdetail__empty">登録された機密項目はありません。</p>
-            ) : (
-              <dl className="empdetail__fields">
-                {(confidential?.items ?? []).map((item) => (
-                  <ProfileField key={item.id} label={item.label} value={item.value} multiline />
-                ))}
-              </dl>
-            )
-          ) : (
-            <div className="empdetail__form">
-              {confItems.map((item) => (
-                <div key={item.id} className="empdetail__itemRow">
-                  <input
-                    className="field__input field__input--xs"
-                    placeholder="項目名（例: 緊急連絡先）"
-                    value={item.label}
-                    onChange={(e) =>
-                      setConfItems((items) =>
-                        items.map((it) =>
-                          it.id === item.id ? { ...it, label: e.target.value } : it,
-                        ),
-                      )
-                    }
-                    style={{ flex: "0 0 180px" }}
-                  />
-                  <input
-                    className="field__input field__input--xs"
-                    placeholder="内容"
-                    value={item.value}
-                    onChange={(e) =>
-                      setConfItems((items) =>
-                        items.map((it) =>
-                          it.id === item.id ? { ...it, value: e.target.value } : it,
-                        ),
-                      )
-                    }
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    className="btn btn--ghost btn--xs"
-                    onClick={() =>
-                      setConfItems((items) => items.filter((it) => it.id !== item.id))
-                    }
-                    title="削除"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              <button
-                className="btn btn--ghost btn--xs"
-                onClick={() => setConfItems((items) => [...items, EMPTY_ITEM()])}
-              >
-                ＋項目を追加
-              </button>
-            </div>
-          )}
-        </section>
-      )}
+      {/* 人事機密層は P3 で UI 撤去（データ・RLS はDBに温存）。 */}
     </main>
   );
 }
 
-function ProfileField({
-  label,
-  value,
-  multiline,
+// ═══════════════════════════════════════════════════════════════════
+//  表示用サブコンポーネント
+// ═══════════════════════════════════════════════════════════════════
+
+function Empty() {
+  return <span className="empdetail__empty">未設定</span>;
+}
+
+function TagList({ tags, tone }: { tags: string[]; tone: "specialty" | "hobby" }) {
+  if (tags.length === 0) return <Empty />;
+  return (
+    <div className="empdetail__tags">
+      {tags.map((t, i) => (
+        <span key={`${t}_${i}`} className={`tag tag--${tone}`}>
+          {t}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function MbtiBadge({ code }: { code: string }) {
+  const t = MBTI_BY_CODE[code];
+  if (!t) return <span className="emppage__chip">{code}</span>;
+  const color = MBTI_GROUP_COLOR[t.group];
+  return (
+    <span className="mbtiBadge" style={{ borderColor: color }} title={t.blurb}>
+      <img className="mbtiBadge__avatar" src={mbtiAvatarDataUri(code)} alt="" width={28} height={28} />
+      <span className="mbtiBadge__text">
+        <span className="mbtiBadge__code" style={{ color }}>
+          {code}
+        </span>
+        <span className="mbtiBadge__nick">{t.nickname}</span>
+      </span>
+      <a
+        className="mbtiBadge__link"
+        href={mbtiExternalUrl(code)}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="16personalities で詳しく見る"
+        onClick={(e) => e.stopPropagation()}
+      >
+        ↗
+      </a>
+    </span>
+  );
+}
+
+function StrengthList({ ids }: { ids: string[] }) {
+  return (
+    <div className="empdetail__strengths">
+      {ids.map((id, i) => {
+        const q = STRENGTH_BY_ID[id];
+        if (!q) return null;
+        const color = STRENGTH_DOMAIN_COLOR[q.domain];
+        return (
+          <span
+            key={id}
+            className="strengthBadge"
+            style={{ background: color }}
+            title={`${STRENGTH_DOMAIN_LABEL[q.domain]}：${q.description}`}
+          >
+            <span className="strengthBadge__rank">{i + 1}</span>
+            <span className="strengthBadge__name">{q.name_ja}</span>
+            <span className="strengthBadge__q" aria-hidden>
+              ?
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** text ブロックの本文を URL 自動リンク化して描画。 */
+function renderTextWithLinks(text: string) {
+  const parts = text.split(URL_REGEX);
+  return parts.map((part, i) =>
+    URL_REGEX.test(part) ? (
+      <a key={i} href={part} target="_blank" rel="noopener noreferrer">
+        {part}
+      </a>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
+function BlockView({
+  blocks,
+  photoUrls,
 }: {
-  label: string;
-  value: string | null | undefined;
-  multiline?: boolean;
+  blocks: ProfileBlock[];
+  photoUrls: Record<string, string>;
 }) {
   return (
-    <div className="empdetail__field">
-      <dt>{label}</dt>
-      <dd style={multiline ? { whiteSpace: "pre-wrap" } : undefined}>
-        {value?.trim() ? value : <span className="empdetail__empty">未設定</span>}
-      </dd>
+    <div className="blockview">
+      {blocks.map((b) => {
+        switch (b.type) {
+          case "heading":
+            return (
+              <h3 key={b.id} className="blockview__heading">
+                {b.text}
+              </h3>
+            );
+          case "text":
+            return (
+              <p key={b.id} className="blockview__text">
+                {renderTextWithLinks(b.text)}
+              </p>
+            );
+          case "image":
+            return (
+              <div key={b.id} className="blockview__images">
+                {b.images.map((im, i) => (
+                  <figure key={`${im.path}_${i}`} className="blockview__image">
+                    {photoUrls[im.path] ? (
+                      <img src={photoUrls[im.path]} alt={im.caption ?? ""} loading="lazy" />
+                    ) : (
+                      <div className="empdetail__photoLoading">…</div>
+                    )}
+                    {im.caption && <figcaption>{im.caption}</figcaption>}
+                  </figure>
+                ))}
+              </div>
+            );
+          case "link": {
+            const safe = safeLinkUrl(b.url);
+            if (!safe) return null; // 不正スキームは描画しない（defense in depth）
+            return (
+              <a
+                key={b.id}
+                className="blockview__link"
+                href={safe}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span className="blockview__linkTitle">{b.title || safe}</span>
+                {b.description && (
+                  <span className="blockview__linkDesc">{b.description}</span>
+                )}
+                <span className="blockview__linkUrl">{safe}</span>
+              </a>
+            );
+          }
+        }
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  編集フォーム
+// ═══════════════════════════════════════════════════════════════════
+
+function dedupeTags(tags: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of tags) {
+    const t = raw.trim();
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out.slice(0, 30);
+}
+
+function EditForm({
+  draft,
+  setDraft,
+  uploading,
+  onBlockImageUpload,
+  photoUrls,
+}: {
+  draft: ProfileDraft;
+  setDraft: React.Dispatch<React.SetStateAction<ProfileDraft>>;
+  uploading: boolean;
+  onBlockImageUpload: (blockId: string, file: File) => void;
+  photoUrls: Record<string, string>;
+}) {
+  return (
+    <>
+      {/* あだ名 */}
+      <section className="empdetail__section">
+        <h2 className="empdetail__sectionTitle">基本</h2>
+        <label className="empdetail__formRow">
+          <span className="field__label">あだ名</span>
+          <input
+            className="field__input"
+            value={draft.nickname}
+            onChange={(e) => setDraft((d) => ({ ...d, nickname: e.target.value }))}
+            placeholder="例: ゆーほー"
+          />
+        </label>
+      </section>
+
+      {/* SHO-SAN経歴 */}
+      <section className="empdetail__section">
+        <h2 className="empdetail__sectionTitle">SHO-SAN経歴</h2>
+        <CareerEditor rows={draft.careerRows} setDraft={setDraft} />
+      </section>
+
+      {/* 得意領域・趣味・MBTI・ストレングス */}
+      <section className="empdetail__section">
+        <h2 className="empdetail__sectionTitle">プロフィール</h2>
+        <div className="empdetail__formRow">
+          <span className="field__label">得意領域（タグ・複数可）</span>
+          <TagEditor
+            tags={draft.specialties}
+            tone="specialty"
+            placeholder="例: BtoBマーケ戦略"
+            onChange={(tags) => setDraft((d) => ({ ...d, specialties: tags }))}
+          />
+        </div>
+        <div className="empdetail__formRow">
+          <span className="field__label">趣味（タグ・複数可）</span>
+          <TagEditor
+            tags={draft.hobbyTags}
+            tone="hobby"
+            placeholder="例: サウナ"
+            onChange={(tags) => setDraft((d) => ({ ...d, hobbyTags: tags }))}
+          />
+        </div>
+        <div className="empdetail__formRow">
+          <span className="field__label">MBTI</span>
+          <MbtiPicker
+            value={draft.mbti}
+            onChange={(code) => setDraft((d) => ({ ...d, mbti: code }))}
+          />
+        </div>
+        <div className="empdetail__formRow">
+          <span className="field__label">ストレングスファインダー（34資質から5つ・順位付き）</span>
+          <StrengthPicker
+            ids={draft.strengths}
+            onChange={(ids) => setDraft((d) => ({ ...d, strengths: ids }))}
+          />
+        </div>
+      </section>
+
+      {/* 自由プロフィール（ブロックエディタ） */}
+      <section className="empdetail__section">
+        <h2 className="empdetail__sectionTitle">自己紹介（自由ブロック）</h2>
+        <BlockEditor
+          blocks={draft.blocks}
+          setDraft={setDraft}
+          uploading={uploading}
+          onImageUpload={onBlockImageUpload}
+          photoUrls={photoUrls}
+        />
+      </section>
+    </>
+  );
+}
+
+// ── SHO-SAN経歴エディタ ────────────────────────────────────────────
+function CareerEditor({
+  rows,
+  setDraft,
+}: {
+  rows: CareerRow[];
+  setDraft: React.Dispatch<React.SetStateAction<ProfileDraft>>;
+}) {
+  function update(id: string, patch: Partial<CareerRow>) {
+    setDraft((d) => ({
+      ...d,
+      careerRows: d.careerRows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    }));
+  }
+  function move(idx: number, dir: -1 | 1) {
+    setDraft((d) => {
+      const arr = [...d.careerRows];
+      const to = idx + dir;
+      if (to < 0 || to >= arr.length) return d;
+      [arr[idx], arr[to]] = [arr[to], arr[idx]];
+      return { ...d, careerRows: arr };
+    });
+  }
+  return (
+    <div className="careerEditor">
+      {rows.map((r, idx) => (
+        <div key={r.id} className="careerEditor__row">
+          <input
+            className="field__input field__input--xs careerEditor__period"
+            type="month"
+            value={r.period_from}
+            onChange={(e) => update(r.id, { period_from: e.target.value })}
+            title="開始（YYYY-MM）"
+          />
+          <span className="careerEditor__tilde">〜</span>
+          <input
+            className="field__input field__input--xs careerEditor__period"
+            type="month"
+            value={r.period_to ?? ""}
+            onChange={(e) => update(r.id, { period_to: e.target.value || null })}
+            title="終了（空欄＝現在）"
+          />
+          <input
+            className="field__input field__input--xs careerEditor__body"
+            placeholder="配属・役割（例: マーケDIV / 広告TM リーダー）"
+            value={r.body}
+            onChange={(e) => update(r.id, { body: e.target.value })}
+          />
+          <button className="btn btn--ghost btn--xs" onClick={() => move(idx, -1)} disabled={idx === 0} title="上へ">
+            ↑
+          </button>
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => move(idx, 1)}
+            disabled={idx === rows.length - 1}
+            title="下へ"
+          >
+            ↓
+          </button>
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() =>
+              setDraft((d) => ({ ...d, careerRows: d.careerRows.filter((x) => x.id !== r.id) }))
+            }
+            title="削除"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      <button
+        className="btn btn--ghost btn--xs"
+        onClick={() =>
+          setDraft((d) => ({
+            ...d,
+            careerRows: [
+              ...d.careerRows,
+              { id: newId(), period_from: "", period_to: null, body: "" },
+            ],
+          }))
+        }
+      >
+        ＋経歴を追加
+      </button>
+    </div>
+  );
+}
+
+// ── タグエディタ ──────────────────────────────────────────────────
+function TagEditor({
+  tags,
+  tone,
+  placeholder,
+  onChange,
+}: {
+  tags: string[];
+  tone: "specialty" | "hobby";
+  placeholder?: string;
+  onChange: (tags: string[]) => void;
+}) {
+  const [input, setInput] = useState("");
+  function add() {
+    const t = input.trim();
+    if (!t) return;
+    if (!tags.includes(t)) onChange([...tags, t]);
+    setInput("");
+  }
+  return (
+    <div className="tagEditor">
+      <div className="tagEditor__chips">
+        {tags.map((t, i) => (
+          <span key={`${t}_${i}`} className={`tag tag--${tone} tag--removable`}>
+            {t}
+            <button
+              className="tag__remove"
+              onClick={() => onChange(tags.filter((_, idx) => idx !== i))}
+              aria-label={`${t} を削除`}
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="tagEditor__input">
+        <input
+          className="field__input field__input--xs"
+          value={input}
+          placeholder={placeholder}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+        <button className="btn btn--ghost btn--xs" onClick={add} disabled={!input.trim()}>
+          追加
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── MBTI ピッカー（4グループ×4タイプのカードグリッド） ─────────────
+function MbtiPicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (code: string | null) => void;
+}) {
+  return (
+    <div className="mbtiPicker">
+      <div className="mbtiPicker__grid">
+        {MBTI_GROUP_ORDER.map((group) => (
+          <div key={group} className="mbtiPicker__col">
+            <div className="mbtiPicker__colHead" style={{ color: MBTI_GROUP_COLOR[group] }}>
+              {MBTI_GROUP_LABEL[group]}
+            </div>
+            {MBTI_TYPES.filter((t) => t.group === group).map((t) => {
+              const selected = value === t.code;
+              return (
+                <button
+                  key={t.code}
+                  className={`mbtiCard ${selected ? "is-selected" : ""}`}
+                  style={selected ? { borderColor: MBTI_GROUP_COLOR[group] } : undefined}
+                  onClick={() => onChange(selected ? null : t.code)}
+                  title={t.blurb}
+                >
+                  <img src={mbtiAvatarDataUri(t.code)} alt="" width={32} height={32} />
+                  <span className="mbtiCard__code" style={{ color: MBTI_GROUP_COLOR[group] }}>
+                    {t.code}
+                  </span>
+                  <span className="mbtiCard__nick">{t.nickname}</span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {value && (
+        <div className="mbtiPicker__selected">
+          選択中：<strong>{value}</strong>（{MBTI_BY_CODE[value]?.nickname}）
+          <button className="btn btn--ghost btn--xs" onClick={() => onChange(null)}>
+            クリア
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ストレングス ピッカー（34資質から5つ順位選択） ─────────────────
+function StrengthPicker({
+  ids,
+  onChange,
+}: {
+  ids: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const full = ids.length >= 5;
+  function move(idx: number, dir: -1 | 1) {
+    const arr = [...ids];
+    const to = idx + dir;
+    if (to < 0 || to >= arr.length) return;
+    [arr[idx], arr[to]] = [arr[to], arr[idx]];
+    onChange(arr);
+  }
+  const byDomain = useMemo(() => {
+    const groups: Record<StrengthDomain, typeof STRENGTHS> = {
+      executing: [],
+      influencing: [],
+      relationship: [],
+      strategic: [],
+    };
+    for (const q of STRENGTHS) groups[q.domain].push(q);
+    return groups;
+  }, []);
+  return (
+    <div className="strengthPicker">
+      <ol className="strengthPicker__ranked">
+        {ids.map((id, i) => {
+          const q = STRENGTH_BY_ID[id];
+          if (!q) return null;
+          const color = STRENGTH_DOMAIN_COLOR[q.domain];
+          return (
+            <li key={id} className="strengthPicker__rankRow">
+              <span className="strengthBadge" style={{ background: color }} title={q.description}>
+                <span className="strengthBadge__rank">{i + 1}</span>
+                <span className="strengthBadge__name">{q.name_ja}</span>
+              </span>
+              <button className="btn btn--ghost btn--xs" onClick={() => move(i, -1)} disabled={i === 0} title="順位を上げる">
+                ↑
+              </button>
+              <button
+                className="btn btn--ghost btn--xs"
+                onClick={() => move(i, 1)}
+                disabled={i === ids.length - 1}
+                title="順位を下げる"
+              >
+                ↓
+              </button>
+              <button
+                className="btn btn--ghost btn--xs"
+                onClick={() => onChange(ids.filter((x) => x !== id))}
+                title="外す"
+              >
+                ✕
+              </button>
+            </li>
+          );
+        })}
+        {ids.length === 0 && (
+          <li className="empdetail__empty">下の一覧から5つまで選択してください。</li>
+        )}
+      </ol>
+      <select
+        className="field__input field__input--xs"
+        value=""
+        disabled={full}
+        onChange={(e) => {
+          const id = e.target.value;
+          if (id && !ids.includes(id) && ids.length < 5) onChange([...ids, id]);
+        }}
+      >
+        <option value="">{full ? "5つ選択済み（外すと追加できます）" : "＋資質を追加…"}</option>
+        {(Object.keys(byDomain) as StrengthDomain[]).map((dom) => (
+          <optgroup key={dom} label={STRENGTH_DOMAIN_LABEL[dom]}>
+            {byDomain[dom]
+              .filter((q) => !ids.includes(q.id))
+              .map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.name_ja}
+                </option>
+              ))}
+          </optgroup>
+        ))}
+      </select>
+      <p className="empdetail__hint">
+        各バッジは領域カラー（実行力=紫／影響力=オレンジ／人間関係構築力=青／戦略的思考力=緑）。ホバーで説明を表示します。
+      </p>
+    </div>
+  );
+}
+
+// ── ブロックエディタ ──────────────────────────────────────────────
+function BlockEditor({
+  blocks,
+  setDraft,
+  uploading,
+  onImageUpload,
+  photoUrls,
+}: {
+  blocks: ProfileBlock[];
+  setDraft: React.Dispatch<React.SetStateAction<ProfileDraft>>;
+  uploading: boolean;
+  onImageUpload: (blockId: string, file: File) => void;
+  photoUrls: Record<string, string>;
+}) {
+  function patch(id: string, fn: (b: ProfileBlock) => ProfileBlock) {
+    setDraft((d) => ({ ...d, blocks: d.blocks.map((b) => (b.id === id ? fn(b) : b)) }));
+  }
+  function move(idx: number, dir: -1 | 1) {
+    setDraft((d) => {
+      const arr = [...d.blocks];
+      const to = idx + dir;
+      if (to < 0 || to >= arr.length) return d;
+      [arr[idx], arr[to]] = [arr[to], arr[idx]];
+      return { ...d, blocks: arr };
+    });
+  }
+  function addBlock(type: BlockType) {
+    setDraft((d) => ({ ...d, blocks: [...d.blocks, emptyBlock(type)] }));
+  }
+  return (
+    <div className="blockEditor">
+      {blocks.map((b, idx) => (
+        <div key={b.id} className="blockEditor__block">
+          <div className="blockEditor__toolbar">
+            <span className="blockEditor__type">{BLOCK_TYPE_LABEL[b.type]}</span>
+            <span className="blockEditor__spacer" />
+            <button className="btn btn--ghost btn--xs" onClick={() => move(idx, -1)} disabled={idx === 0} title="上へ">
+              ↑
+            </button>
+            <button
+              className="btn btn--ghost btn--xs"
+              onClick={() => move(idx, 1)}
+              disabled={idx === blocks.length - 1}
+              title="下へ"
+            >
+              ↓
+            </button>
+            <button
+              className="btn btn--ghost btn--xs"
+              onClick={() =>
+                setDraft((d) => ({ ...d, blocks: d.blocks.filter((x) => x.id !== b.id) }))
+              }
+              title="削除"
+            >
+              ✕
+            </button>
+          </div>
+          {b.type === "heading" && (
+            <input
+              className="field__input blockEditor__heading"
+              placeholder="見出し"
+              value={b.text}
+              onChange={(e) => patch(b.id, (blk) => ({ ...(blk as typeof b), text: e.target.value }))}
+            />
+          )}
+          {b.type === "text" && (
+            <textarea
+              className="field__input"
+              rows={4}
+              placeholder="テキスト（改行可・URLは自動でリンクになります）"
+              value={b.text}
+              onChange={(e) => patch(b.id, (blk) => ({ ...(blk as typeof b), text: e.target.value }))}
+            />
+          )}
+          {b.type === "image" && (
+            <div className="blockEditor__images">
+              {b.images.map((im, i) => (
+                <figure key={`${im.path}_${i}`} className="blockEditor__imageItem">
+                  {photoUrls[im.path] ? (
+                    <img src={photoUrls[im.path]} alt={im.caption ?? ""} />
+                  ) : (
+                    <div className="empdetail__photoLoading">…</div>
+                  )}
+                  <input
+                    className="field__input field__input--xs"
+                    placeholder="キャプション（任意）"
+                    value={im.caption ?? ""}
+                    onChange={(e) =>
+                      patch(b.id, (blk) => {
+                        const img = blk as typeof b;
+                        return {
+                          ...img,
+                          images: img.images.map((x, xi) =>
+                            xi === i ? { ...x, caption: e.target.value || undefined } : x,
+                          ),
+                        };
+                      })
+                    }
+                  />
+                  <button
+                    className="btn btn--ghost btn--xs"
+                    onClick={() =>
+                      patch(b.id, (blk) => {
+                        const img = blk as typeof b;
+                        return { ...img, images: img.images.filter((_, xi) => xi !== i) };
+                      })
+                    }
+                  >
+                    画像を削除
+                  </button>
+                </figure>
+              ))}
+              <label className="btn btn--ghost btn--xs" style={{ cursor: "pointer" }}>
+                {uploading ? "アップロード中…" : "＋画像を追加"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  disabled={uploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) onImageUpload(b.id, f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+          )}
+          {b.type === "link" && (
+            <div className="blockEditor__link">
+              <input
+                className="field__input field__input--xs"
+                placeholder="URL（https://…）"
+                value={b.url}
+                onChange={(e) => patch(b.id, (blk) => ({ ...(blk as typeof b), url: e.target.value }))}
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="タイトル（任意）"
+                value={b.title ?? ""}
+                onChange={(e) =>
+                  patch(b.id, (blk) => ({ ...(blk as typeof b), title: e.target.value || undefined }))
+                }
+              />
+              <input
+                className="field__input field__input--xs"
+                placeholder="説明（任意）"
+                value={b.description ?? ""}
+                onChange={(e) =>
+                  patch(b.id, (blk) => ({
+                    ...(blk as typeof b),
+                    description: e.target.value || undefined,
+                  }))
+                }
+              />
+            </div>
+          )}
+        </div>
+      ))}
+      <div className="blockEditor__add">
+        <span className="field__label">ブロックを追加：</span>
+        {(Object.keys(BLOCK_TYPE_LABEL) as BlockType[]).map((type) => (
+          <button key={type} className="btn btn--ghost btn--xs" onClick={() => addBlock(type)}>
+            ＋{BLOCK_TYPE_LABEL[type]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -38,6 +38,13 @@ export function canManagePermissions(role: AppUserRole | undefined | null): bool
   return role === "master" || role === "privileged_admin";
 }
 
+/** Roles that may access the パルス管理（#/pulse）ダッシュボード。
+ *  master / privileged_admin のみ。以前は canManagePermissions を目的外流用していたが、
+ *  権限管理とパルス管理は別概念のため分離した（v2設計書 §1）。 */
+export function canAccessPulse(role: AppUserRole | undefined | null): boolean {
+  return role === "master" || role === "privileged_admin";
+}
+
 export type AppUserRow = {
   email: string;
   display_name: string | null;
@@ -63,6 +70,10 @@ export type VersionRow = {
   is_confirmed?: boolean;
   /** YYYY-MM string identifying the month a confirmed version represents. */
   confirmed_period?: string | null;
+  /** Migration 0027: 保存毎に+1する楽観ロック用リビジョン。 */
+  rev?: number | null;
+  /** Migration 0027: 全員共通の「公式デフォルト組織図」フラグ（全体1件）。 */
+  is_default?: boolean | null;
 };
 
 export type VersionWithSnapshot = VersionRow & {

@@ -72,15 +72,19 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
 
     // Branch 3a: overwrite the loaded file with the latest state.
     if (canOverwrite && dirty) {
-      const row = await updateSnapshot(currentVersionId, nodes);
-      if (!row) {
+      const res = await updateSnapshot(currentVersionId, nodes, {
+        expectedRev: useOrgStore.getState().baseRev,
+      });
+      if (!res.ok) {
         return finishWithError(
-          "現在のファイルへの上書き保存に失敗しました。手動で保存してから再度お試しください。",
+          res.reason === "locked"
+            ? `${res.lockedBy ?? "他のユーザー"} さんが編集中のため保存できません。`
+            : "現在のファイルへの上書き保存に失敗しました。手動で保存してから再度お試しください。",
         );
       }
-      markClean({ versionId: row.id, versionLabel: row.name });
-      setVersionIdToShare(row.id);
-      setVersionLabelToShare(row.name);
+      markClean({ versionId: res.row.id, versionLabel: res.row.name, rev: res.rev });
+      setVersionIdToShare(res.row.id);
+      setVersionLabelToShare(res.row.name);
       setPhase("ready");
       return;
     }
@@ -174,12 +178,19 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               リンク先のデフォルト表示：
               <strong>
                 {view === "list"
-                  ? "組織図リスト"
+                  ? "体制図リスト"
                   : view === "assignments"
                     ? "配属一覧"
-                    : "組織図ツリー"}
+                    : view === "authority"
+                      ? "組織図（権限図）"
+                      : "体制図"}
               </strong>
               （現在のタブをそのまま反映）
+              {view === "ml" && (
+                <div className="share-tips__warn">
+                  ML規定は社内規定のため共有リンクでは開けません。体制図が表示されます。
+                </div>
+              )}
             </div>
             <div className="modal__actions" style={{ marginTop: 12 }}>
               <button className="btn btn--ghost" onClick={onClose}>閉じる</button>
