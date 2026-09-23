@@ -75,7 +75,29 @@ git ls-tree --name-only origin/main supabase/migrations/ | tail -1
 ```
 
 並行ブランチで同じ番号を取ってしまった場合、**後からマージする側が採番し直す**。
-番号を重複させたまま放置すると、適用順が壊れてマージ不能になる（0021 の事故）。
+
+### なぜ番号の重複が特に危ないか（2026-09-23 実測）
+
+`supabase migration list` は **版番号だけで突き合わせる**。中身は見ない。
+そのため、番号が同じで中身が別物の migration が「適用済み（local と remote が一致）」として
+表示される。実際に、ローカルの `0052_smarthr_sync_alert` と本番の
+`0052_user_admin_containment` が一致扱いで並んでいた。
+
+結果、重複番号は2通りの壊れ方をする。**後者の方が危険。**
+
+1. **`db push` が落ちる**
+   本番にある版が手元に無いと
+   `LegacyDbPushMissingLocalError: Remote migration versions not found in local migrations directory`
+   で**全migrationを拒否**する。1件の乖離で、無関係な migration まで一切適用できなくなる。
+2. **`db push` が落ちずに、黙ってスキップする**
+   番号が既に履歴にあると「適用済み」と判断して**何も言わずに飛ばす**。
+   migration を書いてマージしてデプロイしても、**本番には入っていないのに誰も気づかない。**
+
+CLI は落ちた時に `supabase migration repair --status reverted <version>` を提案してくるが、
+**安易に使わない**。その版を「未適用」扱いに戻すため、別ブランチが後から `db push` した時に
+再適用される。正しい対処は、**本番に入っている migration を main へ取り込んで乖離を消すこと**。
+
+`db push` の前に必ず `--dry-run` で対象を確認する。想定外の版が並んでいたら、そこで止める。
 
 ---
 
