@@ -400,7 +400,7 @@ function TmBlock({
 
 // ── 通期（上期・下期を1画面で比較） ─────────────────────────────────
 
-type FyLine = {
+export type FyLine = {
   key: string;
   label: string;
   kind: "div" | "tm" | "member" | "sub" | "pool" | "grand";
@@ -415,57 +415,73 @@ type FyLine = {
 const sumRec = (rec: Record<string, number> | undefined) =>
   rec ? Object.values(rec).reduce((s, v) => s + v, 0) : 0;
 
+type FyLineFn = (
+  key: string, label: string, kind: FyLine["kind"],
+  a: Record<string, number> | undefined, b: Record<string, number> | undefined, parent?: string,
+) => void;
+
+const fyLineCollector = (lines: FyLine[]): FyLineFn => (key, label, kind, a, b, parent) => {
+  const s1 = sumRec(a), s2 = sumRec(b);
+  lines.push({ key, label, kind, h1: s1, h2: s2, h1m: s1 / 6, h2m: s2 / 6, parent });
+};
+
+const uniqMembers = (ms: { personId: string; name: string }[]) =>
+  ms.map((m) => ({ id: m.personId, name: m.name }))
+    .filter((v, i, a) => a.findIndex((x) => x.id === v.id) === i);
+
+type DivB = HalfComputation["divs"][number];
+type PoolB = HalfComputation["pools"][number];
+
+/** 1DIV分の通期行（DIV合計・TM・メンバー・プロダクト計/按分）。DIV別ページと共用。 */
+export function buildDivFyLines(div: string, d1: DivB | undefined, d2: DivB | undefined, nameOf: NameResolver): FyLine[] {
+  const lines: FyLine[] = [];
+  const line = fyLineCollector(lines);
+  line(`div:${div}`, `${div}（DIV合計）`, "div", d1?.totalByMonth, d2?.totalByMonth);
+  const tmNames = [...(d1?.tms ?? []), ...(d2?.tms ?? [])].map((t) => t.tm)
+    .filter((v, i, a) => a.indexOf(v) === i);
+  for (const tm of tmNames) {
+    const t1 = d1?.tms.find((t) => t.tm === tm);
+    const t2 = d2?.tms.find((t) => t.tm === tm);
+    const tkey = `tm:${div}:${tm}`;
+    line(tkey, tm, "tm", t1?.totalByMonth, t2?.totalByMonth, `div:${div}`);
+    for (const m of uniqMembers([...(t1?.members ?? []), ...(t2?.members ?? [])])) {
+      line(`${tkey}:${m.id}`, nameOf(m.id, m.name), "member",
+        t1?.members.find((x) => x.personId === m.id)?.months,
+        t2?.members.find((x) => x.personId === m.id)?.months, tkey);
+    }
+  }
+  line(`sub:${div}:product`, "プロダクト計（スタッフ人件費）", "sub", d1?.productByMonth, d2?.productByMonth, `div:${div}`);
+  line(`sub:${div}:front`, "フロント按分", "sub", d1?.frontAllocByMonth, d2?.frontAllocByMonth, `div:${div}`);
+  line(`sub:${div}:overhead`, "HR/開発/コーポ・その他按分", "sub", d1?.overheadAllocByMonth, d2?.overheadAllocByMonth, `div:${div}`);
+  return lines;
+}
+
+/** 1プール分の通期行（按分原資・メンバー）。DIV別ページと共用。 */
+export function buildPoolFyLines(name: string, p1: PoolB | undefined, p2: PoolB | undefined, nameOf: NameResolver): FyLine[] {
+  const lines: FyLine[] = [];
+  const line = fyLineCollector(lines);
+  const pkey = `pool:${name}`;
+  line(pkey, `${name}（按分原資）`, "pool", p1?.totalByMonth, p2?.totalByMonth);
+  for (const m of uniqMembers([...(p1?.members ?? []), ...(p2?.members ?? [])])) {
+    line(`${pkey}:${m.id}`, nameOf(m.id, m.name), "member",
+      p1?.members.find((x) => x.personId === m.id)?.months,
+      p2?.members.find((x) => x.personId === m.id)?.months, pkey);
+  }
+  return lines;
+}
+
 function buildFyLines(h1: HalfComputation, h2: HalfComputation, nameOf: NameResolver): FyLine[] {
   const lines: FyLine[] = [];
-  const line = (
-    key: string, label: string, kind: FyLine["kind"],
-    a: Record<string, number> | undefined, b: Record<string, number> | undefined, parent?: string,
-  ) => {
-    const s1 = sumRec(a), s2 = sumRec(b);
-    lines.push({ key, label, kind, h1: s1, h2: s2, h1m: s1 / 6, h2m: s2 / 6, parent });
-  };
-  const memberRec = (m: { months: Record<string, number> } | undefined) => m?.months;
+  const line = fyLineCollector(lines);
   const divNames = [...h1.divs.map((d) => d.div), ...h2.divs.map((d) => d.div)]
     .filter((v, i, a) => a.indexOf(v) === i);
   for (const div of divNames) {
-    const d1 = h1.divs.find((d) => d.div === div);
-    const d2 = h2.divs.find((d) => d.div === div);
-    line(`div:${div}`, `${div}（DIV合計）`, "div", d1?.totalByMonth, d2?.totalByMonth);
-    const tmNames = [...(d1?.tms ?? []), ...(d2?.tms ?? [])].map((t) => t.tm)
-      .filter((v, i, a) => a.indexOf(v) === i);
-    for (const tm of tmNames) {
-      const t1 = d1?.tms.find((t) => t.tm === tm);
-      const t2 = d2?.tms.find((t) => t.tm === tm);
-      const tkey = `tm:${div}:${tm}`;
-      line(tkey, tm, "tm", t1?.totalByMonth, t2?.totalByMonth, `div:${div}`);
-      const ids = [...(t1?.members ?? []), ...(t2?.members ?? [])]
-        .map((m) => ({ id: m.personId, name: m.name }))
-        .filter((v, i, a) => a.findIndex((x) => x.id === v.id) === i);
-      for (const m of ids) {
-        line(`${tkey}:${m.id}`, nameOf(m.id, m.name), "member",
-          memberRec(t1?.members.find((x) => x.personId === m.id)),
-          memberRec(t2?.members.find((x) => x.personId === m.id)), tkey);
-      }
-    }
-    line(`sub:${div}:product`, "プロダクト計（スタッフ人件費）", "sub", d1?.productByMonth, d2?.productByMonth, `div:${div}`);
-    line(`sub:${div}:front`, "フロント按分", "sub", d1?.frontAllocByMonth, d2?.frontAllocByMonth, `div:${div}`);
-    line(`sub:${div}:overhead`, "HR/開発/コーポ・その他按分", "sub", d1?.overheadAllocByMonth, d2?.overheadAllocByMonth, `div:${div}`);
+    lines.push(...buildDivFyLines(div, h1.divs.find((d) => d.div === div), h2.divs.find((d) => d.div === div), nameOf));
   }
   const poolNames = [...h1.pools.map((p) => p.name), ...h2.pools.map((p) => p.name)]
     .filter((v, i, a) => a.indexOf(v) === i);
   for (const name of poolNames) {
-    const p1 = h1.pools.find((p) => p.name === name);
-    const p2 = h2.pools.find((p) => p.name === name);
-    const pkey = `pool:${name}`;
-    line(pkey, `${name}（按分原資）`, "pool", p1?.totalByMonth, p2?.totalByMonth);
-    const ids = [...(p1?.members ?? []), ...(p2?.members ?? [])]
-      .map((m) => ({ id: m.personId, name: m.name }))
-      .filter((v, i, a) => a.findIndex((x) => x.id === v.id) === i);
-    for (const m of ids) {
-      line(`${pkey}:${m.id}`, nameOf(m.id, m.name), "member",
-        memberRec(p1?.members.find((x) => x.personId === m.id)),
-        memberRec(p2?.members.find((x) => x.personId === m.id)), pkey);
-    }
+    lines.push(...buildPoolFyLines(name, h1.pools.find((p) => p.name === name), h2.pools.find((p) => p.name === name), nameOf));
   }
   if (sumRec(h1.corporateByMonth) !== 0 || sumRec(h2.corporateByMonth) !== 0) {
     line("corp", "コーポレート（按分対象外）", "pool", h1.corporateByMonth, h2.corporateByMonth);
@@ -476,6 +492,11 @@ function buildFyLines(h1: HalfComputation, h2: HalfComputation, nameOf: NameReso
 
 function FullYearTable({ h1, h2, nameOf }: { h1: HalfComputation; h2: HalfComputation; nameOf: NameResolver }) {
   const lines = useMemo(() => buildFyLines(h1, h2, nameOf), [h1, h2, nameOf]);
+  return <FyTable lines={lines} />;
+}
+
+/** 通期表の描画本体（行の組み立ては呼び出し側）。DIV別ページと共用。 */
+export function FyTable({ lines }: { lines: FyLine[] }) {
   // 既定: DIV・プールは開いてTMまで見せる／TM・プールのメンバーは閉じる
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const isOpen = (key: string, kind: FyLine["kind"]) => open[key] ?? kind === "div";

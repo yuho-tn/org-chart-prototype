@@ -62,13 +62,36 @@ export type Tables = Record<(typeof TABLES)[number], any[]>;
  */
 const PAGE = 1000;
 
+/**
+ * 各テーブルの並び順（画面側 useLaborCostStore.load と同じ）。
+ * ⚠ ORDER BY 無しの range ページングは、ページをまたいで行が重複・欠落しうる
+ * （PostgreSQL は順序を保証しない）。1000行を超えうる labor_amounts / labor_assignments は必ず並べる。
+ * 加えて labor_people / labor_tms の並びは
+ * DIV按分のメンバー表示順・TM表示順そのものなので、画面と揃えないと見た目がずれる。
+ */
+const ORDER: Record<(typeof TABLES)[number], string[]> = {
+  labor_terms: ["sort_order", "code"],
+  labor_people: ["sort_order", "id"],
+  labor_assignments: ["person_id", "term", "half", "quarter"],
+  labor_amounts: ["person_id", "term", "slot"],
+  labor_tms: ["sort_order", "tm"],
+  // 以下は画面側も並べずに読んでいる（数十行＝1ページで収まる）。並べ替えると
+  // 按分比率の注記の並び（frontRatios のキー順＝labor_front_targets の行順）が画面とずれる。
+  labor_dept_map: [],
+  labor_front_targets: [],
+  labor_tm_targets: [],
+  labor_settings: [],
+};
+
 export async function fetchLaborTables(url: string, serviceRoleKey: string): Promise<Tables> {
   const db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
 
-  const fetchAll = async (table: string): Promise<any[]> => {
+  const fetchAll = async (table: (typeof TABLES)[number]): Promise<any[]> => {
     const rows: any[] = [];
     for (let from = 0; ; from += PAGE) {
-      const { data, error } = await db.from(table).select("*").range(from, from + PAGE - 1);
+      let q = db.from(table).select("*");
+      for (const c of ORDER[table]) q = q.order(c);
+      const { data, error } = await q.range(from, from + PAGE - 1);
       if (error) throw new Error(`${table} の取得に失敗: ${error.message}`);
       rows.push(...(data ?? []));
       if (!data || data.length < PAGE) return rows;
