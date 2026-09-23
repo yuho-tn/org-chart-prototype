@@ -82,6 +82,9 @@ Deno.serve(async (req: Request) => {
     .filter((r: any) => r.comment && String(r.comment).trim() !== "")
     .map((r: any) => ({ department: r.snap_department ?? "不明", comment: String(r.comment).trim() }));
   const responseCount = (responses ?? []).length;
+  // n<5 マスク（P1）: 当サイクルの回答者数が5未満なら、コメント本文は要約に
+  // 一切渡さない（少人数だと自由記述の文体だけで個人が特定され得るため）。
+  const commentsMasked = responseCount < 5;
 
   const total = (aggs ?? []).find((a: any) => a.dimension === "total")?.metrics ?? {};
   const byDept = (aggs ?? [])
@@ -97,7 +100,9 @@ Deno.serve(async (req: Request) => {
     by_category: total?.by_category ?? {},
     weather_dist: total?.weather_dist ?? {},
     by_department: byDept,
-    comments: comments.map((c) => c.comment), // 氏名なし・本文のみ
+    // 氏名なし・本文のみ。n<5 マスク時は空配列＋注記のみ渡す。
+    comments: commentsMasked ? [] : comments.map((c) => c.comment),
+    ...(commentsMasked ? { comments_note: "回答者5名未満のためコメントは要約に含めていません" } : {}),
   };
 
   const prompt = [
@@ -112,6 +117,7 @@ Deno.serve(async (req: Request) => {
     "### 推奨アクション\n（次の一手を2〜3個、具体的に）",
     "",
     "注意: 個人を特定する表現は避け、脱識別された傾向として記述すること。",
+    "注意: コメントが無い場合（少人数のため非表示の場合を含む）は、主要テーマを『コメント非表示（少人数）』と書くこと。",
     "",
     "## データ",
     "```json",
@@ -155,7 +161,7 @@ Deno.serve(async (req: Request) => {
         period: cycle.period,
         summary,
         model: ANTHROPIC_MODEL,
-        meta: { comment_count: comments.length, response_count: responseCount },
+        meta: { comment_count: comments.length, response_count: responseCount, comments_masked: commentsMasked },
       },
       { onConflict: "cycle_id" },
     );

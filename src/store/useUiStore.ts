@@ -65,8 +65,11 @@ export type Route =
   | { name: "mission_templates" }
   | { name: "mission_template"; id: string }
   | { name: "mission_sheet"; id: string }
-  // パルスサーベイ 回答画面（chrome 無し・ログイン必須のディープリンク）
-  | { name: "survey" }
+  // パルスサーベイ 回答画面（chrome 無し）。token 付き（#/survey?t=…）はログイン不要の
+  // 本人専用ディープリンク（設計書 v3 §5-1）。token 無しは従来どおりログイン必須。
+  | { name: "survey"; token?: string }
+  // パルスサーベイ 振り返り（#/survey/history・ログイン必須・chrome 無し・設計書 v3 §5-4）
+  | { name: "survey_history" }
   // パルスサーベイ 管理ダッシュボード（chrome 内・権限者）
   | { name: "pulse" }
   // パルスサーベイ メンバー別回答推移（P4-①・実名閲覧権限者のみ・section は "pulse" と共通）
@@ -114,6 +117,7 @@ export function sectionOfRoute(r: Route): Section {
     case "mission_sheet":
       return "missions";
     case "survey":
+    case "survey_history":
       return "survey";
     case "pulse":
     case "pulse_members":
@@ -229,8 +233,16 @@ function readRouteFromHash(): Route {
   if (mt) return { name: "mission_template", id: mt[1] };
   const msh = /^#\/missions\/sheet\/([0-9a-f-]+)$/i.exec(h);
   if (msh) return { name: "mission_sheet", id: msh[1] };
-  // パルスサーベイ 回答画面
+  // パルスサーベイ 回答画面。#/survey?t=<token> は本人専用トークン付きディープリンク
+  // （ログイン不要・設計書 v3 §5-1）。t が空/欠落なら通常のログイン必須ルートへ落とす。
   if (h === "#/survey") return { name: "survey" };
+  if (h.startsWith("#/survey?")) {
+    const qs = new URLSearchParams(h.slice("#/survey?".length));
+    const t = qs.get("t");
+    return t ? { name: "survey", token: t } : { name: "survey" };
+  }
+  // パルスサーベイ 振り返り（ログイン必須）
+  if (h === "#/survey/history") return { name: "survey_history" };
   // パルスサーベイ 管理ダッシュボード / メンバー / アラート / コメント
   const pmem = /^#\/pulse\/members\/([^/]+)$/.exec(h);
   if (pmem) {
@@ -299,7 +311,9 @@ function routeToHash(r: Route): string {
     case "mission_sheet":
       return `#/missions/sheet/${r.id}`;
     case "survey":
-      return "#/survey";
+      return r.token ? `#/survey?t=${encodeURIComponent(r.token)}` : "#/survey";
+    case "survey_history":
+      return "#/survey/history";
     case "pulse":
       return "#/pulse";
     case "pulse_members":

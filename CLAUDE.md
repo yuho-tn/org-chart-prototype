@@ -24,9 +24,16 @@ https://shosan-talent-hub.vercel.app （2026-07-07 org-chart-prototype→talent-
 - **DIV別アクセス限定ページ（#/labor/div/:target・migration 0048）**。全従業員データを見せず、指定した1DIV/プール（SNS DIV・マーケティングDIV・制作DIV・AI DIV・フロントDIV・HR TM・コーポレートTM・開発TM）だけをメールアドレス単位で見せる。付与は「アクセス管理」タブ下部の「DIV別アクセス」（owner限定）。認可判定と集計は `api/labor-div-report.ts`（Vercel serverless・service_role・呼び出し本人のJWT検証）で行い、他DIVのデータはレスポンスに一切含めない（フロントの useLaborCostStore/useEmployeesStore は使わない＝全社データへ触れない設計）。
 - 給与seedデータは**絶対にリポジトリへ入れない**（scratchpad/SQLコンソールのみ）。詳細は memory [[project_shosan_labor_cost_tool]]。
 
+## ブランチ運用（2026-09-23〜）
+**main = 本番で動いているもの**。作業は `feat/` `fix/` 等のブランチ → PR → main の順。
+**本番デプロイ（`vercel --prod` / `supabase functions deploy`）は main から行い、
+ブランチから先に打った場合は同日中に main へマージする**。
+migration の採番は `origin/main` の最大値+1（作業ブランチ基準で取ると番号が衝突して取り込めなくなる）。
+詳細・経緯 → [docs/BRANCHING.md](docs/BRANCHING.md)
+
 ## SmartHR 同期と失敗アラート（Edge Function `smarthr-sync` / `smarthr-alert`）
 - 従業員マスターの**正は SmartHR**。日次 pg_cron が `smarthr-sync` を起動し `employees` へ upsert（突合キー=`employee_number`・削除しない＝退職は `left_at`）。
 - **2026-09-23 事故**：SmartHR 側のサブドメイン改称（`sho-san20220722mk` → `sho-san`）で同期が `400 inactive` を返し続け、失敗は `smarthr_sync_state` に書かれるだけで誰にも届かず、**発見時に従業員マスターが7件ズレていた**（入社3・退職4）。
-- **失敗通知（migration 0052・未デプロイ）**：`smarthr-alert` が日次で `error`／`stale`（36h 動いていない＝cron ごと死亡）／`never` を検知し、`app_users` の master/privileged_admin/admin へ Slack DM。同じ原因は1日1回・原因が変われば即時・復旧時に1回。手順は `docs/SMARTHR_SYNC_ALERT_RUNBOOK.md`。
+- **失敗通知（migration 0054・未デプロイ）**：`smarthr-alert` が日次で `error`／`stale`（36h 動いていない＝cron ごと死亡）／`never` を検知し、`app_users` の master/privileged_admin/admin へ Slack DM。同じ原因は1日1回・原因が変われば即時・復旧時に1回。手順は `docs/SMARTHR_SYNC_ALERT_RUNBOOK.md`。
 - **「壊れている」の定義は `smarthr_sync_health()` 1本**。画面の赤バッジ（従業員マスターのヘッダ）と Slack 通知が同じ関数を読む。**判定条件を UI 側に書き直さないこと**（2か所に書くと必ず食い違う）。
 - ⚠️ **日次同期そのものの cron はどの migration にも無い**（手登録のままバージョン管理外）。`select * from cron.job` で実体を確認すること。

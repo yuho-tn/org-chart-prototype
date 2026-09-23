@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Copy } from "lucide-react";
+import { CheckCircle2, Copy, X } from "lucide-react";
 import "./pulse-shared.css";
 import "./admin.css";
 import "./alerts.css"; // .palert__field をサイクル作成フォームで再利用しているため
-import { usePulseAdminStore, type NotifyResult, type PulseCycleStats } from "../../store/usePulseAdminStore";
+import {
+  usePulseAdminStore,
+  type NotifyResult,
+  type PulseCycleStats,
+  type PulseNotifyPreview,
+  type AlertRulePatch,
+} from "../../store/usePulseAdminStore";
 import { PulseSubnav } from "./PulseSubnav";
 import { usePulseToast, PulseToast, type PulseToastKind } from "./usePulseToast";
 import {
@@ -11,10 +17,14 @@ import {
   QUESTION_TYPE_LABEL,
   SET_STATUS_LABEL,
   CYCLE_STATUS_LABEL,
+  ALERT_SOURCE_LABEL,
+  ALERT_RULE_PARAM_FIELDS,
   type PulseQuestionSetRow,
   type PulseQuestionRow,
   type PulseQuestionType,
   type PulseCycleRow,
+  type PulseAlertRule,
+  type PulseAlertNotifySettings,
 } from "../../lib/pulse";
 
 /** #/survey の回答フォームURL。no_channel_configured 時の手動案内用（設計書 §6）。 */
@@ -53,6 +63,8 @@ export function PulseAdminPage() {
           <OperationStepper sets={sets} cycles={cycles} />
           <QuestionSets onToast={showToast} />
           <Cycles onToast={showToast} />
+          <AlertRulesSection onToast={showToast} />
+          <AlertNotifySection onToast={showToast} />
         </>
       )}
 
@@ -416,6 +428,7 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
   const [sendDate, setSendDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [notifyResults, setNotifyResults] = useState<Record<string, NotifyResult>>({});
+  // 直近の preview で分かった「自分用URL」。cycle id ごとに保持し、broadcast/reminder が
 
   const onCreate = async () => {
     const res = await createCycle({
@@ -438,9 +451,13 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
   };
 
   const onNotify = async (c: PulseCycleRow, mode: "broadcast" | "reminder") => {
+    // 直前に「文面と自分用URLを確認」を実行していれば対象人数を確認ダイアログに出す
+    // （設計書 §5-5：「N は preview の targets を表示できれば表示」）。
+    const n = notifyResults[c.id]?.preview?.targets;
+    const targetPhrase = `対象者（雇用形態ルール適用${n != null ? `・${n}名` : ""}）`;
     const confirmMsg =
       mode === "broadcast"
-        ? `${periodLabel(c.period)} の一斉送信（Slack DM＋メール）を全在籍者へ実行します。よろしいですか？`
+        ? `${periodLabel(c.period)} の一斉送信（Slack DM＋メール）を${targetPhrase}へ実行します。よろしいですか？`
         : `${periodLabel(c.period)} の未回答者へリマインドを送信します。よろしいですか？`;
     if (!confirm(confirmMsg)) return;
     const res = await notifyCycle(c.id, mode);
@@ -448,12 +465,21 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
     onToast(res.noChannelConfigured ? "error" : res.ok ? "success" : "error", notifyResultToastText(mode, res));
   };
 
-  const onCopyUrl = async () => {
+  const onPreview = async (c: PulseCycleRow) => {
+    const res = await notifyCycle(c.id, "preview");
+    setNotifyResults((m) => ({ ...m, [c.id]: res }));
+    onToast(
+      res.ok ? "success" : "error",
+      res.ok ? "文面と自分用URLを取得しました（送信はされていません）" : res.reason ?? "取得に失敗しました",
+    );
+  };
+
+  const onCopyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(SURVEY_URL);
-      onToast("success", "回答URLをコピーしました");
+      await navigator.clipboard.writeText(text);
+      onToast("success", "コピーしました");
     } catch {
-      onToast("error", `コピーに失敗しました。手動でコピーしてください：${SURVEY_URL}`);
+      onToast("error", `コピーに失敗しました。手動でコピーしてください：${text}`);
     }
   };
 
@@ -461,8 +487,8 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
     <section className="padm__section">
       <h2 className="pdash__h2">配信サイクル</h2>
       <p className="pdash__muted padm__note">
-        「受付開始」で回答フォーム（#/survey）が開きます（この時点では通知は送信されません）。続けて「一斉送信」を押すと全在籍者へ
-        Slack DM＋メールで案内が届きます。締切前は「リマインド」で未回答者のみへ再送できます。
+        「受付開始」で回答フォーム（#/survey）が開きます（この時点では通知は送信されません）。続けて「一斉送信」を押すと対象者（雇用形態ルール適用）へ
+        Slack DM＋メールで案内が届きます。送信前に「文面と自分用URLを確認」で内容を確認できます。締切前は「リマインド」で未回答者のみへ再送できます。
       </p>
 
       <div className="padm__cyclenew">
@@ -511,11 +537,12 @@ function Cycles({ onToast }: { onToast: (kind: PulseToastKind, m: string) => voi
                 run("受付を開始しました")(sendCycle(c.id));
             }}
             onNotify={(mode) => onNotify(c, mode)}
+            onPreview={() => onPreview(c)}
             onClose={() => {
               if (confirm(`${periodLabel(c.period)} を終了します（以降は回答不可）。よろしいですか？`))
                 run("終了しました")(closeCycle(c.id));
             }}
-            onCopyUrl={onCopyUrl}
+            onCopyText={onCopyText}
           />
         ))}
       </div>
@@ -537,8 +564,9 @@ function CycleRow({
   busy,
   onSend,
   onNotify,
+  onPreview,
   onClose,
-  onCopyUrl,
+  onCopyText,
 }: {
   c: PulseCycleRow;
   setLabel: string;
@@ -547,8 +575,9 @@ function CycleRow({
   busy: boolean;
   onSend: () => void;
   onNotify: (mode: "broadcast" | "reminder") => void;
+  onPreview: () => void;
   onClose: () => void;
-  onCopyUrl: () => void;
+  onCopyText: (text: string) => void;
 }) {
   const rate = stats && stats.target > 0 ? stats.responses / stats.target : null;
 
@@ -570,10 +599,18 @@ function CycleRow({
           {c.status === "sent" && (
             <>
               <button
+                className="pdash__btn"
+                disabled={busy}
+                onClick={onPreview}
+                title="配信文面と自分用の回答URLを確認します（送信はされません）"
+              >
+                文面と自分用URLを確認
+              </button>
+              <button
                 className="pdash__btn pdash__btn--primary"
                 disabled={busy}
                 onClick={() => onNotify("broadcast")}
-                title="全在籍者へ Slack DM＋メールで案内を送信"
+                title="対象者（雇用形態ルール適用）へ Slack DM＋メールで案内を送信"
               >
                 一斉送信
               </button>
@@ -610,14 +647,22 @@ function CycleRow({
 
       {notifyResult && (
         <div className={"padm__notifyresult" + (notifyResult.ok ? "" : " padm__notifyresult--error")}>
-          {notifyResult.noChannelConfigured ? (
+          {notifyResult.preview ? (
+            <PreviewPanel preview={notifyResult.preview} onCopyText={onCopyText} />
+          ) : notifyResult.noChannelConfigured ? (
             <>
               <p className="padm__notifyresult-msg">
                 配信チャネル未設定です（Slack Bot Token／Resend API Key が両方とも未設定）。
-                docs/PULSE_ACTIVATION_RUNBOOK.md を参照して設定するか、回答URLを手動でSlackへ投稿してください。
+                docs/PULSE_ACTIVATION_RUNBOOK.md を参照して設定するか、共通の回答URL（ログイン式 #/survey）を
+                手動でSlackへ投稿してください。本人専用URLは「文面と自分用URLを確認」から取得できます（他の人に配らない）。
               </p>
-              <button className="pdash__btn padm__copybtn" onClick={onCopyUrl}>
-                <Copy size={13} aria-hidden="true" /> 回答URLをコピー
+              {/* ここで配るのは共通URL固定。本人専用トークンURLをチャンネルに貼ると
+                  クリックした全員が貼った人として回答してしまう（独立レビュー指摘）。 */}
+              <button
+                className="pdash__btn padm__copybtn"
+                onClick={() => onCopyText(SURVEY_URL)}
+              >
+                <Copy size={13} aria-hidden="true" /> 共通の回答URLをコピー
               </button>
             </>
           ) : (
@@ -628,6 +673,321 @@ function CycleRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * 「文面と自分用URLを確認」（mode:"preview"）の結果パネル。送信はしていない旨と、
+ * 対象人数・自分用URL・一斉送信/リマインドの文面・メール件名をそのまま見せる
+ * （設計書 §5-5）。my_url が null＝呼び出した管理者自身は今回の対象者ではない。
+ */
+function PreviewPanel({
+  preview,
+  onCopyText,
+}: {
+  preview: PulseNotifyPreview;
+  onCopyText: (text: string) => void;
+}) {
+  return (
+    <div className="padm__preview">
+      <p className="padm__preview-summary">
+        対象 {preview.targets}名（雇用形態ルール適用・未送信のプレビューです）
+      </p>
+      <div className="padm__preview-block">
+        <div className="padm__preview-label">自分用URL</div>
+        <div className="padm__preview-urlrow">
+          <code className="padm__preview-url">
+            {preview.my_url ?? "（あなたは今回のサイクルの対象者ではありません）"}
+          </code>
+          {preview.my_url && (
+            <button
+              className="pdash__btn padm__copybtn"
+              onClick={() => onCopyText(preview.my_url as string)}
+            >
+              <Copy size={13} aria-hidden="true" /> コピー
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="padm__preview-block">
+        <div className="padm__preview-label">一斉送信の文面</div>
+        <pre className="padm__preview-text">{preview.text_broadcast}</pre>
+      </div>
+      <div className="padm__preview-block">
+        <div className="padm__preview-label">リマインドの文面</div>
+        <pre className="padm__preview-text">{preview.text_reminder}</pre>
+      </div>
+      <div className="padm__preview-block">
+        <div className="padm__preview-label">メール件名</div>
+        <p className="padm__preview-text">{preview.email_subject}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── P2: アラートルール（設計書 §10-1・#/pulse/admin） ────────────────
+
+/**
+ * アラートルール一覧。ON/OFF・即時通知・上長開示はチェックボックスで即時保存、
+ * params の数値項目は QRow と同じ流儀（ローカル state で編集し onBlur で変更時のみ保存）。
+ */
+function AlertRulesSection({ onToast }: { onToast: (kind: PulseToastKind, m: string) => void }) {
+  const { alertRules, updateAlertRule, busy } = usePulseAdminStore();
+
+  return (
+    <section className="padm__section">
+      <h2 className="pdash__h2">アラートルール</h2>
+      <p className="pdash__muted padm__note">
+        ON/OFFとしきい値・即時通知（SOS/体調不安向け）・上長開示可否を設定します。上長開示は「仕事・健康・評価」由来のスコア系ルールのみ実際に許可されます（設計書
+        §10-2）。
+      </p>
+      {alertRules.length === 0 ? (
+        <p className="pdash__muted">アラートルールが見つかりません。supabase/migrations/0051 を適用してください。</p>
+      ) : (
+        <div className="padm__rulelist">
+          {alertRules.map((r) => (
+            <AlertRuleRow
+              key={`${r.id}:${r.is_active}:${r.notify_immediately}:${r.disclose_to_manager}`}
+              rule={r}
+              busy={busy}
+              onSave={(patch) => updateAlertRule(r.id, patch)}
+              onToast={onToast}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AlertRuleRow({
+  rule,
+  busy,
+  onSave,
+  onToast,
+}: {
+  rule: PulseAlertRule;
+  busy: boolean;
+  onSave: (patch: AlertRulePatch) => Promise<{ ok: boolean; reason?: string }>;
+  onToast: (kind: PulseToastKind, m: string) => void;
+}) {
+  const fields = ALERT_RULE_PARAM_FIELDS[rule.code] ?? [];
+  const [params, setParams] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const f of fields) init[f.key] = String(rule.params?.[f.key] ?? "");
+    return init;
+  });
+
+  const run = async (patch: AlertRulePatch, okMsg: string) => {
+    const res = await onSave(patch);
+    onToast(res.ok ? "success" : "error", res.ok ? okMsg : res.reason ?? "更新に失敗しました");
+  };
+
+  const onParamBlur = (key: string) => {
+    const raw = (params[key] ?? "").trim();
+    const orig = rule.params?.[key];
+    const num = Number(raw);
+    if (raw === "" || Number.isNaN(num)) {
+      setParams((p) => ({ ...p, [key]: String(orig ?? "") }));
+      return;
+    }
+    if (num === orig) return;
+    run({ params: { [key]: num } }, "しきい値を更新しました");
+  };
+
+  return (
+    <div className={"padm__rulerow" + (rule.is_active ? "" : " is-off")}>
+      <div className="padm__ruletop">
+        <label className="padm__ruletoggle">
+          <input
+            type="checkbox"
+            checked={rule.is_active}
+            disabled={busy}
+            onChange={(e) => run({ is_active: e.target.checked }, e.target.checked ? "有効化しました" : "無効化しました")}
+          />
+          <span className="padm__ruletitle">{rule.label}</span>
+        </label>
+        <span className="padm__rulesource">{ALERT_SOURCE_LABEL[rule.source] ?? rule.source}</span>
+        <span className="padm__rulecode">{rule.code}</span>
+      </div>
+      {rule.description && <p className="padm__ruledesc">{rule.description}</p>}
+      <div className="padm__ruleparams">
+        {fields.map((f) => (
+          <label key={f.key} className="palert__field padm__ruleparam">
+            <span>{f.label}</span>
+            <input
+              type="number"
+              step="1"
+              min={1}
+              value={params[f.key] ?? ""}
+              disabled={busy}
+              onChange={(e) => setParams((p) => ({ ...p, [f.key]: e.target.value }))}
+              onBlur={() => onParamBlur(f.key)}
+            />
+          </label>
+        ))}
+        <label className="padm__rulecheck">
+          <input
+            type="checkbox"
+            checked={rule.notify_immediately}
+            disabled={busy}
+            onChange={(e) => run({ notify_immediately: e.target.checked }, "即時通知の設定を更新しました")}
+          />
+          即時通知
+        </label>
+        <label className="padm__rulecheck">
+          <input
+            type="checkbox"
+            checked={rule.disclose_to_manager}
+            disabled={busy}
+            onChange={(e) => run({ disclose_to_manager: e.target.checked }, "上長開示の設定を更新しました")}
+          />
+          上長開示を許可
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// ── P2: アラート通知（設計書 §10-6・#/pulse/admin） ──────────────────
+
+/** 通知先メール・日次/即時ON-OFF・ダイジェストのプレビュー/即時送信。 */
+function AlertNotifySection({ onToast }: { onToast: (kind: PulseToastKind, m: string) => void }) {
+  const {
+    notifySettings,
+    updateAlertNotifySettings,
+    previewDigest,
+    sendDigestNow,
+    digestBusy,
+    digestPreviewText,
+    busy,
+  } = usePulseAdminStore();
+  const [emailInput, setEmailInput] = useState("");
+
+  if (!notifySettings) {
+    return (
+      <section className="padm__section">
+        <h2 className="pdash__h2">アラート通知</h2>
+        <p className="pdash__muted">通知設定が見つかりません。supabase/migrations/0051 を適用してください。</p>
+      </section>
+    );
+  }
+
+  const recipients = notifySettings.alert_digest_recipients;
+
+  const addRecipient = async () => {
+    const email = emailInput.trim().toLowerCase();
+    if (!email) return;
+    if (recipients.includes(email)) {
+      setEmailInput("");
+      return;
+    }
+    const res = await updateAlertNotifySettings({ alert_digest_recipients: [...recipients, email] });
+    onToast(res.ok ? "success" : "error", res.ok ? "通知先を追加しました" : res.reason ?? "追加に失敗しました");
+    if (res.ok) setEmailInput("");
+  };
+
+  const removeRecipient = async (email: string) => {
+    const res = await updateAlertNotifySettings({
+      alert_digest_recipients: recipients.filter((e) => e !== email),
+    });
+    onToast(res.ok ? "success" : "error", res.ok ? "通知先を削除しました" : res.reason ?? "削除に失敗しました");
+  };
+
+  const toggle = async (
+    key: keyof Pick<PulseAlertNotifySettings, "alert_digest_enabled" | "alert_immediate_enabled">,
+    value: boolean,
+  ) => {
+    const res = await updateAlertNotifySettings({ [key]: value });
+    onToast(res.ok ? "success" : "error", res.ok ? "設定を更新しました" : res.reason ?? "更新に失敗しました");
+  };
+
+  const onPreview = async () => {
+    const res = await previewDigest();
+    onToast(
+      res.ok ? "success" : "error",
+      res.ok ? "ダイジェストを取得しました（送信はされていません）" : res.reason ?? "取得に失敗しました",
+    );
+  };
+
+  const onSendNow = async () => {
+    if (!confirm("通知先へアラートダイジェストを今すぐ送信します。よろしいですか？")) return;
+    const res = await sendDigestNow();
+    onToast(res.ok ? "success" : "error", res.reason ?? (res.ok ? "送信しました" : "送信に失敗しました"));
+  };
+
+  return (
+    <section className="padm__section">
+      <h2 className="pdash__h2">アラート通知</h2>
+      {recipients.length === 0 && (
+        <p className="padm__notifywarn">通知先未設定です。追加するまでダイジェストは送信されません。</p>
+      )}
+      {recipients.length > 0 && (
+        <div className="padm__notifyrecipients">
+          {recipients.map((email) => (
+            <span key={email} className="padm__chip">
+              {email}
+              <button type="button" onClick={() => removeRecipient(email)} disabled={busy} aria-label={`${email}を削除`}>
+                <X size={11} aria-hidden />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="padm__newrow">
+        <input
+          className="padm__input"
+          type="email"
+          placeholder="通知先メールアドレス（在籍者のメールのみ）"
+          value={emailInput}
+          onChange={(e) => setEmailInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addRecipient();
+            }
+          }}
+        />
+        <button className="pdash__btn" onClick={addRecipient} disabled={busy || !emailInput.trim()}>
+          追加
+        </button>
+      </div>
+
+      <div className="padm__notifytoggles">
+        <label className="padm__rulecheck">
+          <input
+            type="checkbox"
+            checked={notifySettings.alert_digest_enabled}
+            disabled={busy}
+            onChange={(e) => toggle("alert_digest_enabled", e.target.checked)}
+          />
+          日次ダイジェストを送る（毎朝9:10・未完了アラートをまとめて通知）
+        </label>
+        <label className="padm__rulecheck">
+          <input
+            type="checkbox"
+            checked={notifySettings.alert_immediate_enabled}
+            disabled={busy}
+            onChange={(e) => toggle("alert_immediate_enabled", e.target.checked)}
+          />
+          SOS・体調不安は検知次第すぐ通知する
+        </label>
+      </div>
+
+      <div className="padm__digestactions">
+        <button className="pdash__btn" onClick={onPreview} disabled={digestBusy}>
+          {digestBusy ? "取得中…" : "ダイジェストを確認"}
+        </button>
+        <button className="pdash__btn pdash__btn--primary" onClick={onSendNow} disabled={digestBusy}>
+          {digestBusy ? "処理中…" : "今すぐ送る"}
+        </button>
+      </div>
+      {digestPreviewText != null && (
+        <pre className="padm__preview-text padm__digestpreview">
+          {digestPreviewText || "（現在、未通知の未完了アラートはありません）"}
+        </pre>
+      )}
+    </section>
   );
 }
 

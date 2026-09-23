@@ -83,3 +83,23 @@ export async function fetchWithRetry<T extends SupabaseishResult>(
     ? lastRejection
     : new Error("サーバーとの通信に失敗しました");
 }
+
+/**
+ * `fetchWithRetry` の非 throw 版。タイムアウト・リトライ尽きを
+ * `{ data: null, error }` の形に畳んで返す。
+ *
+ * 既存コードへ後からタイムアウトを当てる時はこちらを使う。呼び出し側の
+ * 制御フロー（`if (error) …`）を一切変えずに包めるので、差分が小さく、
+ * 「try/catch を足し忘れて loading が立ちっぱなし」という取り違えも起きない。
+ */
+export async function fetchSafe<T extends SupabaseishResult>(
+  run: () => PromiseLike<T>,
+  opts: { timeoutMs?: number; retries?: number } = {},
+): Promise<T> {
+  try {
+    return await fetchWithRetry(run, opts);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { data: null, error: { message } } as unknown as T;
+  }
+}

@@ -52,6 +52,17 @@
   overflow-wrap: anywhere;
 }
 
+/* ── 閲覧者ボックス（決定1：誰がこの回答を見るかの明示） ─────────── */
+.pulse__viewers {
+  display: flex; gap: 8px; align-items: flex-start;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 12px; margin: 0 0 16px;
+}
+.pulse__viewers-icon { flex: 0 0 auto; margin-top: 2px; color: var(--text-subtle); }
+.pulse__viewers-text { display: flex; flex-direction: column; gap: 3px; }
+.pulse__viewers-text p { margin: 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.6; }
+.pulse__viewers-token { color: var(--text-subtle); font-size: 11px; }
+
 .pulse__lead { font-size: 14px; color: var(--text-muted); line-height: 1.7; margin: 0 0 16px; }
 .pulse__badge {
   display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 600;
@@ -197,6 +208,24 @@
 }
 .pulse__btn--ghost:hover { background: var(--navy-50); border-color: var(--primary); }
 .pulse__hint { font-size: 12px; color: var(--warn); font-weight: 600; }
+
+/* ── 前回との比較（送信後サンクス画面） ───────────────────────────── */
+.pulse__compare { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--border); text-align: left; }
+.pulse__compare-title { margin: 0 0 12px; font-size: 14px; font-weight: 700; color: var(--text-strong); }
+.pulse__compare-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pulse__compare-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; background: var(--bg-soft); border-radius: var(--radius-sm);
+}
+.pulse__compare-cat { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.pulse__compare-vals { display: flex; align-items: center; gap: 6px; }
+.pulse__compare-weather { font-size: 18px; line-height: 1; }
+.pulse__compare-num { font-size: 14px; font-weight: 700; color: var(--text-strong); min-width: 18px; text-align: center; }
+.pulse__compare-trend { flex-shrink: 0; }
+.pulse__compare-trend.is-up { color: var(--ok); }
+.pulse__compare-trend.is-down { color: var(--danger); }
+.pulse__compare-trend.is-flat { color: var(--text-subtle); }
+.pulse__compare-loginhint { margin: 6px 0 0; font-size: 11px; color: var(--text-subtle); }
 
 /* ── マイパルス（サンクス画面・本人の推移） ─────────────────────── */
 .pulse__mine {
