@@ -325,10 +325,10 @@ export function EmployeesPage() {
     return `最終同期 ${d.toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
   }
 
-  /** 同期が壊れている時だけ出す赤バッジ（migration 0053 smarthr_sync_health）。
+  /** 同期が壊れている時だけ出す赤バッジ（migration 0054 smarthr_sync_health）。
    *  改称事故（2026-09-23）では失敗が「最終同期」チップ先頭の小さな ⚠ でしか
    *  表現されず、7件ズレるまで誰も気づかなかった。状態と次の一手を面に出す。
-   *  null を返す＝正常、または 0053 未適用（従来表示のまま）。 */
+   *  null を返す＝正常、または 0054 未適用（従来表示のまま）。 */
   const syncAlert = ((): { text: string; title: string } | null => {
     const st = smartHrHealth?.state;
     if (!st || st === "ok") return null;

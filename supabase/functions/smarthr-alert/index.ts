@@ -1,4 +1,4 @@
-// SmartHR 同期の失敗通知 Edge Function（migration 0053）。
+// SmartHR 同期の失敗通知 Edge Function（migration 0054）。
 //
 // 日次同期が壊れたことを人事管理者へ Slack DM で知らせる。
 //
@@ -8,7 +8,7 @@
 //
 //   POST { mode: "check" | "preview" }
 //
-//   • check   : pg_cron（0053 smarthr_cron_fire_sync_alert）から毎日起動される本体。
+//   • check   : pg_cron（0054 smarthr_cron_fire_sync_alert）から毎日起動される本体。
 //               smarthr_alert_batch() が「今通知すべきか」を判定し、
 //                 kind='failure'  … 異常（error / stale / never）
 //                 kind='recovery' … 直前まで通知していた障害からの復旧（1回だけ）
@@ -17,7 +17,7 @@
 //               送信が全滅した時は記録しない＝次回また試す。
 //   • preview : 送信も記録も一切しない。「今送るとこうなる」を返すだけ。
 //
-// 通知の間引き（migration 0053 の契約）:
+// 通知の間引き（migration 0054 の契約）:
 //   同じ原因は 24 時間に1回まで。原因が変わったら抑止期間内でも即通知する。
 //   毎日同じ文面が届く状態を作ると、人はアラートを読まなくなる。
 //

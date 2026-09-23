@@ -16,7 +16,7 @@ project_id = "kgofrmfsfnxbzqkfrkqo"
 
 # ── SmartHR 連携 ─────────────────────────────────────────────────
 # smarthr-sync  … cron から x-cron-secret で起動（2026-07-15 から verify_jwt=false 運用）。
-# smarthr-alert … 同期失敗の通知（migration 0053）。pg_cron smarthr_cron_fire_sync_alert が
+# smarthr-alert … 同期失敗の通知（migration 0054）。pg_cron smarthr_cron_fire_sync_alert が
 #                 x-cron-secret だけで呼ぶ。関数内で cron secret／JWT(smarthr_can_sync) を自前検証する。
 [functions.smarthr-sync]
 verify_jwt = false

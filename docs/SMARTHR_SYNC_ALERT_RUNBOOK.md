@@ -1,4 +1,4 @@
-# SmartHR 同期アラート 有効化ランブック（migration 0053 / Edge Function `smarthr-alert`）
+# SmartHR 同期アラート 有効化ランブック（migration 0054 / Edge Function `smarthr-alert`）
 
 **状態：未デプロイ。**本番反映（`supabase functions deploy` / migration 適用）は裕鵬さんの承認後に実施する。
 
@@ -56,15 +56,17 @@ update public.smarthr_sync_state
 supabase db push
 ```
 
-> ⚠️ 採番は **0053**。当初は 0052 で書かれていたが、main 同期（2026-09-23）で
-> `0052_user_admin_containment` が先に入ったため振り直した（BRANCHING.md §4
-> 「後からマージする側が採番し直す」）。`db push` 前に
+> ⚠️ 採番は **0054**。当初 0052 → 0053 → 0054 と二度振り直している。
+> 本番の migration 履歴は 0052=`user_admin_containment`（2026-09-23 適用）、
+> 0053=`profile_notion_fields`（別セッションが適用）で埋まっており、
+> **重複した番号は `db push` で「適用済み」と判定されて黙ってスキップされる**
+> （＝通知機能が有効化されないまま気づけない）。`db push` 前に
 > `select * from supabase_migrations.schema_migrations order by version desc limit 5;` で
-> 0052 までが入っていることを確認すること。
+> 0053 までが入っていることを必ず確認すること。
 >
 > ⚠️ `db push` は**チェックアウト中のブランチの migrations を見る**。必ず main
 > （もしくは main ベースの本ブランチ）から実行し、`--dry-run` で対象が
-> `0053_smarthr_sync_alert.sql` だけであることを確認してから打つこと。
+> `0054_smarthr_sync_alert.sql` だけであることを確認してから打つこと。
 
 ### ② cron 用 secret を Vault へ投入
 
@@ -127,7 +129,7 @@ select jobname, status, return_message, start_time
 ```
 
 登録が無い／壊れている場合は、`smarthr-sync` を叩く cron を **migration として** 追加する
-（今回の 0053 は「壊れたことに気づく」仕組みであって、同期を動かす仕組みではない。
+（今回の 0054 は「壊れたことに気づく」仕組みであって、同期を動かす仕組みではない。
 stale 検知は同期 cron が死んでいれば鳴るが、鳴らす側の cron が別に要る）。
 
 この 2本目の cron は、本タスクの範囲（失敗通知）を越えるため今回は触っていない。

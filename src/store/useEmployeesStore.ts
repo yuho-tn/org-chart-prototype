@@ -86,7 +86,7 @@ export type SmartHrSyncState = {
 };
 export type SmartHrSyncResult = { ok: boolean; summary?: SmartHrSyncSummary; error?: string };
 
-/** 同期の健全性（migration 0053 `smarthr_sync_health()`）。
+/** 同期の健全性（migration 0054 `smarthr_sync_health()`）。
  *  「壊れている」の定義はサーバ側の1関数に集約している。ここで条件を書き直すと
  *  画面のバッジと Slack 通知が食い違うため、判定は必ずこの RPC を読む。
  *    never … 一度も同期していない
@@ -123,7 +123,7 @@ type EmployeesState = {
 
   /** SmartHR 同期の最終状態（UIの「最終同期: …」表示用）。null=未取得 */
   smartHrState: SmartHrSyncState | null;
-  /** 同期の健全性（バッジ表示用）。null=未取得 or 0053 未適用 */
+  /** 同期の健全性（バッジ表示用）。null=未取得 or 0054 未適用 */
   smartHrHealth: SmartHrHealth | null;
   /** SmartHR API から従業員マスターを同期（Edge Function 経由）。正＝SmartHR。 */
   syncFromSmartHr: () => Promise<SmartHrSyncResult>;
@@ -369,7 +369,7 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
       .maybeSingle();
     if (data) set({ smartHrState: data as SmartHrSyncState });
 
-    // 健全性は別 RPC（setof を返すので先頭行を取る）。migration 0053 適用前は
+    // 健全性は別 RPC（setof を返すので先頭行を取る）。migration 0054 適用前は
     // 関数が無くエラーになるが、その場合は health を持たないまま従来表示に落とす
     // ＝ここで画面を壊さない。
     const { data: h, error: hErr } = await supabase.rpc("smarthr_sync_health");
