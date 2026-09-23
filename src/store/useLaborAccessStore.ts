@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { supabase } from "../lib/supabase";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * 人件費管理（#/labor）のアクセス権限マスター管理。
@@ -87,18 +88,31 @@ export const useLaborAccessStore = create<State>((set, get) => ({
 
   checkOwner: async () => {
     if (!supabase) { set({ ownerChecked: true, isOwner: false }); return; }
-    const { data, error } = await supabase.rpc("laborcost_is_owner");
-    set({ ownerChecked: true, isOwner: !error && data === true });
+    try {
+      const { data, error } = await fetchWithRetry(() => supabase!.rpc("laborcost_is_owner"));
+      set({ ownerChecked: true, isOwner: !error && data === true });
+    } catch {
+      set({ ownerChecked: true, isOwner: false });
+    }
   },
 
   loadAdmins: async () => {
     if (!supabase) return;
     set({ loading: true, error: null });
-    const { data, error } = await supabase
-      .from("laborcost_admins")
-      .select("email, role, created_at")
-      .order("role")
-      .order("created_at");
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!
+          .from("laborcost_admins")
+          .select("email, role, created_at")
+          .order("role")
+          .order("created_at"),
+      );
+    } catch (e) {
+      set({ loading: false, error: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    const { data, error } = result;
     if (error) {
       set({ loading: false, error: error.message });
       return;
@@ -146,11 +160,23 @@ export const useLaborAccessStore = create<State>((set, get) => ({
   loadDivAccess: async () => {
     if (!supabase) return;
     set({ divAccessLoading: true, divAccessError: null });
-    const { data, error } = await supabase
-      .from("labor_div_access")
-      .select("email, target, created_at")
-      .order("target")
-      .order("email");
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!
+          .from("labor_div_access")
+          .select("email, target, created_at")
+          .order("target")
+          .order("email"),
+      );
+    } catch (e) {
+      set({
+        divAccessLoading: false,
+        divAccessError: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+    const { data, error } = result;
     if (error) {
       set({ divAccessLoading: false, divAccessError: error.message });
       return;

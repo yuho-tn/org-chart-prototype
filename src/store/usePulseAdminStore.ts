@@ -10,6 +10,7 @@ import type {
   PulseAlertRule,
   PulseAlertNotifySettings,
 } from "../lib/pulse";
+import { fetchSafe } from "../lib/query";
 
 /**
  * パルスサーベイ 設定（質問セット＋設問＋サイクル）管理ストア（#/pulse/admin）。
@@ -182,68 +183,84 @@ export const usePulseAdminStore = create<PulseAdminState>((set, get) => ({
       return;
     }
     set({ loading: true, error: null });
+    try {
 
-    const [setsRes, qRes, , statsRes, rulesRes, settingsRes] = await Promise.all([
-      supabase.from("pulse_question_sets").select("*").order("name").order("version", { ascending: false }),
-      supabase.from("pulse_questions").select("*").order("sort_order", { ascending: true }),
-      usePulseCyclesStore.getState().loadCycles(),
-      supabase.rpc("pulse_admin_cycle_stats"),
-      supabase.from("pulse_alert_rules").select("*").order("sort_order", { ascending: true }),
-      supabase
-        .from("pulse_settings")
-        .select("alert_digest_recipients, alert_digest_enabled, alert_immediate_enabled")
-        .eq("id", 1)
-        .maybeSingle(),
-    ]);
+      // 画面表示のための読み込みはタイムアウトを噛ませる（fetchSafe は失敗を
+      // {data:null,error} に畳むので、下の if (….error) 分岐はそのまま使える）。
+      const [setsRes, qRes, , statsRes, rulesRes, settingsRes] = await Promise.all([
+        fetchSafe(() =>
+          supabase!.from("pulse_question_sets").select("*").order("name").order("version", { ascending: false }),
+        ),
+        fetchSafe(() => supabase!.from("pulse_questions").select("*").order("sort_order", { ascending: true })),
+        usePulseCyclesStore.getState().loadCycles(),
+        fetchSafe(() => supabase!.rpc("pulse_admin_cycle_stats")),
+        fetchSafe(() => supabase!.from("pulse_alert_rules").select("*").order("sort_order", { ascending: true })),
+        fetchSafe(() =>
+          supabase!
+            .from("pulse_settings")
+            .select("alert_digest_recipients, alert_digest_enabled, alert_immediate_enabled")
+            .eq("id", 1)
+            .maybeSingle(),
+        ),
+      ]);
 
-    if (setsRes.error) {
-      set({ loading: false, loaded: true, error: guardMessage(setsRes.error.message) });
-      return;
-    }
-
-    const cyclesState = usePulseCyclesStore.getState();
-    if (cyclesState.error) {
-      set({ loading: false, loaded: true, error: guardMessage(cyclesState.error) });
-      return;
-    }
-
-    const sets = (setsRes.data ?? []) as PulseQuestionSetRow[];
-    const questions = (qRes.data ?? []) as PulseQuestionRow[];
-    const questionsBySet: Record<string, PulseQuestionRow[]> = {};
-    for (const q of questions) {
-      (questionsBySet[q.question_set_id] ??= []).push(q);
-    }
-    const cycles: PulseCycleRow[] = cyclesState.cycles;
-
-    // pulse_admin_cycle_stats は admin/can_manage_alert 限定 RPC。権限エラー等は
-    // 画面全体を止めず、進捗ミニバー非表示（cycleStats={}）に留める（非致命）。
-    const cycleStats: Record<string, PulseCycleStats> = {};
-    if (!statsRes.error && Array.isArray(statsRes.data)) {
-      for (const row of statsRes.data as { cycle_id: string; responses: number; target: number }[]) {
-        cycleStats[row.cycle_id] = { responses: row.responses, target: row.target };
+      if (setsRes.error) {
+        set({ loading: false, loaded: true, error: guardMessage(setsRes.error.message) });
+        return;
       }
+
+      const cyclesState = usePulseCyclesStore.getState();
+      if (cyclesState.error) {
+        set({ loading: false, loaded: true, error: guardMessage(cyclesState.error) });
+        return;
+      }
+
+      const sets = (setsRes.data ?? []) as PulseQuestionSetRow[];
+      const questions = (qRes.data ?? []) as PulseQuestionRow[];
+      const questionsBySet: Record<string, PulseQuestionRow[]> = {};
+      for (const q of questions) {
+        (questionsBySet[q.question_set_id] ??= []).push(q);
+      }
+      const cycles: PulseCycleRow[] = cyclesState.cycles;
+
+      // pulse_admin_cycle_stats は admin/can_manage_alert 限定 RPC。権限エラー等は
+      // 画面全体を止めず、進捗ミニバー非表示（cycleStats={}）に留める（非致命）。
+      const cycleStats: Record<string, PulseCycleStats> = {};
+      if (!statsRes.error && Array.isArray(statsRes.data)) {
+        for (const row of statsRes.data as { cycle_id: string; responses: number; target: number }[]) {
+          cycleStats[row.cycle_id] = { responses: row.responses, target: row.target };
+        }
+      }
+
+      // アラートルール／通知設定（P2・migration 0051）も同様に非致命：未適用/権限なしは
+      // 空/null のままにし、各セクション側で案内文を出す（画面全体は止めない）。
+      const alertRules =
+        !rulesRes.error && Array.isArray(rulesRes.data) ? (rulesRes.data as PulseAlertRule[]) : [];
+      const notifySettings =
+        !settingsRes.error && settingsRes.data
+          ? (settingsRes.data as PulseAlertNotifySettings)
+          : null;
+
+      set({
+        loading: false,
+        loaded: true,
+        error: null,
+        sets,
+        questionsBySet,
+        cycles,
+        cycleStats,
+        alertRules,
+        notifySettings,
+      });
+    } catch (e) {
+      // loadCycles() など fetchSafe を通らない経路が throw しても、
+      // loading: true のまま固まらないようにする。
+      set({
+        loading: false,
+        loaded: true,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
-
-    // アラートルール／通知設定（P2・migration 0051）も同様に非致命：未適用/権限なしは
-    // 空/null のままにし、各セクション側で案内文を出す（画面全体は止めない）。
-    const alertRules =
-      !rulesRes.error && Array.isArray(rulesRes.data) ? (rulesRes.data as PulseAlertRule[]) : [];
-    const notifySettings =
-      !settingsRes.error && settingsRes.data
-        ? (settingsRes.data as PulseAlertNotifySettings)
-        : null;
-
-    set({
-      loading: false,
-      loaded: true,
-      error: null,
-      sets,
-      questionsBySet,
-      cycles,
-      cycleStats,
-      alertRules,
-      notifySettings,
-    });
   },
 
   createSet: async (name) => {

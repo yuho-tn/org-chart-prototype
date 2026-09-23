@@ -11,6 +11,7 @@ import {
   type PulseSurveyPrevious,
   type PulseSurveyViewers,
 } from "../lib/pulse";
+import { fetchSafe } from "../lib/query";
 
 /**
  * パルスサーベイ 回答画面（#/survey・#/survey?t=<token>）用ストア（v3 P1）。
@@ -219,45 +220,55 @@ export const usePulseStore = create<PulseState>((set, get) => ({
     // 「回答を見直す」ボタン等）は直前のモード（token の有無）をそのまま使う。
     const token = opts !== undefined ? (opts.token ?? null) : get().token;
     set({ loading: true, error: null, tokenErrorCode: null, token });
+    try {
 
-    if (token) {
-      const { data, error } = await supabase.functions.invoke<{
-        ok: boolean;
-        bundle: PulseSurveyBundle;
-      }>("pulse-answer", { body: { t: token, action: "get" } });
+      if (token) {
+        const { data, error } = await supabase.functions.invoke<{
+          ok: boolean;
+          bundle: PulseSurveyBundle;
+        }>("pulse-answer", { body: { t: token, action: "get" } });
+        if (error) {
+          const code = await extractPulseAnswerErrorCode(error);
+          // eligibility/questions もリセットする: 直前の読み込みが成功していた場合
+          // （例: 一度 not_target で取れた後、再読込が期限切れで失敗した等）に、
+          // 古い値がこのエラー状態と重複表示されないようにする。
+          set({
+            loading: false,
+            loaded: true,
+            cycle: null,
+            questions: [],
+            eligibility: "unknown",
+            viewers: null,
+            previous: null,
+            tokenErrorCode: code,
+            error: code ? null : "サーベイの取得に失敗しました。時間をおいて再度お試しください。",
+          });
+          return;
+        }
+        set(bundleToFields(data?.bundle ?? null));
+        return;
+      }
+
+      const { data, error } = await fetchSafe(() => supabase!.rpc("pulse_my_survey"));
       if (error) {
-        const code = await extractPulseAnswerErrorCode(error);
-        // eligibility/questions もリセットする: 直前の読み込みが成功していた場合
-        // （例: 一度 not_target で取れた後、再読込が期限切れで失敗した等）に、
-        // 古い値がこのエラー状態と重複表示されないようにする。
         set({
           loading: false,
           loaded: true,
-          cycle: null,
-          questions: [],
-          eligibility: "unknown",
-          viewers: null,
-          previous: null,
-          tokenErrorCode: code,
-          error: code ? null : "サーベイの取得に失敗しました。時間をおいて再度お試しください。",
+          error: missingTableError(error.message) ? MISSING_MSG : error.message,
         });
         return;
       }
-      set(bundleToFields(data?.bundle ?? null));
-      return;
-    }
-
-    const { data, error } = await supabase.rpc("pulse_my_survey");
-    if (error) {
+      // data === null → 本人特定不可（対象外）。それ以外は {cycle:null} を含む bundle 形。
+      set(bundleToFields((data ?? null) as PulseSurveyBundle | null));
+    } catch (e) {
+      // functions.invoke はネットワーク断で throw する。ここで受けないと
+      // loading: true のまま画面が「読み込み中」で固まる。
       set({
         loading: false,
         loaded: true,
-        error: missingTableError(error.message) ? MISSING_MSG : error.message,
+        error: e instanceof Error ? e.message : String(e),
       });
-      return;
     }
-    // data === null → 本人特定不可（対象外）。それ以外は {cycle:null} を含む bundle 形。
-    set(bundleToFields((data ?? null) as PulseSurveyBundle | null));
   },
 
   /**
@@ -269,7 +280,7 @@ export const usePulseStore = create<PulseState>((set, get) => ({
   loadMyHistory: async () => {
     if (!supabase || get().historyLoading) return;
     set({ historyLoading: true });
-    const { data, error } = await supabase.rpc("pulse_my_history");
+    const { data, error } = await fetchSafe(() => supabase!.rpc("pulse_my_history"));
     set({
       historyLoading: false,
       historyLoaded: true,

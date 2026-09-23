@@ -8,10 +8,17 @@ import { AiLevelBadge } from "./ailevel/AiLevelBadge";
 import { useUiStore } from "../store/useUiStore";
 import { employeeName, type EmployeeRow } from "../lib/supabase";
 import { avatarPathOf } from "../lib/profile";
-import { normalizeMbti, MBTI_BY_CODE, MBTI_GROUP_COLOR } from "../lib/mbti";
-import { STRENGTH_BY_ID, STRENGTH_DOMAIN_COLOR, normalizeStrengthIds } from "../lib/strengths";
+import {
+  parseMbti,
+  mbtiDisplayCode,
+  MBTI_BY_CODE,
+  MBTI_GROUP_COLOR,
+  mbtiExternalUrl,
+} from "../lib/mbti";
+import { STRENGTH_BY_ID, normalizeStrengthIds } from "../lib/strengths";
 import { useRevalidateOnFocus } from "../lib/useRevalidateOnFocus";
 import type { ImportSummary } from "../store/useEmployeesStore";
+import { StrengthBadge } from "./StrengthBadge";
 
 const PAGE_SIZE = 50;
 
@@ -109,10 +116,6 @@ export function EmployeesPage() {
     refreshAiLevels({ silent: true });
   });
 
-  useEffect(() => {
-    setUrlDraft(sheetCsvUrl);
-  }, [sheetCsvUrl]);
-
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   // Distinct values for the dropdown filters. Build once per employees list.
@@ -175,12 +178,8 @@ export function EmployeesPage() {
   }, [employees, today]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  // If the filter changes and the current page is out of range, snap back.
-  useEffect(() => {
-    if (page > totalPages) setPage(1);
-  }, [page, totalPages]);
-
-  const pageStart = (page - 1) * PAGE_SIZE;
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
   const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   // ギャラリー表示中のページのアバター signed URL をまとめて確保
@@ -628,12 +627,32 @@ export function EmployeesPage() {
                 const avatarUrl = avatarPath ? photoUrls[avatarPath] : undefined;
                 const name = employeeName(emp);
                 const isInactive = !!emp.left_at && emp.left_at <= today;
+                const parsedMbti = parseMbti(prof?.mbti);
+                const mbti = parsedMbti.code;
+                const mbtiIdentity = prof?.mbti_identity ?? parsedMbti.identity;
+                const displayMbti = mbti ? mbtiDisplayCode(mbti, mbtiIdentity) : null;
+                const strengthIds = normalizeStrengthIds(prof?.strengths ?? []);
+                const topStrengths = strengthIds
+                  .slice(0, 3)
+                  .map((id) => STRENGTH_BY_ID[id])
+                  .filter((quality) => quality !== undefined);
+                const remainingStrengths = Math.max(0, strengthIds.length - topStrengths.length);
+                const aiLevel = aiLevelOf.get(emp.employee_number);
                 return (
-                  <button
+                  <div
                     key={emp.employee_number}
                     className={`empcard ${isInactive ? "is-inactive" : ""}`}
                     onClick={() => openDetail(emp)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openDetail(emp);
+                      }
+                    }}
+                    role="link"
+                    tabIndex={0}
                     title="クリックで詳細ページへ"
+                    aria-label={`${name}の詳細ページへ`}
                   >
                     <span className="empcard__photo" aria-hidden>
                       {avatarUrl ? (
@@ -645,42 +664,48 @@ export function EmployeesPage() {
                       )}
                     </span>
                     <span className="empcard__body">
-                      <span className="empcard__name">{name}</span>
-                      {prof?.nickname && (
-                        <span className="empcard__nickname">（{prof.nickname}）</span>
+                      <span className="empcard__identity">
+                        <span className="empcard__name">{name}</span>
+                        {prof?.nickname && (
+                          <span className="empcard__nickname">{prof.nickname}</span>
+                        )}
+                      </span>
+                      {emp.department && (
+                        <span className="empcard__department">{emp.department}</span>
                       )}
-                      <span className="empcard__sub">{emp.department ?? "—"}</span>
-                      <span className="empcard__sub">{emp.position_title ?? "—"}</span>
-                      {(() => {
-                        const mbti = normalizeMbti(prof?.mbti ?? null);
-                        const top = normalizeStrengthIds(prof?.strengths ?? [])[0];
-                        const topQ = top ? STRENGTH_BY_ID[top] : undefined;
-                        const aiLevel = aiLevelOf.get(emp.employee_number);
-                        if (!mbti && !topQ && !aiLevel) return null;
-                        return (
-                          <span className="empcard__tags">
-                            {aiLevel && <AiLevelBadge level={aiLevel.level} size="sm" />}
-                            {mbti && (
-                              <span
-                                className="empcard__mbti"
-                                style={{ borderColor: MBTI_GROUP_COLOR[MBTI_BY_CODE[mbti].group] }}
-                              >
-                                {mbti}
-                              </span>
-                            )}
-                            {topQ && (
-                              <span
-                                className="empcard__strength"
-                                style={{ background: STRENGTH_DOMAIN_COLOR[topQ.domain] }}
-                              >
-                                {topQ.name_ja}
-                              </span>
-                            )}
-                          </span>
-                        );
-                      })()}
+                      {prof?.motto && (
+                        <span className="empcard__motto">{prof.motto}</span>
+                      )}
+                      {(mbti || topStrengths.length > 0 || aiLevel) && (
+                        <span className="empcard__tags">
+                          {mbti && displayMbti && (
+                            <a
+                              className="empcard__mbti"
+                              style={{ borderColor: MBTI_GROUP_COLOR[MBTI_BY_CODE[mbti].group] }}
+                              href={mbtiExternalUrl(mbti)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={`16personalities で ${displayMbti} の詳細を見る`}
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              {displayMbti} <span aria-hidden="true">↗</span>
+                            </a>
+                          )}
+                          {topStrengths.map((quality) => (
+                            <StrengthBadge key={quality.id} quality={quality} compact />
+                          ))}
+                          {remainingStrengths > 0 && (
+                            <span className="empcard__strengthMore">+{remainingStrengths}</span>
+                          )}
+                          {aiLevel && <AiLevelBadge level={aiLevel.level} size="sm" />}
+                        </span>
+                      )}
+                      {prof?.hometown && (
+                        <span className="empcard__hometown">出身：{prof.hometown}</span>
+                      )}
                     </span>
-                  </button>
+                  </div>
                 );
               })}
           </div>
@@ -817,7 +842,7 @@ export function EmployeesPage() {
       )}
 
       <Pagination
-        page={page}
+        page={currentPage}
         totalPages={totalPages}
         totalRows={filtered.length}
         pageSize={PAGE_SIZE}

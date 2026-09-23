@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePulseCyclesStore } from "./usePulseCyclesStore";
 import type { PulseCycleRow, PulseCommentRow, PulseCommentClassification } from "../lib/pulse";
+import { fetchSafe } from "../lib/query";
 
 /**
  * パルスサーベイ コメント一覧（#/pulse/comments）用ストア。
@@ -43,7 +44,7 @@ function cycleIdOf(cycles: PulseCycleRow[], period: string | null): string | nul
 
 async function fetchComments(cycleId: string): Promise<PulseCommentRow[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase.rpc("pulse_list_comments", { p_cycle_id: cycleId });
+  const { data, error } = await fetchSafe(() => supabase!.rpc("pulse_list_comments", { p_cycle_id: cycleId }));
   if (error) throw error;
   return (data ?? []) as PulseCommentRow[];
 }

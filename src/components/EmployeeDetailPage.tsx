@@ -16,8 +16,10 @@ import {
   MBTI_GROUP_LABEL,
   MBTI_GROUP_COLOR,
   mbtiAvatarDataUri,
+  mbtiDisplayCode,
   mbtiExternalUrl,
-  normalizeMbti,
+  parseMbti,
+  type MbtiIdentity,
 } from "../lib/mbti";
 import {
   STRENGTHS,
@@ -30,17 +32,17 @@ import {
 import {
   normalizeBlocks,
   pruneBlocks,
-  emptyBlock,
   collectBlockImagePaths,
   safeLinkUrl,
-  BLOCK_TYPE_LABEL,
-  URL_REGEX,
   type ProfileBlock,
-  type BlockType,
 } from "../lib/profileBlocks";
+import { renderInline } from "../lib/inlineText";
 import { useAiLevelsStore } from "../store/useAiLevelsStore";
 import { AI_LEVEL_KIND_LABEL, currentLevelOfGrants } from "../lib/aiLevels";
 import { AiLevelBadge } from "./ailevel/AiLevelBadge";
+import { StrengthBadge } from "./StrengthBadge";
+import { BlockEditor } from "./BlockEditor";
+import { ImageLightbox, type LightboxImage } from "./ImageLightbox";
 
 /**
  * 従業員詳細ページ（route: #/employees/:num）。P3 でカルチャー層を刷新。
@@ -117,24 +119,52 @@ function newId(): string {
 // ── 統一編集ドラフト ───────────────────────────────────────────────────
 type ProfileDraft = {
   nickname: string;
+  hometown: string;
+  residence: string;
+  birthday: string;
+  birthdayShowYear: boolean;
+  motto: string;
   careerRows: CareerRow[];
   specialties: string[];
   hobbyTags: string[];
   mbti: string | null;
+  mbtiIdentity: MbtiIdentity | null;
   strengths: string[]; // 資質 id・配列順＝1〜5位
+  strengthsYear: string;
+  mikiwame: string;
   blocks: ProfileBlock[];
 };
 
 function draftFromProfile(p: ProfileRow | undefined): ProfileDraft {
+  const parsedMbti = parseMbti(p?.mbti);
   return {
     nickname: p?.nickname ?? "",
-    careerRows: (p?.career_rows ?? []).map((r) => ({ ...r })),
+    hometown: p?.hometown ?? "",
+    residence: p?.residence ?? "",
+    birthday: p?.birthday ?? "",
+    birthdayShowYear: p?.birthday_show_year === true,
+    motto: p?.motto ?? "",
+    careerRows: (p?.career_rows ?? []).map((r) => ({
+      ...r,
+      details: [...(r.details ?? [])],
+    })),
     specialties: [...(p?.specialties ?? [])],
     hobbyTags: [...(p?.hobby_tags ?? [])],
-    mbti: normalizeMbti(p?.mbti ?? null),
+    mbti: parsedMbti.code,
+    mbtiIdentity: p?.mbti_identity ?? parsedMbti.identity,
     strengths: normalizeStrengthIds(p?.strengths ?? []),
+    strengthsYear: p?.strengths_year ?? "",
+    mikiwame: p?.mikiwame ?? "",
     blocks: normalizeBlocks(p?.blocks ?? []),
   };
+}
+
+function formatBirthday(value: string | null | undefined, showYear: boolean): string | null {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${showYear ? `${Number(year)}年` : ""}${Number(month)}月${Number(day)}日`;
 }
 
 export function EmployeeDetailPage({ num }: { num: string }) {
@@ -265,6 +295,7 @@ export function EmployeeDetailPage({ num }: { num: string }) {
   // ── 統一編集フォーム ──
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>(() => draftFromProfile(profile));
+  const [editBaseline, setEditBaseline] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -280,6 +311,7 @@ export function EmployeeDetailPage({ num }: { num: string }) {
       }));
     }
     setDraft(d);
+    setEditBaseline(JSON.stringify(d));
     setEditing(true);
   }
 
@@ -288,18 +320,28 @@ export function EmployeeDetailPage({ num }: { num: string }) {
     const res = await saveProfile({
       employee_number: num,
       nickname: draft.nickname.trim() || null,
+      hometown: draft.hometown.trim() || null,
+      residence: draft.residence.trim() || null,
+      birthday: draft.birthday || null,
+      birthday_show_year: draft.birthdayShowYear,
+      motto: draft.motto.trim() || null,
       career_rows: draft.careerRows
-        .filter((r) => r.body.trim() || r.period_from.trim())
+        .filter((r) => r.body.trim() || r.period_label?.trim() || r.period_from.trim())
         .map((r) => ({
           id: r.id,
           period_from: r.period_from.trim(),
           period_to: r.period_to?.trim() || null,
+          period_label: r.period_label?.trim() || undefined,
           body: r.body.trim(),
+          details: (r.details ?? []).map((detail) => detail.trim()).filter(Boolean),
         })),
       specialties: dedupeTags(draft.specialties),
       hobby_tags: dedupeTags(draft.hobbyTags),
       mbti: draft.mbti,
+      mbti_identity: draft.mbtiIdentity,
       strengths: draft.strengths.slice(0, 5),
+      strengths_year: draft.strengthsYear.trim() || null,
+      mikiwame: draft.mikiwame.trim() || null,
       blocks: pruneBlocks(draft.blocks),
     });
     setSaving(false);
@@ -355,8 +397,13 @@ export function EmployeeDetailPage({ num }: { num: string }) {
   const displayName = emp ? employeeName(emp) : num;
   const initial = displayName.trim()[0]?.toUpperCase() ?? "?";
   const viewBlocks = useMemo(() => normalizeBlocks(profile?.blocks ?? []), [profile]);
-  const viewMbti = normalizeMbti(profile?.mbti ?? null);
+  const parsedViewMbti = parseMbti(profile?.mbti);
+  const viewMbti = parsedViewMbti.code;
+  const viewMbtiIdentity = profile?.mbti_identity ?? parsedViewMbti.identity;
   const viewStrengths = normalizeStrengthIds(profile?.strengths ?? []);
+  const viewBirthday = formatBirthday(profile?.birthday, profile?.birthday_show_year === true);
+  const draftSignature = useMemo(() => JSON.stringify(draft), [draft]);
+  const hasUnsavedChanges = editing && draftSignature !== editBaseline;
 
   return (
     <main className="page empdetail">
@@ -412,6 +459,9 @@ export function EmployeeDetailPage({ num }: { num: string }) {
             {emp?.employment_type && <> ／ {emp.employment_type}</>}
             {emp?.hired_at && <> ／ 入社 {fmtDate(emp.hired_at)}</>}
           </p>
+          {profile?.motto && (
+            <blockquote className="empdetail__motto">{profile.motto}</blockquote>
+          )}
         </div>
         <div className="empdetail__heroActions">
           {canEdit && !editing && (
@@ -421,8 +471,15 @@ export function EmployeeDetailPage({ num }: { num: string }) {
           )}
           {editing && (
             <div className="empdetail__sectionActions">
-              <button className="btn btn--primary btn--xs" onClick={commitEdit} disabled={saving}>
-                {saving ? "保存中…" : "保存"}
+              {hasUnsavedChanges ? (
+                <span className="empdetail__unsaved">未保存の変更があります</span>
+              ) : null}
+              <button
+                className={`btn btn--primary btn--xs empdetail__saveButton${hasUnsavedChanges ? " is-dirty" : ""}`}
+                onClick={commitEdit}
+                disabled={saving}
+              >
+                {saving ? "保存中…" : hasUnsavedChanges ? "変更を保存" : "保存"}
               </button>
               <button className="btn btn--ghost btn--xs" onClick={() => setEditing(false)}>
                 取消
@@ -442,19 +499,59 @@ export function EmployeeDetailPage({ num }: { num: string }) {
         />
       ) : (
         <>
-          {/* ── SHO-SAN経歴 ─────────────────────────────────────── */}
+          {/* ── プロフィール ────────────────────────────────────── */}
           <section className="empdetail__section">
-            <h2 className="empdetail__sectionTitle">SHO-SAN経歴</h2>
+            <h2 className="empdetail__sectionTitle">プロフィール</h2>
+            <dl className="empdetail__fields">
+              <div className="empdetail__field">
+                <dt>生年月日</dt>
+                <dd>{viewBirthday ?? <Empty />}</dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>出身地</dt>
+                <dd>{profile?.hometown || <Empty />}</dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>居住地</dt>
+                <dd>{profile?.residence || <Empty />}</dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>趣味</dt>
+                <dd><TagList tags={profile?.hobby_tags ?? []} tone="hobby" /></dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>得意領域</dt>
+                <dd><TagList tags={profile?.specialties ?? []} tone="specialty" /></dd>
+              </div>
+            </dl>
+          </section>
+
+          {/* ── キャリア ────────────────────────────────────────── */}
+          <section className="empdetail__section">
+            <h2 className="empdetail__sectionTitle">キャリア</h2>
             {(profile?.career_rows ?? []).length > 0 ? (
               <ol className="empdetail__career">
                 {(profile?.career_rows ?? []).map((r) => (
                   <li key={r.id} className="empdetail__careerRow">
                     <span className="empdetail__careerPeriod">
-                      {r.period_from || "—"}
-                      {" 〜 "}
-                      {r.period_to || "現在"}
+                      {r.period_label?.trim() || (
+                        <>
+                          {r.period_from || "—"}
+                          {" 〜 "}
+                          {r.period_to || "現在"}
+                        </>
+                      )}
                     </span>
-                    <span className="empdetail__careerBody">{r.body}</span>
+                    <span className="empdetail__careerContent">
+                      <span className="empdetail__careerBody">{r.body}</span>
+                      {(r.details ?? []).length > 0 && (
+                        <ul className="empdetail__careerDetails">
+                          {(r.details ?? []).map((detail, index) => (
+                            <li key={`${r.id}_detail_${index}`}>{detail}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ol>
@@ -479,28 +576,19 @@ export function EmployeeDetailPage({ num }: { num: string }) {
             )}
           </section>
 
-          {/* ── 得意領域・趣味 ───────────────────────────────────── */}
+          {/* ── 分析・診断 ──────────────────────────────────────── */}
           <section className="empdetail__section">
-            <h2 className="empdetail__sectionTitle">プロフィール</h2>
+            <h2 className="empdetail__sectionTitle">分析・診断</h2>
             <dl className="empdetail__fields">
               <div className="empdetail__field">
-                <dt>得意領域</dt>
-                <dd>
-                  <TagList tags={profile?.specialties ?? []} tone="specialty" />
-                </dd>
-              </div>
-              <div className="empdetail__field">
-                <dt>趣味</dt>
-                <dd>
-                  <TagList tags={profile?.hobby_tags ?? []} tone="hobby" />
-                </dd>
-              </div>
-              <div className="empdetail__field">
                 <dt>MBTI</dt>
-                <dd>{viewMbti ? <MbtiBadge code={viewMbti} /> : <Empty />}</dd>
+                <dd>{viewMbti ? <MbtiBadge code={viewMbti} identity={viewMbtiIdentity} /> : <Empty />}</dd>
               </div>
               <div className="empdetail__field">
-                <dt>ストレングスファインダー</dt>
+                <dt>
+                  ストレングスファインダー
+                  {profile?.strengths_year && `（${profile.strengths_year}年）`}
+                </dt>
                 <dd>
                   {viewStrengths.length > 0 ? (
                     <StrengthList ids={viewStrengths} />
@@ -508,6 +596,10 @@ export function EmployeeDetailPage({ num }: { num: string }) {
                     <Empty />
                   )}
                 </dd>
+              </div>
+              <div className="empdetail__field">
+                <dt>適性検査ミキワメ</dt>
+                <dd>{profile?.mikiwame || <Empty />}</dd>
               </div>
             </dl>
           </section>
@@ -571,7 +663,7 @@ export function EmployeeDetailPage({ num }: { num: string }) {
           {/* ── 自由プロフィール（ブロック） ─────────────────────── */}
           {viewBlocks.length > 0 && (
             <section className="empdetail__section">
-              <h2 className="empdetail__sectionTitle">自己紹介</h2>
+              <h2 className="empdetail__sectionTitle">自由記述</h2>
               <BlockView blocks={viewBlocks} photoUrls={photoUrls} />
             </section>
           )}
@@ -670,30 +762,30 @@ function TagList({ tags, tone }: { tags: string[]; tone: "specialty" | "hobby" }
   );
 }
 
-function MbtiBadge({ code }: { code: string }) {
+function MbtiBadge({ code, identity }: { code: string; identity: MbtiIdentity | null }) {
   const t = MBTI_BY_CODE[code];
   if (!t) return <span className="emppage__chip">{code}</span>;
   const color = MBTI_GROUP_COLOR[t.group];
+  const displayCode = mbtiDisplayCode(code, identity);
   return (
-    <span className="mbtiBadge" style={{ borderColor: color }} title={t.blurb}>
+    <a
+      className="mbtiBadge"
+      style={{ borderColor: color }}
+      href={mbtiExternalUrl(code)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`16personalities で ${displayCode} の詳細を見る`}
+      onClick={(event) => event.stopPropagation()}
+    >
       <img className="mbtiBadge__avatar" src={mbtiAvatarDataUri(code)} alt="" width={28} height={28} />
       <span className="mbtiBadge__text">
         <span className="mbtiBadge__code" style={{ color }}>
-          {code}
+          {displayCode}
         </span>
         <span className="mbtiBadge__nick">{t.nickname}</span>
       </span>
-      <a
-        className="mbtiBadge__link"
-        href={mbtiExternalUrl(code)}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="16personalities で詳しく見る"
-        onClick={(e) => e.stopPropagation()}
-      >
-        ↗
-      </a>
-    </span>
+      <span className="mbtiBadge__link" aria-hidden="true">↗</span>
+    </a>
   );
 }
 
@@ -703,37 +795,9 @@ function StrengthList({ ids }: { ids: string[] }) {
       {ids.map((id, i) => {
         const q = STRENGTH_BY_ID[id];
         if (!q) return null;
-        const color = STRENGTH_DOMAIN_COLOR[q.domain];
-        return (
-          <span
-            key={id}
-            className="strengthBadge"
-            style={{ background: color }}
-            title={`${STRENGTH_DOMAIN_LABEL[q.domain]}：${q.description}`}
-          >
-            <span className="strengthBadge__rank">{i + 1}</span>
-            <span className="strengthBadge__name">{q.name_ja}</span>
-            <span className="strengthBadge__q" aria-hidden>
-              ?
-            </span>
-          </span>
-        );
+        return <StrengthBadge key={id} quality={q} rank={i + 1} />;
       })}
     </div>
-  );
-}
-
-/** text ブロックの本文を URL 自動リンク化して描画。 */
-function renderTextWithLinks(text: string) {
-  const parts = text.split(URL_REGEX);
-  return parts.map((part, i) =>
-    URL_REGEX.test(part) ? (
-      <a key={i} href={part} target="_blank" rel="noopener noreferrer">
-        {part}
-      </a>
-    ) : (
-      <span key={i}>{part}</span>
-    ),
   );
 }
 
@@ -744,60 +808,182 @@ function BlockView({
   blocks: ProfileBlock[];
   photoUrls: Record<string, string>;
 }) {
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const lightboxImages = useMemo(
+    () =>
+      blocks.flatMap((block) =>
+        block.type === "image"
+          ? block.images.flatMap((image, imageIndex) => {
+              const src = photoUrls[image.path];
+              return src
+                ? [{ src, alt: image.caption ?? "", caption: image.caption, blockId: block.id, imageIndex }]
+                : [];
+            })
+          : [],
+      ),
+    [blocks, photoUrls],
+  );
+  const sections = useMemo(() => groupProfileSections(blocks), [blocks]);
+  const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+  const changeLightboxIndex = useCallback((index: number) => setLightboxIndex(index), []);
+
+  function openImage(blockId: string, imageIndex: number) {
+    const index = lightboxImages.findIndex(
+      (image) => image.blockId === blockId && image.imageIndex === imageIndex,
+    );
+    if (index >= 0) setLightboxIndex(index);
+  }
+
   return (
-    <div className="blockview">
-      {blocks.map((b) => {
-        switch (b.type) {
-          case "heading":
-            return (
-              <h3 key={b.id} className="blockview__heading">
-                {b.text}
-              </h3>
-            );
-          case "text":
-            return (
-              <p key={b.id} className="blockview__text">
-                {renderTextWithLinks(b.text)}
-              </p>
-            );
-          case "image":
-            return (
-              <div key={b.id} className="blockview__images">
-                {b.images.map((im, i) => (
-                  <figure key={`${im.path}_${i}`} className="blockview__image">
-                    {photoUrls[im.path] ? (
-                      <img src={photoUrls[im.path]} alt={im.caption ?? ""} loading="lazy" />
-                    ) : (
-                      <div className="empdetail__photoLoading">…</div>
-                    )}
-                    {im.caption && <figcaption>{im.caption}</figcaption>}
-                  </figure>
+    <>
+      <div className="blockview">
+        {sections.map((section, sectionIndex) => (
+          <section
+            key={section.key}
+            className={`blockview__section${section.hasHeading ? " blockview__section--headed" : ""}`}
+            aria-label={section.hasHeading ? undefined : `自由記述 ${sectionIndex + 1}`}
+          >
+            {pairProfileBlocks(section.blocks).map((row) => (
+              <div
+                key={row.map((block) => block.id).join("_")}
+                className={`blockview__row${row.length === 2 ? " blockview__row--columns" : ""}${row.some((block) => block.type === "heading") ? " blockview__row--heading" : ""}`}
+              >
+                {row.map((block) => (
+                  <ProfileBlockContent
+                    key={block.id}
+                    block={block}
+                    photoUrls={photoUrls}
+                    onImageOpen={openImage}
+                  />
                 ))}
               </div>
-            );
-          case "link": {
-            const safe = safeLinkUrl(b.url);
-            if (!safe) return null; // 不正スキームは描画しない（defense in depth）
-            return (
-              <a
-                key={b.id}
-                className="blockview__link"
-                href={safe}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <span className="blockview__linkTitle">{b.title || safe}</span>
-                {b.description && (
-                  <span className="blockview__linkDesc">{b.description}</span>
-                )}
-                <span className="blockview__linkUrl">{safe}</span>
-              </a>
-            );
-          }
-        }
-      })}
-    </div>
+            ))}
+          </section>
+        ))}
+      </div>
+      {lightboxIndex !== null ? (
+        <ImageLightbox
+          images={lightboxImages satisfies LightboxImage[]}
+          index={lightboxIndex}
+          onIndexChange={changeLightboxIndex}
+          onClose={closeLightbox}
+        />
+      ) : null}
+    </>
   );
+}
+
+type ProfileSection = { key: string; hasHeading: boolean; blocks: ProfileBlock[] };
+
+function groupProfileSections(blocks: ProfileBlock[]): ProfileSection[] {
+  const sections: ProfileSection[] = [];
+  let current: ProfileBlock[] = [];
+
+  for (const block of blocks) {
+    if (block.type === "heading" && current.length > 0) {
+      sections.push({ key: current[0].id, hasHeading: current[0].type === "heading", blocks: current });
+      current = [];
+    }
+    current.push(block);
+  }
+  if (current.length > 0) {
+    sections.push({ key: current[0].id, hasHeading: current[0].type === "heading", blocks: current });
+  }
+  return sections;
+}
+
+function pairProfileBlocks(blocks: ProfileBlock[]): ProfileBlock[][] {
+  const rows: ProfileBlock[][] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    const next = blocks[index + 1];
+    if (block.layout === "left" && next?.layout === "right") {
+      rows.push([block, next]);
+      index += 1;
+    } else {
+      rows.push([block]);
+    }
+  }
+  return rows;
+}
+
+function ProfileBlockContent({
+  block,
+  photoUrls,
+  onImageOpen,
+}: {
+  block: ProfileBlock;
+  photoUrls: Record<string, string>;
+  onImageOpen: (blockId: string, imageIndex: number) => void;
+}) {
+  switch (block.type) {
+    case "heading":
+      return block.level === 3 ? (
+        <h4 className="blockview__heading blockview__heading--small">{renderInline(block.text)}</h4>
+      ) : (
+        <h3 className="blockview__heading blockview__heading--large">{renderInline(block.text)}</h3>
+      );
+    case "text":
+      return <p className="blockview__text">{renderInline(block.text)}</p>;
+    case "list": {
+      const ListTag = block.ordered ? "ol" : "ul";
+      return (
+        <ListTag className="blockview__list">
+          {block.items.map((item, itemIndex) => (
+            <li key={`${block.id}_item_${itemIndex}`}>
+              <span>{renderInline(item.text)}</span>
+              {item.children && item.children.length > 0 ? (
+                <ul>
+                  {item.children.map((child, childIndex) => (
+                    <li key={`${block.id}_item_${itemIndex}_child_${childIndex}`}>
+                      {renderInline(child)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          ))}
+        </ListTag>
+      );
+    }
+    case "image":
+      return (
+        <div className="blockview__images">
+          {block.images.map((image, imageIndex) => (
+            <figure key={`${image.path}_${imageIndex}`} className="blockview__image">
+              {photoUrls[image.path] ? (
+                <button
+                  type="button"
+                  className="blockview__imageButton"
+                  onClick={() => onImageOpen(block.id, imageIndex)}
+                  aria-label={`${image.caption || `画像${imageIndex + 1}`}を拡大表示`}
+                >
+                  <img
+                    src={photoUrls[image.path]}
+                    alt={image.caption ?? ""}
+                    loading="lazy"
+                  />
+                </button>
+              ) : (
+                <div className="empdetail__photoLoading">…</div>
+              )}
+              {image.caption ? <figcaption>{image.caption}</figcaption> : null}
+            </figure>
+          ))}
+        </div>
+      );
+    case "link": {
+      const safe = safeLinkUrl(block.url);
+      if (!safe) return null;
+      return (
+        <a className="blockview__link" href={safe} target="_blank" rel="noopener noreferrer">
+          <span className="blockview__linkTitle">{block.title || safe}</span>
+          {block.description ? <span className="blockview__linkDesc">{block.description}</span> : null}
+          <span className="blockview__linkUrl">{safe}</span>
+        </a>
+      );
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -828,11 +1014,11 @@ function EditForm({
 }) {
   return (
     <>
-      {/* あだ名 */}
+      {/* ヘッダー */}
       <section className="empdetail__section">
-        <h2 className="empdetail__sectionTitle">基本</h2>
+        <h2 className="empdetail__sectionTitle">ヘッダー</h2>
         <label className="empdetail__formRow">
-          <span className="field__label">あだ名</span>
+          <span className="field__label">愛称</span>
           <input
             className="field__input"
             value={draft.nickname}
@@ -840,17 +1026,58 @@ function EditForm({
             placeholder="例: ゆーほー"
           />
         </label>
+        <label className="empdetail__formRow">
+          <span className="field__label">ひとこと</span>
+          <input
+            className="field__input"
+            value={draft.motto}
+            maxLength={120}
+            onChange={(e) => setDraft((d) => ({ ...d, motto: e.target.value }))}
+            placeholder="80文字を目安に入力"
+          />
+        </label>
       </section>
 
-      {/* SHO-SAN経歴 */}
-      <section className="empdetail__section">
-        <h2 className="empdetail__sectionTitle">SHO-SAN経歴</h2>
-        <CareerEditor rows={draft.careerRows} setDraft={setDraft} />
-      </section>
-
-      {/* 得意領域・趣味・MBTI・ストレングス */}
+      {/* プロフィール */}
       <section className="empdetail__section">
         <h2 className="empdetail__sectionTitle">プロフィール</h2>
+        <div className="empdetail__formGrid">
+          <label className="empdetail__formRow">
+            <span className="field__label">出身地</span>
+            <input
+              className="field__input"
+              value={draft.hometown}
+              onChange={(e) => setDraft((d) => ({ ...d, hometown: e.target.value }))}
+              placeholder="例: 宮崎市"
+            />
+          </label>
+          <label className="empdetail__formRow">
+            <span className="field__label">居住地</span>
+            <input
+              className="field__input"
+              value={draft.residence}
+              onChange={(e) => setDraft((d) => ({ ...d, residence: e.target.value }))}
+              placeholder="例: 松戸市"
+            />
+          </label>
+          <label className="empdetail__formRow">
+            <span className="field__label">生年月日</span>
+            <input
+              className="field__input"
+              type="date"
+              value={draft.birthday}
+              onChange={(e) => setDraft((d) => ({ ...d, birthday: e.target.value }))}
+            />
+          </label>
+          <label className="empdetail__checkRow">
+            <input
+              type="checkbox"
+              checked={draft.birthdayShowYear}
+              onChange={(e) => setDraft((d) => ({ ...d, birthdayShowYear: e.target.checked }))}
+            />
+            年も公開する
+          </label>
+        </div>
         <div className="empdetail__formRow">
           <span className="field__label">得意領域（タグ・複数可）</span>
           <TagEditor
@@ -869,13 +1096,48 @@ function EditForm({
             onChange={(tags) => setDraft((d) => ({ ...d, hobbyTags: tags }))}
           />
         </div>
+      </section>
+
+      {/* キャリア */}
+      <section className="empdetail__section">
+        <h2 className="empdetail__sectionTitle">キャリア</h2>
+        <CareerEditor rows={draft.careerRows} setDraft={setDraft} />
+      </section>
+
+      {/* 分析・診断 */}
+      <section className="empdetail__section">
+        <h2 className="empdetail__sectionTitle">分析・診断</h2>
         <div className="empdetail__formRow">
           <span className="field__label">MBTI</span>
           <MbtiPicker
             value={draft.mbti}
-            onChange={(code) => setDraft((d) => ({ ...d, mbti: code }))}
+            onChange={(code) =>
+              setDraft((d) => ({
+                ...d,
+                mbti: code,
+                mbtiIdentity: code ? d.mbtiIdentity : null,
+              }))
+            }
           />
         </div>
+        <label className="empdetail__formRow empdetail__formRow--narrow">
+          <span className="field__label">MBTI アイデンティティ</span>
+          <select
+            className="field__input"
+            value={draft.mbtiIdentity ?? ""}
+            disabled={!draft.mbti}
+            onChange={(e) =>
+              setDraft((d) => ({
+                ...d,
+                mbtiIdentity: (e.target.value || null) as MbtiIdentity | null,
+              }))
+            }
+          >
+            <option value="">未設定</option>
+            <option value="A">-A（自己主張型）</option>
+            <option value="T">-T（慎重型）</option>
+          </select>
+        </label>
         <div className="empdetail__formRow">
           <span className="field__label">ストレングスファインダー（34資質から5つ・順位付き）</span>
           <StrengthPicker
@@ -883,14 +1145,34 @@ function EditForm({
             onChange={(ids) => setDraft((d) => ({ ...d, strengths: ids }))}
           />
         </div>
+        <div className="empdetail__formGrid">
+          <label className="empdetail__formRow">
+            <span className="field__label">ストレングス実施年（任意）</span>
+            <input
+              className="field__input"
+              value={draft.strengthsYear}
+              onChange={(e) => setDraft((d) => ({ ...d, strengthsYear: e.target.value }))}
+              placeholder="2025"
+            />
+          </label>
+          <label className="empdetail__formRow">
+            <span className="field__label">適性検査ミキワメ</span>
+            <input
+              className="field__input"
+              value={draft.mikiwame}
+              onChange={(e) => setDraft((d) => ({ ...d, mikiwame: e.target.value }))}
+              placeholder="例: アレンジ人材 エキスパート - 専門家"
+            />
+          </label>
+        </div>
       </section>
 
       {/* 自由プロフィール（ブロックエディタ） */}
       <section className="empdetail__section">
-        <h2 className="empdetail__sectionTitle">自己紹介（自由ブロック）</h2>
+        <h2 className="empdetail__sectionTitle">自由記述（ブロック）</h2>
         <BlockEditor
           blocks={draft.blocks}
-          setDraft={setDraft}
+          onChange={(blocks) => setDraft((current) => ({ ...current, blocks }))}
           uploading={uploading}
           onImageUpload={onBlockImageUpload}
           photoUrls={photoUrls}
@@ -927,47 +1209,74 @@ function CareerEditor({
     <div className="careerEditor">
       {rows.map((r, idx) => (
         <div key={r.id} className="careerEditor__row">
-          <input
-            className="field__input field__input--xs careerEditor__period"
-            type="month"
-            value={r.period_from}
-            onChange={(e) => update(r.id, { period_from: e.target.value })}
-            title="開始（YYYY-MM）"
-          />
-          <span className="careerEditor__tilde">〜</span>
-          <input
-            className="field__input field__input--xs careerEditor__period"
-            type="month"
-            value={r.period_to ?? ""}
-            onChange={(e) => update(r.id, { period_to: e.target.value || null })}
-            title="終了（空欄＝現在）"
-          />
-          <input
-            className="field__input field__input--xs careerEditor__body"
-            placeholder="配属・役割（例: マーケDIV / 広告TM リーダー）"
-            value={r.body}
-            onChange={(e) => update(r.id, { body: e.target.value })}
-          />
-          <button className="btn btn--ghost btn--xs" onClick={() => move(idx, -1)} disabled={idx === 0} title="上へ">
-            ↑
-          </button>
-          <button
-            className="btn btn--ghost btn--xs"
-            onClick={() => move(idx, 1)}
-            disabled={idx === rows.length - 1}
-            title="下へ"
-          >
-            ↓
-          </button>
-          <button
-            className="btn btn--ghost btn--xs"
-            onClick={() =>
-              setDraft((d) => ({ ...d, careerRows: d.careerRows.filter((x) => x.id !== r.id) }))
-            }
-            title="削除"
-          >
-            ✕
-          </button>
+          <div className="careerEditor__main">
+            <label className="careerEditor__labelField">
+              <span className="field__label">期間の自由表記</span>
+              <input
+                className="field__input field__input--xs"
+                value={r.period_label ?? ""}
+                onChange={(e) => update(r.id, { period_label: e.target.value })}
+                placeholder="例: 2025年（7月16日）"
+              />
+            </label>
+            <div className="careerEditor__periodRange">
+              <input
+                className="field__input field__input--xs careerEditor__period"
+                type="month"
+                value={r.period_from}
+                disabled={Boolean(r.period_label?.trim())}
+                onChange={(e) => update(r.id, { period_from: e.target.value })}
+                title="開始（YYYY-MM）"
+              />
+              <span className="careerEditor__tilde">〜</span>
+              <input
+                className="field__input field__input--xs careerEditor__period"
+                type="month"
+                value={r.period_to ?? ""}
+                disabled={Boolean(r.period_label?.trim())}
+                onChange={(e) => update(r.id, { period_to: e.target.value || null })}
+                title="終了（空欄＝現在）"
+              />
+              {r.period_label?.trim() && (
+                <span className="empdetail__hint">自由表記を表示します</span>
+              )}
+            </div>
+            <input
+              className="field__input field__input--xs careerEditor__body"
+              placeholder="経歴（例: マーケティングDiv ジョイン）"
+              value={r.body}
+              onChange={(e) => update(r.id, { body: e.target.value })}
+            />
+            <textarea
+              className="field__input field__textarea careerEditor__details"
+              rows={2}
+              placeholder="補足（1行に1項目。例: 自社EC）"
+              value={(r.details ?? []).join("\n")}
+              onChange={(e) => update(r.id, { details: e.target.value.split("\n") })}
+            />
+          </div>
+          <div className="careerEditor__actions">
+            <button className="btn btn--ghost btn--xs" onClick={() => move(idx, -1)} disabled={idx === 0} title="上へ">
+              ↑
+            </button>
+            <button
+              className="btn btn--ghost btn--xs"
+              onClick={() => move(idx, 1)}
+              disabled={idx === rows.length - 1}
+              title="下へ"
+            >
+              ↓
+            </button>
+            <button
+              className="btn btn--ghost btn--xs"
+              onClick={() =>
+                setDraft((d) => ({ ...d, careerRows: d.careerRows.filter((x) => x.id !== r.id) }))
+              }
+              title="削除"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       ))}
       <button
@@ -1182,177 +1491,6 @@ function StrengthPicker({
       <p className="empdetail__hint">
         各バッジは領域カラー（実行力=紫／影響力=オレンジ／人間関係構築力=青／戦略的思考力=緑）。ホバーで説明を表示します。
       </p>
-    </div>
-  );
-}
-
-// ── ブロックエディタ ──────────────────────────────────────────────
-function BlockEditor({
-  blocks,
-  setDraft,
-  uploading,
-  onImageUpload,
-  photoUrls,
-}: {
-  blocks: ProfileBlock[];
-  setDraft: React.Dispatch<React.SetStateAction<ProfileDraft>>;
-  uploading: boolean;
-  onImageUpload: (blockId: string, file: File) => void;
-  photoUrls: Record<string, string>;
-}) {
-  function patch(id: string, fn: (b: ProfileBlock) => ProfileBlock) {
-    setDraft((d) => ({ ...d, blocks: d.blocks.map((b) => (b.id === id ? fn(b) : b)) }));
-  }
-  function move(idx: number, dir: -1 | 1) {
-    setDraft((d) => {
-      const arr = [...d.blocks];
-      const to = idx + dir;
-      if (to < 0 || to >= arr.length) return d;
-      [arr[idx], arr[to]] = [arr[to], arr[idx]];
-      return { ...d, blocks: arr };
-    });
-  }
-  function addBlock(type: BlockType) {
-    setDraft((d) => ({ ...d, blocks: [...d.blocks, emptyBlock(type)] }));
-  }
-  return (
-    <div className="blockEditor">
-      {blocks.map((b, idx) => (
-        <div key={b.id} className="blockEditor__block">
-          <div className="blockEditor__toolbar">
-            <span className="blockEditor__type">{BLOCK_TYPE_LABEL[b.type]}</span>
-            <span className="blockEditor__spacer" />
-            <button className="btn btn--ghost btn--xs" onClick={() => move(idx, -1)} disabled={idx === 0} title="上へ">
-              ↑
-            </button>
-            <button
-              className="btn btn--ghost btn--xs"
-              onClick={() => move(idx, 1)}
-              disabled={idx === blocks.length - 1}
-              title="下へ"
-            >
-              ↓
-            </button>
-            <button
-              className="btn btn--ghost btn--xs"
-              onClick={() =>
-                setDraft((d) => ({ ...d, blocks: d.blocks.filter((x) => x.id !== b.id) }))
-              }
-              title="削除"
-            >
-              ✕
-            </button>
-          </div>
-          {b.type === "heading" && (
-            <input
-              className="field__input blockEditor__heading"
-              placeholder="見出し"
-              value={b.text}
-              onChange={(e) => patch(b.id, (blk) => ({ ...(blk as typeof b), text: e.target.value }))}
-            />
-          )}
-          {b.type === "text" && (
-            <textarea
-              className="field__input"
-              rows={4}
-              placeholder="テキスト（改行可・URLは自動でリンクになります）"
-              value={b.text}
-              onChange={(e) => patch(b.id, (blk) => ({ ...(blk as typeof b), text: e.target.value }))}
-            />
-          )}
-          {b.type === "image" && (
-            <div className="blockEditor__images">
-              {b.images.map((im, i) => (
-                <figure key={`${im.path}_${i}`} className="blockEditor__imageItem">
-                  {photoUrls[im.path] ? (
-                    <img src={photoUrls[im.path]} alt={im.caption ?? ""} />
-                  ) : (
-                    <div className="empdetail__photoLoading">…</div>
-                  )}
-                  <input
-                    className="field__input field__input--xs"
-                    placeholder="キャプション（任意）"
-                    value={im.caption ?? ""}
-                    onChange={(e) =>
-                      patch(b.id, (blk) => {
-                        const img = blk as typeof b;
-                        return {
-                          ...img,
-                          images: img.images.map((x, xi) =>
-                            xi === i ? { ...x, caption: e.target.value || undefined } : x,
-                          ),
-                        };
-                      })
-                    }
-                  />
-                  <button
-                    className="btn btn--ghost btn--xs"
-                    onClick={() =>
-                      patch(b.id, (blk) => {
-                        const img = blk as typeof b;
-                        return { ...img, images: img.images.filter((_, xi) => xi !== i) };
-                      })
-                    }
-                  >
-                    画像を削除
-                  </button>
-                </figure>
-              ))}
-              <label className="btn btn--ghost btn--xs" style={{ cursor: "pointer" }}>
-                {uploading ? "アップロード中…" : "＋画像を追加"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  style={{ display: "none" }}
-                  disabled={uploading}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) onImageUpload(b.id, f);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
-          )}
-          {b.type === "link" && (
-            <div className="blockEditor__link">
-              <input
-                className="field__input field__input--xs"
-                placeholder="URL（https://…）"
-                value={b.url}
-                onChange={(e) => patch(b.id, (blk) => ({ ...(blk as typeof b), url: e.target.value }))}
-              />
-              <input
-                className="field__input field__input--xs"
-                placeholder="タイトル（任意）"
-                value={b.title ?? ""}
-                onChange={(e) =>
-                  patch(b.id, (blk) => ({ ...(blk as typeof b), title: e.target.value || undefined }))
-                }
-              />
-              <input
-                className="field__input field__input--xs"
-                placeholder="説明（任意）"
-                value={b.description ?? ""}
-                onChange={(e) =>
-                  patch(b.id, (blk) => ({
-                    ...(blk as typeof b),
-                    description: e.target.value || undefined,
-                  }))
-                }
-              />
-            </div>
-          )}
-        </div>
-      ))}
-      <div className="blockEditor__add">
-        <span className="field__label">ブロックを追加：</span>
-        {(Object.keys(BLOCK_TYPE_LABEL) as BlockType[]).map((type) => (
-          <button key={type} className="btn btn--ghost btn--xs" onClick={() => addBlock(type)}>
-            ＋{BLOCK_TYPE_LABEL[type]}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

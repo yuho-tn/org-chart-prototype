@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePulseCyclesStore } from "./usePulseCyclesStore";
 import type { PulseCycleRow, PulseAggregateRow, PulseAlertKpis } from "../lib/pulse";
+import { fetchSafe } from "../lib/query";
 
 /**
  * パルスサーベイ 管理ダッシュボード（#/pulse）用ストア。
@@ -106,32 +107,32 @@ type PulseDashState = {
 
 async function fetchSummary(period: string): Promise<PulseSummary | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase
+  const { data, error } = await fetchSafe(() => supabase!
     .from("pulse_summaries")
     .select("summary, model, created_at, meta")
     .eq("period", period)
-    .maybeSingle();
+    .maybeSingle());
   if (error) return null; // 未生成・テーブル未適用は静かに null
   return (data as PulseSummary) ?? null;
 }
 
 async function fetchAggregates(period: string): Promise<PulseAggregateRow[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  const { data, error } = await fetchSafe(() => supabase!
     .from("pulse_monthly_aggregates")
     .select("*")
-    .eq("period", period);
+    .eq("period", period));
   if (error) throw error;
   return (data ?? []) as PulseAggregateRow[];
 }
 
 async function fetchTrend(): Promise<PulseTrendPoint[]> {
   if (!supabase) return [];
-  const { data } = await supabase
+  const { data } = await fetchSafe(() => supabase!
     .from("pulse_monthly_aggregates")
     .select("period, metrics")
     .eq("dimension", "total")
-    .order("period", { ascending: true });
+    .order("period", { ascending: true }));
   return ((data ?? []) as {
     period: string;
     metrics: { avg_overall?: number; enps?: number; response_rate?: number | null; n?: number };
@@ -147,7 +148,7 @@ async function fetchTrend(): Promise<PulseTrendPoint[]> {
 /** ヒーローバー用の回答数/対象数。権限が無ければ空オブジェクト（表示は「—」）。 */
 async function fetchCycleStats(): Promise<Record<string, PulseCycleStat>> {
   if (!supabase) return {};
-  const { data, error } = await supabase.rpc("pulse_admin_cycle_stats");
+  const { data, error } = await fetchSafe(() => supabase!.rpc("pulse_admin_cycle_stats"));
   if (error) return {};
   const map: Record<string, PulseCycleStat> = {};
   for (const s of (data ?? []) as PulseCycleStat[]) map[s.cycle_id] = s;
@@ -157,7 +158,7 @@ async function fetchCycleStats(): Promise<Record<string, PulseCycleStat>> {
 /** アラートKPI（設計書 §10-7）。権限が無ければ RPC が null を返す。 */
 async function fetchAlertKpis(period: string): Promise<PulseAlertKpis | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.rpc("pulse_alert_kpis", { p_period: period });
+  const { data, error } = await fetchSafe(() => supabase!.rpc("pulse_alert_kpis", { p_period: period }));
   if (error) return null;
   return (data ?? null) as PulseAlertKpis | null;
 }
@@ -165,7 +166,7 @@ async function fetchAlertKpis(period: string): Promise<PulseAlertKpis | null> {
 /** status='active' の設問セット数。権限が無い/未適用なら null（＝判定不能）。 */
 async function fetchActiveSetCount(): Promise<number | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("pulse_question_sets").select("id").eq("status", "active");
+  const { data, error } = await fetchSafe(() => supabase!.from("pulse_question_sets").select("id").eq("status", "active"));
   if (error) return null;
   return (data ?? []).length;
 }

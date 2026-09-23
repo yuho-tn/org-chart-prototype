@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { AppUserRow, AppUserRole } from "../lib/supabase";
+import { fetchWithRetry } from "../lib/query";
 
 /**
  * Auth model (post-0008):
@@ -73,9 +74,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ session: data.session ?? null });
     await get().refresh();
     if (!authSubscription) {
-      const sub = supabase.auth.onAuthStateChange(async (_event, session) => {
+      let previousUserId = data.session?.user?.id ?? null;
+      const sub = supabase.auth.onAuthStateChange((_event, session) => {
+        const nextUserId = session?.user?.id ?? null;
         set({ session: session ?? null });
-        await get().refresh();
+        if (nextUserId === previousUserId) return;
+        previousUserId = nextUserId;
+        // supabase-js は auth ロックを保持したままこのコールバックを await する。
+        // この中から Supabase クエリを呼ぶと同じロック待ちでデッドロックするため、
+        // app_users の再取得は次のタスクへ逃がしてロック解放後に実行する。
+        setTimeout(() => {
+          void get().refresh();
+        }, 0);
       });
       authSubscription = sub.data.subscription;
     }
@@ -84,22 +94,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signInWithGoogle: async () => {
     if (!supabase) return;
     set({ loading: true, error: null });
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: siteOrigin(),
-        // Restrict the Google account picker to sho-san.co.jp Workspace
-        // accounts. The on_auth_user_created trigger enforces the same
-        // rule server-side so out-of-domain accounts can't sneak through.
-        queryParams: { hd: "sho-san.co.jp" },
-      },
-    });
-    if (error) {
-      set({ loading: false, error: error.message });
-      return;
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: siteOrigin(),
+          // Restrict the Google account picker to sho-san.co.jp Workspace
+          // accounts. The on_auth_user_created trigger enforces the same
+          // rule server-side so out-of-domain accounts can't sneak through.
+          queryParams: { hd: "sho-san.co.jp" },
+        },
+      });
+      if (error) {
+        set({ loading: false, error: error.message });
+        return;
+      }
+      // Browser is now navigating away to Google; loading stays true until
+      // we land back via detectSessionInUrl.
+    } catch (e) {
+      set({ loading: false, error: e instanceof Error ? e.message : String(e) });
     }
-    // Browser is now navigating away to Google; loading stays true until
-    // we land back via detectSessionInUrl.
   },
 
   signOut: async () => {
@@ -120,10 +134,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
     set({ loading: true, error: null });
-    const { data, error } = await supabase
-      .from("app_users")
-      .select("email, display_name, role, created_at")
-      .order("created_at", { ascending: true });
+    let result;
+    try {
+      result = await fetchWithRetry(() =>
+        supabase!
+          .from("app_users")
+          .select("email, display_name, role, created_at")
+          .order("created_at", { ascending: true }),
+      );
+    } catch (e) {
+      set({
+        loading: false,
+        initialized: true,
+        users: [],
+        currentUser: null,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+    const { data, error } = result;
     if (error) {
       const isMissingTable =
         /relation .*app_users.* does not exist/i.test(error.message) ||

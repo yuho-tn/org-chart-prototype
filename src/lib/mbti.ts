@@ -70,17 +70,42 @@ export const MBTI_GROUP_ORDER: MbtiGroup[] = [
   "explorer",
 ];
 
-/** 4文字コードを正規化（大文字・16タイプに一致するものだけ返す。旧・自由入力の
- *  ゆらぎ吸収）。一致しなければ null。 */
+export type MbtiIdentity = "A" | "T";
+
+/**
+ * 自由入力の MBTI 表記から4文字コードとアイデンティティ（-A/-T）を分離する。
+ * 例: "ISTP-T" / "istp-t（巨匠）"。16タイプに一致しない入力は null。
+ */
+export function parseMbti(
+  raw: string | null | undefined,
+): { code: string | null; identity: MbtiIdentity | null } {
+  if (!raw?.trim()) return { code: null, identity: null };
+  const match = raw.trim().toUpperCase().match(/^([EI][NS][TF][JP])(?:\s*-\s*([AT]))?/);
+  if (!match || !MBTI_BY_CODE[match[1]]) return { code: null, identity: null };
+  return {
+    code: match[1],
+    identity: (match[2] as MbtiIdentity | undefined) ?? null,
+  };
+}
+
+/** 4文字コードを正規化（互換API）。 */
 export function normalizeMbti(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const code = raw.trim().toUpperCase().slice(0, 4);
-  return MBTI_BY_CODE[code] ? code : null;
+  return parseMbti(raw).code;
+}
+
+/** アイデンティティ込みの表示コード（例: ISTP-T）。 */
+export function mbtiDisplayCode(
+  code: string,
+  identity: MbtiIdentity | null | undefined,
+): string {
+  const normalized = normalizeMbti(code) ?? code.trim().toUpperCase();
+  return identity ? `${normalized}-${identity}` : normalized;
 }
 
 /** 16personalities の該当タイプページへの外部リンク（日本語）。 */
 export function mbtiExternalUrl(code: string): string {
-  return `https://www.16personalities.com/ja/${code.toLowerCase()}-型の性格`;
+  const normalized = normalizeMbti(code) ?? code.trim().toUpperCase().slice(0, 4);
+  return `https://www.16personalities.com/ja/${normalized.toLowerCase()}型の性格`;
 }
 
 /**

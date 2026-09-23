@@ -26,7 +26,11 @@ export type CareerRow = {
   period_from: string;
   /** "YYYY-MM" または null（＝現在）。 */
   period_to: string | null;
+  /** 期間の自由表記（例 "2025年（7月16日）"）。設定されていれば period_from/to より優先して表示する。 */
+  period_label?: string;
   body: string;
+  /** 本文の下にぶら下がる補足（Notionのネスト箇条書き）。 */
+  details?: string[];
 };
 
 /** public.employee_profiles（カルチャー層・1人1行）。 */
@@ -54,6 +58,26 @@ export type ProfileRow = {
   hobby_tags: string[];
   /** 自由プロフィール（ブロックエディタ・profileBlocks.ProfileBlock[] の生値）。 */
   blocks: unknown[];
+  /** 出身地。 */
+  hometown: string | null;
+  /** 居住地。 */
+  residence: string | null;
+  /** 生年月日（ISO date: YYYY-MM-DD）。 */
+  birthday: string | null;
+  /** 生年月日の表示で年まで公開するか。false の場合は月日のみ。 */
+  birthday_show_year: boolean | null;
+  /** 16Personalities のアイデンティティ（A=自己主張型 / T=慎重型）。 */
+  mbti_identity: "A" | "T" | null;
+  /** 適性検査ミキワメのタイプ名。 */
+  mikiwame: string | null;
+  /** プロフィール冒頭に出す「ひとこと」。 */
+  motto: string | null;
+  /** ストレングス診断の実施年（例: "2025"）。 */
+  strengths_year: string | null;
+  /** 取込元 Notion ページ ID（再取込の冪等キー）。 */
+  notion_page_id: string | null;
+  /** Notion から最後に取り込んだ日時。 */
+  notion_synced_at: string | null;
   updated_at: string;
   updated_by_email: string | null;
 };

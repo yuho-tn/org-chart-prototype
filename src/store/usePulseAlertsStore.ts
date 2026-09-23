@@ -7,6 +7,7 @@ import type {
   PulseActionState,
   PulseAlertReviewRow,
 } from "../lib/pulse";
+import { fetchSafe } from "../lib/query";
 
 /**
  * パルスサーベイ アラート一覧＋対応管理＋振り返り（#/pulse/alerts）用ストア（設計書 §10-5〜§10-8）。
@@ -54,7 +55,7 @@ function cycleIdOf(cycles: PulseCycleRow[], period: string | null): string | nul
 
 async function fetchAlerts(cycleId: string | null): Promise<PulseAlertRow[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase.rpc("pulse_list_alerts", { p_cycle_id: cycleId });
+  const { data, error } = await fetchSafe(() => supabase!.rpc("pulse_list_alerts", { p_cycle_id: cycleId }));
   if (error) throw error;
   return (data ?? []) as PulseAlertRow[];
 }
@@ -264,7 +265,7 @@ export const usePulseAlertsStore = create<PulseAlertsState>((set, get) => ({
   loadReview: async (period) => {
     if (!supabase) return;
     set({ reviewLoading: true, reviewError: null });
-    const { data, error } = await supabase.rpc("pulse_alert_review", { p_period: period });
+    const { data, error } = await fetchSafe(() => supabase!.rpc("pulse_alert_review", { p_period: period }));
     if (error) {
       set({
         reviewLoading: false,
