@@ -55,6 +55,32 @@ function siteOrigin(): string {
   return window.location.origin;
 }
 
+// Google ログインは implicit フローで戻り先 URL のハッシュをトークンで上書きするため、
+// Slack 等で共有された深いリンク（例: #/labor/div/SNS%20DIV）がログイン後に失われ
+// トップ（組織図）に着地してしまう。ログイン前にハッシュを退避し、復帰後に戻す。
+const POST_LOGIN_HASH_KEY = "talenthub:postLoginHash";
+
+function stashPostLoginHash(): void {
+  try {
+    const h = window.location.hash;
+    if (h.startsWith("#/") && h !== "#/") sessionStorage.setItem(POST_LOGIN_HASH_KEY, h);
+    else sessionStorage.removeItem(POST_LOGIN_HASH_KEY);
+  } catch {
+    /* sessionStorage 不可（プライベートモード等）の場合はトップ着地で妥協 */
+  }
+}
+
+function restorePostLoginHash(): void {
+  try {
+    const h = sessionStorage.getItem(POST_LOGIN_HASH_KEY);
+    if (!h) return;
+    sessionStorage.removeItem(POST_LOGIN_HASH_KEY);
+    if (window.location.hash !== h) window.location.hash = h;
+  } catch {
+    /* noop */
+  }
+}
+
 let authSubscription: { unsubscribe: () => void } | null = null;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -72,6 +98,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     const { data } = await supabase.auth.getSession();
     set({ session: data.session ?? null });
+    if (data.session) restorePostLoginHash();
     await get().refresh();
     if (!authSubscription) {
       let previousUserId = data.session?.user?.id ?? null;
@@ -94,6 +121,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signInWithGoogle: async () => {
     if (!supabase) return;
     set({ loading: true, error: null });
+    stashPostLoginHash();
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",

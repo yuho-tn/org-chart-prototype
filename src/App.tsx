@@ -667,6 +667,21 @@ export default function App() {
     );
   }
 
+  // 人件費ページ（#/labor・#/labor/div/:target）: 閲覧専用ロール（viewer）でも
+  // viewOnly の組織図シェルに吸い込まれないよう、viewOnly 分岐より前で処理する。
+  // DIV別ページの閲覧者は DIVマネージャー＝大半が viewer ロールのため、
+  // ここより後ろに置くと「組織図しか表示されない」になる（2026-09-24 事案）。
+  // 閲覧可否はページ側（RPC / api/labor-div-report）が判定する。
+  if (route.name === "labor" || route.name === "labor_div") {
+    if (!authInitialized) return <BootSplash />;
+    if (!session) return <SignInPage />;
+    return (
+      <Suspense fallback={<BootSplash />}>
+        {route.name === "labor" ? <LaborPage /> : <LaborDivViewPage target={route.target} />}
+      </Suspense>
+    );
+  }
+
   if (viewOnly) {
     return (
       <Suspense fallback={<BootSplash />}>
@@ -695,24 +710,6 @@ export default function App() {
     return (
       <Suspense fallback={<BootSplash />}>
         <SurveyHistoryPage />
-      </Suspense>
-    );
-  }
-
-  // 人件費管理: chrome 無しスタンドアロン。ナビには一切出さない。
-  if (route.name === "labor") {
-    return (
-      <Suspense fallback={<BootSplash />}>
-        <LaborPage />
-      </Suspense>
-    );
-  }
-
-  // DIV別人件費ページ: chrome 無しスタンドアロン。ナビには一切出さない。
-  if (route.name === "labor_div") {
-    return (
-      <Suspense fallback={<BootSplash />}>
-        <LaborDivViewPage target={route.target} />
       </Suspense>
     );
   }
